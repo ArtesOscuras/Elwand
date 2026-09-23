@@ -11,7 +11,7 @@ TOOL_OUTPUT_MAX_CHARS = 2_000
 def _cdbg(msg):
     try:
         import os as _os
-        from src.hsf_paths import logs_dir as _logs_dir
+        from src.elwand_paths import logs_dir as _logs_dir
         p = _os.path.join(_logs_dir(), "debugging_logs")
         _os.makedirs(_os.path.dirname(p), exist_ok=True)
         with open(p, "a") as f:
@@ -262,7 +262,7 @@ def _list_cache_files(messages):
                     cache_map[fname] = _find_tool_url(messages, i, tc_id)
     try:
         import os as _os
-        from src.hsf_paths import cache_dir
+        from src.elwand_paths import cache_dir
         d = str(cache_dir())
         if not _os.path.isdir(d):
             return None

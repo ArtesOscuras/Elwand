@@ -8,7 +8,7 @@ from scapy.all import IP, ICMP, TCP, UDP, DNS, DNSQR, sr1, RandShort
 
 
 # --- debug logging -----------------------------------------------------------
-from src.hsf_paths import logs_dir as _logs_dir
+from src.elwand_paths import logs_dir as _logs_dir
 _DBG_FILE = os.path.join(_logs_dir(), "debugging_logs")
 _DBG_LOCK = __import__("threading").Lock()
 
@@ -33,7 +33,7 @@ def _warn_scapy_permission():
     _scapy_perm_warned = True
     from src import event_bus
     event_bus.submit({"type": "scan_error",
-                       "message": "scapy requires root/CAP_NET_RAW. Run with: sudo \"$(which hsf)\"  or: sudo setcap cap_net_raw+ep $(readlink -f $(which python3))"})
+                       "message": "scapy requires root/CAP_NET_RAW. Run with: sudo \"$(which elwand)\"  or: sudo setcap cap_net_raw+ep $(readlink -f $(which python3))"})
 
 import socket
 

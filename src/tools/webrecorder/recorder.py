@@ -17,7 +17,7 @@ from .browsers import find_browsers, BrowserSelector
 from .cdp import CDPClient
 from .evidence import save_session_meta, update_session_count, save_request, target_dir
 
-from src.hsf_paths import chrome_profile_dir as _chrome_profile_dir
+from src.elwand_paths import chrome_profile_dir as _chrome_profile_dir
 
 DEBUG_PORT = 9222
 USER_DATA_DIR = str(_chrome_profile_dir())

@@ -1,7 +1,7 @@
 import json
 import os
 from datetime import datetime
-from src.hsf_paths import evidence_dir as _evidence_dir
+from src.elwand_paths import evidence_dir as _evidence_dir
 
 
 def _ensure_dir(target_dir):

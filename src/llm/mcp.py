@@ -19,7 +19,7 @@ def call(endpoint, tool_name, arguments, timeout=20):
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json, text/event-stream",
-        "User-Agent": "opencode/HSF",
+        "User-Agent": "opencode/Elwand",
     }
     try:
         resp = requests.post(endpoint, json=payload, headers=headers, timeout=timeout)

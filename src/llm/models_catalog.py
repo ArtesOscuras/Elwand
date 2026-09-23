@@ -4,7 +4,7 @@ import threading
 import time
 import urllib.request
 
-from src.hsf_paths import models_catalog_file
+from src.elwand_paths import models_catalog_file
 
 URL = "https://models.dev/api.json"
 TTL_SECONDS = 24 * 60 * 60
@@ -45,7 +45,7 @@ def _write_disk(catalog):
 
 
 def _download():
-    req = urllib.request.Request(URL, headers={"User-Agent": "hsf"})
+    req = urllib.request.Request(URL, headers={"User-Agent": "elwand"})
     with urllib.request.urlopen(req, timeout=10) as resp:
         return json.loads(resp.read().decode("utf-8"))
 

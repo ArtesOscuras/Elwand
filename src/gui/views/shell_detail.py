@@ -6,7 +6,7 @@ import tkinter as tk
 from datetime import datetime
 from .base import BaseView
 from src.shells import shell_db, send_command, send_raw
-from src.hsf_paths import evidence_dir as _evidence_dir
+from src.elwand_paths import evidence_dir as _evidence_dir
 
 MUTED = "#888888"
 BRIGHT = "#ffffff"

@@ -22,7 +22,7 @@ _TAR_NAMES = {
 
 
 def _path(name):
-    from src.hsf_paths import lst_dir
+    from src.elwand_paths import lst_dir
     return lst_dir() / f"{name}.txt"
 
 

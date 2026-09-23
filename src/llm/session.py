@@ -1,7 +1,7 @@
 import json
 import os
 import threading
-from src.hsf_paths import session_file as _session_file
+from src.elwand_paths import session_file as _session_file
 
 _lock = threading.Lock()
 

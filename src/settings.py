@@ -1,7 +1,7 @@
 import json
 import os
 import threading
-from src.hsf_paths import settings_file as _settings_path
+from src.elwand_paths import settings_file as _settings_path
 
 _lock = threading.Lock()
 _data = {}

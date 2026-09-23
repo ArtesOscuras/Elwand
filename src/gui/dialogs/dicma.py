@@ -2,7 +2,7 @@ import os
 import tkinter as tk
 from tkinter import ttk, filedialog
 from src.gui import fonts
-from src.hsf_paths import lst_dir as _lst_dir, rules_dir as _rules_dir
+from src.elwand_paths import lst_dir as _lst_dir, rules_dir as _rules_dir
 
 MUTED = "#888888"
 BRIGHT = "#ffffff"

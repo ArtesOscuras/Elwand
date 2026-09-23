@@ -1,6 +1,6 @@
 import os
 from PIL import Image, ImageTk
-from src.hsf_paths import icons_dir as _icons_dir
+from src.elwand_paths import icons_dir as _icons_dir
 
 _ICONS_DIR = str(_icons_dir())
 _cache = {}

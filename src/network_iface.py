@@ -1,6 +1,6 @@
 """Drop-in replacement for netifaces using Python stdlib only.
 
-Provides the same API surface that HSF uses from netifaces:
+Provides the same API surface that Elwand uses from netifaces:
   - AF_INET
   - interfaces()
   - ifaddresses(iface)

@@ -3,7 +3,7 @@ import socket
 import threading
 import time
 from . import shell_db
-from src.hsf_paths import logs_dir as _logs_dir
+from src.elwand_paths import logs_dir as _logs_dir
 
 
 # --- debug logging -----------------------------------------------------------

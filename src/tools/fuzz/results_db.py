@@ -1,7 +1,7 @@
 import os
 import sqlite3
 import threading
-from src.hsf_paths import databases_dir as _databases_dir
+from src.elwand_paths import databases_dir as _databases_dir
 
 _DB_PATH = None
 _LOCK = threading.Lock()

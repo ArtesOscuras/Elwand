@@ -1,6 +1,6 @@
 import sqlite3
 import os
-from src.hsf_paths import databases_dir
+from src.elwand_paths import databases_dir
 
 _DB_PATH = None
 

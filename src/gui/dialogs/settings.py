@@ -18,7 +18,7 @@ INFO = "#5ba3ec"
 class SettingsDialog(tk.Toplevel):
     def __init__(self, parent):
         super().__init__(parent)
-        self.title("HSF — Settings")
+        self.title("Elwand — Settings")
         sh = self.winfo_screenheight()
         h = max(680, min(int(sh * 0.85), sh - 40))
         w = max(850, int(self.winfo_screenwidth() * 0.75))

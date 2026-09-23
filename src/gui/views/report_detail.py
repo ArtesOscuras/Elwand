@@ -3,7 +3,7 @@ import tkinter as tk
 from src.gui import fonts
 from src.gui.markdown import MarkdownRenderer
 from .base import BaseView
-from src.hsf_paths import reports_dir
+from src.elwand_paths import reports_dir
 
 BRIGHT = "#ffffff"
 MUTED = "#888888"

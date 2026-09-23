@@ -1,7 +1,7 @@
 import os
 import tkinter as tk
 from src.gui import fonts
-from src.hsf_paths import reports_dir
+from src.elwand_paths import reports_dir
 
 BG = "#111111"
 BG_WIDGET = "#000000"

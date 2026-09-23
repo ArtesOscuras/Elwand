@@ -6,7 +6,7 @@ import tkinter.font as tkfont
 from src.gui import icons
 from .base import BaseView
 from .nav import build as build_nav
-from src.hsf_paths import evidence_dir as _evidence_dir
+from src.elwand_paths import evidence_dir as _evidence_dir
 
 MUTED = "#888888"
 BRIGHT = "#ffffff"

@@ -527,7 +527,7 @@ def _record_handshake(bssid, client, pkt, device):
 
 def _write_handshake_pcap(bssid):
     try:
-        from src.hsf_paths import handshakes_dir, chown_to_real_user
+        from src.elwand_paths import handshakes_dir, chown_to_real_user
     except Exception:
         return
     with _lock:
@@ -566,7 +566,7 @@ def _build_hc22000_line(ssid, bssid, client, anonce, keymic, eapol, message_pair
 
 def _write_handshake_hc22000(bssid, client, ssid):
     try:
-        from src.hsf_paths import handshakes_dir, chown_to_real_user
+        from src.elwand_paths import handshakes_dir, chown_to_real_user
     except Exception:
         return
     with _lock:

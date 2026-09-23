@@ -127,7 +127,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "check_status",
-            "description": "Show current HSF state: all machines, domains, and inventory counts (users, credentials, hashes, shells, evidence).",
+            "description": "Show current Elwand state: all machines, domains, and inventory counts (users, credentials, hashes, shells, evidence).",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -589,7 +589,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "dicma_find_related",
-            "description": "Find semantically related words using the LLM via DICMA's neighbour expansion. Uses the active LLM config from HSF settings.",
+            "description": "Find semantically related words using the LLM via DICMA's neighbour expansion. Uses the active LLM config from Elwand settings.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1056,7 +1056,7 @@ def _bound_tool_output(output, tool_name):
     byte_len = len(output.encode("utf-8"))
     if len(lines) <= line_limit and byte_len <= byte_limit:
         return output
-    from src.hsf_paths import cache_dir
+    from src.elwand_paths import cache_dir
     import time as _time
     ts = int(_time.time())
     filename = f"tool_{ts}_{tool_name}.txt"
@@ -1084,7 +1084,7 @@ def _bound_tool_output(output, tool_name):
 
 
 def _resolve_cache_path(filename):
-    from src.hsf_paths import cache_dir
+    from src.elwand_paths import cache_dir
     base = str(cache_dir())
     resolved = os.path.normpath(os.path.join(base, filename))
     if not resolved.startswith(os.path.normpath(base) + os.sep) and resolved != os.path.normpath(base):
@@ -1093,7 +1093,7 @@ def _resolve_cache_path(filename):
 
 
 def _resolve_evidence_path(name, filename):
-    from src.hsf_paths import evidence_dir
+    from src.elwand_paths import evidence_dir
     root = os.path.normpath(str(evidence_dir()))
     base = os.path.normpath(os.path.join(root, name))
     if not base.startswith(root + os.sep):
@@ -1348,9 +1348,9 @@ def _check_inventory(args, ctx=None):
     import os
     from src.machines.credential_db import load_users, load_passwords, load_hashes, load_credentials, load_tickets
     from src.machines.people_db import load_people
-    from src.hsf_paths import lst_dir, rules_dir, pocs_dir, reports_dir
+    from src.elwand_paths import lst_dir, rules_dir, pocs_dir, reports_dir
 
-    lines = ["Current HSF inventory:"]
+    lines = ["Current Elwand inventory:"]
 
     users = load_users()
     if users:
@@ -1493,9 +1493,9 @@ def _check_status(args, ctx=None):
         load_users, load_passwords, load_credentials, load_hashes)
     from src.shells import shell_db
     import os
-    from src.hsf_paths import evidence_dir, lst_dir, rules_dir, pocs_dir, reports_dir
+    from src.elwand_paths import evidence_dir, lst_dir, rules_dir, pocs_dir, reports_dir
 
-    lines = ["Current HSF state:"]
+    lines = ["Current Elwand state:"]
 
     machines = store.get_all()
     if machines:
@@ -1648,7 +1648,7 @@ def _check_shells(args, ctx=None):
 def _check_evidences(args, ctx=None):
     import json
     import os
-    from src.hsf_paths import evidence_dir
+    from src.elwand_paths import evidence_dir
 
     base = str(evidence_dir())
     if not os.path.isdir(base):
@@ -2185,7 +2185,7 @@ def _webfetch(args, ctx=None):
         body_lines = resp_body.split("\n")
         preview = "\n".join(body_lines[:60])
         byte_len = len(resp_body.encode("utf-8"))
-        from src.hsf_paths import cache_dir
+        from src.elwand_paths import cache_dir
         import time as _time
         ts = int(_time.time())
         filename = f"tool_{ts}_webfetch_raw.raw"
@@ -2337,7 +2337,7 @@ def _delete_person(args, ctx=None):
 @register("dicma_generate_users")
 def _dicma_generate_users(args, ctx=None):
     from src.tools.dicma import engine as dicma
-    from src.hsf_paths import lst_dir
+    from src.elwand_paths import lst_dir
     full_name = args.get("full_name", "")
     if not full_name:
         return "Missing full_name."
@@ -2353,7 +2353,7 @@ def _dicma_generate_users(args, ctx=None):
 @register("dicma_find_related")
 def _dicma_find_related(args, ctx=None):
     from src.tools.dicma import engine as dicma
-    from src.hsf_paths import lst_dir
+    from src.elwand_paths import lst_dir
     from src.llm.config import load as llm_load, get_provider, get_active_model
     words_str = args.get("words", "")
     if not words_str:
@@ -2396,7 +2396,7 @@ def _dicma_find_related(args, ctx=None):
 @register("dicma_generate_passwords")
 def _dicma_generate_passwords(args, ctx=None):
     from src.tools.dicma import engine as dicma
-    from src.hsf_paths import lst_dir
+    from src.elwand_paths import lst_dir
     words_str = args.get("words", "")
     if not words_str:
         return "Missing words."
@@ -2418,7 +2418,7 @@ def _dicma_generate_passwords(args, ctx=None):
 @register("dicma_generate_rules")
 def _dicma_generate_rules(args, ctx=None):
     from src.tools.dicma import engine as dicma
-    from src.hsf_paths import lst_dir, rules_dir
+    from src.elwand_paths import lst_dir, rules_dir
     mode = args.get("mode", "normal")
     dict_name = args.get("dictionary", "")
     out_name = args.get("output_name", "dicma_rules.rule")
@@ -2451,7 +2451,7 @@ def _hashcat_crack(args, ctx=None):
     if not hash_val or not wordlist_name:
         return "Missing hash_value or wordlist."
     from src.machines.credential_db import load_hashes
-    from src.hsf_paths import hashcat_db, lst_dir
+    from src.elwand_paths import hashcat_db, lst_dir
     mode = None
     htype = ""
     for h in load_hashes():
@@ -2534,7 +2534,7 @@ def _fuzz_start(args, ctx=None):
         scheme = "http"
     if not method or not target or not wordlist:
         return "Missing method, target, or wordlist."
-    from src.hsf_paths import lst_dir
+    from src.elwand_paths import lst_dir
     wl_path = os.path.join(str(lst_dir()), wordlist)
     if not os.path.isfile(wl_path):
         return f"Wordlist not found: {wordlist}"
@@ -2551,17 +2551,17 @@ def _fuzz_start(args, ctx=None):
     if method == "directory":
         url = url_template.replace("FUZZ", word)
         req = urllib.request.Request(
-            url, headers={"User-Agent": "HSF/1.0"})
+            url, headers={"User-Agent": "Elwand/1.0"})
     elif method == "vhost":
         ip = resolved_ip or target
         req = urllib.request.Request(
             f"{scheme}://{ip}/",
-            headers={"User-Agent": "HSF/1.0",
+            headers={"User-Agent": "Elwand/1.0",
                      "Host": f"{word}.{target}"})
     else:
         req = urllib.request.Request(
             f"{scheme}://{word}.{target}/",
-            headers={"User-Agent": "HSF/1.0"})
+            headers={"User-Agent": "Elwand/1.0"})
     ssl_ctx = ssl.create_default_context()
     ssl_ctx.check_hostname = False
     ssl_ctx.verify_mode = ssl.CERT_NONE
@@ -2660,7 +2660,7 @@ def _list_files_common(directory_func, empty_msg, type_label):
 @register("list_files")
 def _list_files(args, ctx=None):
     ft = args.get("file_type", "")
-    from src.hsf_paths import lst_dir, rules_dir, pocs_dir, cache_dir
+    from src.elwand_paths import lst_dir, rules_dir, pocs_dir, cache_dir
     if ft == "dictionary":
         return _list_files_common(lst_dir, "No dictionary files found.", "Dictionary files")
     if ft == "rule":
@@ -2673,7 +2673,7 @@ def _list_files(args, ctx=None):
 
 
 def _resolve_poc_path(filename):
-    from src.hsf_paths import pocs_dir
+    from src.elwand_paths import pocs_dir
     base = str(pocs_dir())
     resolved = os.path.normpath(os.path.join(base, filename))
     if not resolved.startswith(os.path.normpath(base) + os.sep) and resolved != os.path.normpath(base):
@@ -2682,7 +2682,7 @@ def _resolve_poc_path(filename):
 
 
 def _resolve_report_path(filename):
-    from src.hsf_paths import reports_dir
+    from src.elwand_paths import reports_dir
     base = str(reports_dir())
     resolved = os.path.normpath(os.path.join(base, filename))
     if not resolved.startswith(os.path.normpath(base) + os.sep) and resolved != os.path.normpath(base):
@@ -2777,7 +2777,7 @@ def _read_evidence(args, ctx=None):
 
 @register("delete_file")
 def _delete_file(args, ctx=None):
-    from src.hsf_paths import lst_dir, rules_dir, pocs_dir, cache_dir
+    from src.elwand_paths import lst_dir, rules_dir, pocs_dir, cache_dir
     ftype = args.get("file_type", "")
     fname = args.get("filename", "")
     if not ftype or not fname:
@@ -2803,7 +2803,7 @@ def _delete_file(args, ctx=None):
 @register("delete_evidence")
 def _delete_evidence(args, ctx=None):
     import shutil
-    from src.hsf_paths import evidence_dir
+    from src.elwand_paths import evidence_dir
     name = args.get("name", "")
     if not name:
         return "Missing evidence name."

@@ -146,7 +146,7 @@ def run_checks():
 class InitDialog(tk.Toplevel):
     def __init__(self, parent):
         super().__init__(parent)
-        self.title("HSF — Initialization Check")
+        self.title("Elwand — Initialization Check")
         self.geometry("780x620")
         self.configure(bg="#111111")
         self.resizable(False, False)

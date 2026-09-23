@@ -148,7 +148,7 @@ class _WordlistSection:
 
     def _browse(self):
         from tkinter import filedialog
-        from src.hsf_paths import lst_dir
+        from src.elwand_paths import lst_dir
         f = filedialog.askopenfilename(
             initialdir=str(lst_dir()),
             title="Select wordlist",
@@ -537,17 +537,17 @@ class FuzzDialog(tk.Toplevel):
         if method == "directory":
             url = url_template.replace("FUZZ", word)
             req = urllib.request.Request(
-                url, headers={"User-Agent": "HSF/1.0"})
+                url, headers={"User-Agent": "Elwand/1.0"})
         elif method == "vhost":
             ip = target_ip or target_val
             req = urllib.request.Request(
                 f"http://{ip}/",
-                headers={"User-Agent": "HSF/1.0",
+                headers={"User-Agent": "Elwand/1.0",
                          "Host": f"{word}.{target_val}"})
         else:
             req = urllib.request.Request(
                 f"http://{word}.{target_val}/",
-                headers={"User-Agent": "HSF/1.0"})
+                headers={"User-Agent": "Elwand/1.0"})
 
         ctx = ssl.create_default_context()
         ctx.check_hostname = False

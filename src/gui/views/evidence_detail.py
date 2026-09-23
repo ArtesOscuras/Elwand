@@ -3,7 +3,7 @@ import json
 import os
 import tkinter as tk
 from .base import BaseView
-from src.hsf_paths import evidence_dir as _evidence_dir
+from src.elwand_paths import evidence_dir as _evidence_dir
 
 MUTED = "#888888"
 BRIGHT = "#ffffff"

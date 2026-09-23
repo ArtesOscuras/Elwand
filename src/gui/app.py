@@ -14,7 +14,7 @@ from .console import Console
 from .visualizer import Visualizer
 from .views import WifiView, NetworkView, DomainListView, EvidenceListView, CredentialListView, UsersView, PasswordsView, HashListView, ShellListView, ToolsView, InventoryView, PeopleView, ServicesView, DictionarysView, RulesView, PocsView, ReportsView, ReportView, HandshakesView
 from .dialogs import ScanDialog
-from src import settings as hsf_settings
+from src import settings as elwand_settings
 from src.machines import store, start_autosave as start_machines_autosave, stop_autosave as stop_machines_autosave
 from src.machines import machine_db
 from src.machines import domain_db
@@ -29,7 +29,7 @@ import datetime as _datetime
 
 def _ctx_log(msg):
     try:
-        from src.hsf_paths import runtime_logs_dir
+        from src.elwand_paths import runtime_logs_dir
         p = str(runtime_logs_dir())
         import os as _os
         _os.makedirs(p, exist_ok=True)
@@ -585,7 +585,7 @@ class App(tk.Tk):
         fonts.register_before_tk()
         super().__init__()
         fonts.set_root(self)
-        self.title("HSF - Hack Station Framework")
+        self.title("Elwand - Your AI-Powered Security Workbench")
         self.minsize(800, 600)
         self.state("normal")
 
@@ -601,8 +601,8 @@ class App(tk.Tk):
         self.visualizer = Visualizer(self._pane)
         self._pane.add(self.visualizer, stretch="always")
 
-        hsf_settings.load()
-        console_font = hsf_settings.get("console_font_size", 11)
+        elwand_settings.load()
+        console_font = elwand_settings.get("console_font_size", 11)
         self.console = Console(self._pane, initial_font_size=console_font)
         self.console._focus_callback = self._toggle_focus
         self._pane.add(self.console, stretch="always")
@@ -650,7 +650,7 @@ class App(tk.Tk):
         self.visualizer.activate_view("tools")
         self._register_commands()
 
-        view_scale = hsf_settings.get("view_scale", 1.0)
+        view_scale = elwand_settings.get("view_scale", 1.0)
         from src.gui.views.nav import set_initial_zoom as _nav_set_zoom
         _nav_set_zoom(view_scale)
 
@@ -1051,7 +1051,7 @@ class App(tk.Tk):
 
     @staticmethod
     def _autocomplete_dicma_rules_dict(prefix):
-        from src.hsf_paths import lst_dir
+        from src.elwand_paths import lst_dir
         results = []
         try:
             for fname in sorted(os.listdir(str(lst_dir()))):
@@ -1063,7 +1063,7 @@ class App(tk.Tk):
 
     @staticmethod
     def _autocomplete_delete_rules(prefix):
-        from src.hsf_paths import rules_dir
+        from src.elwand_paths import rules_dir
         results = ["all"]
         try:
             for fname in sorted(os.listdir(str(rules_dir()))):
@@ -1075,7 +1075,7 @@ class App(tk.Tk):
 
     @staticmethod
     def _autocomplete_delete_dictionary(prefix):
-        from src.hsf_paths import lst_dir
+        from src.elwand_paths import lst_dir
         results = ["all"]
         try:
             for fname in sorted(os.listdir(str(lst_dir()))):
@@ -1087,7 +1087,7 @@ class App(tk.Tk):
 
     @staticmethod
     def _autocomplete_dictionary_noall(prefix):
-        from src.hsf_paths import lst_dir
+        from src.elwand_paths import lst_dir
         results = []
         try:
             for fname in sorted(os.listdir(str(lst_dir()))):
@@ -1099,7 +1099,7 @@ class App(tk.Tk):
 
     @staticmethod
     def _autocomplete_rules_noall(prefix):
-        from src.hsf_paths import rules_dir
+        from src.elwand_paths import rules_dir
         results = []
         try:
             for fname in sorted(os.listdir(str(rules_dir()))):
@@ -1111,7 +1111,7 @@ class App(tk.Tk):
 
     @staticmethod
     def _autocomplete_delete_pocs(prefix):
-        from src.hsf_paths import pocs_dir
+        from src.elwand_paths import pocs_dir
         results = ["all"]
         try:
             for fname in sorted(os.listdir(str(pocs_dir()))):
@@ -1123,7 +1123,7 @@ class App(tk.Tk):
 
     @staticmethod
     def _autocomplete_pocs_noall(prefix):
-        from src.hsf_paths import pocs_dir
+        from src.elwand_paths import pocs_dir
         results = []
         try:
             for fname in sorted(os.listdir(str(pocs_dir()))):
@@ -1200,7 +1200,7 @@ class App(tk.Tk):
     @staticmethod
     def _autocomplete_hash_types(prefix):
         import sqlite3
-        from src.hsf_paths import hashcat_db
+        from src.elwand_paths import hashcat_db
         results = []
         try:
             with sqlite3.connect(str(hashcat_db())) as conn:
@@ -1272,7 +1272,7 @@ class App(tk.Tk):
 
     @staticmethod
     def _autocomplete_bruteforce_userlist(prefix):
-        from src.hsf_paths import lst_dir
+        from src.elwand_paths import lst_dir
         results = [("users", "users")]
         try:
             for fname in sorted(os.listdir(str(lst_dir()))):
@@ -1284,7 +1284,7 @@ class App(tk.Tk):
 
     @staticmethod
     def _autocomplete_bruteforce_passlist(prefix):
-        from src.hsf_paths import lst_dir
+        from src.elwand_paths import lst_dir
         results = [("passwords", "passwords")]
         try:
             for fname in sorted(os.listdir(str(lst_dir()))):
@@ -1318,7 +1318,7 @@ class App(tk.Tk):
                         results.append((str(p), str(p)))
             return results
         else:
-            from src.hsf_paths import lst_dir
+            from src.elwand_paths import lst_dir
             results = []
             try:
                 for fname in sorted(os.listdir(str(lst_dir()))):
@@ -1330,7 +1330,7 @@ class App(tk.Tk):
 
     def _autocomplete_fuzzer_arg5(self, prefix, arg2_value=None):
         if arg2_value == "dir":
-            from src.hsf_paths import lst_dir
+            from src.elwand_paths import lst_dir
             results = []
             try:
                 for fname in sorted(os.listdir(str(lst_dir()))):
@@ -1351,7 +1351,7 @@ class App(tk.Tk):
 
     @staticmethod
     def _autocomplete_hashcat_wordlist(prefix, arg2_value=None):
-        from src.hsf_paths import lst_dir
+        from src.elwand_paths import lst_dir
         results = []
         try:
             for fname in sorted(os.listdir(str(lst_dir()))):
@@ -1421,7 +1421,7 @@ class App(tk.Tk):
 
     @staticmethod
     def _autocomplete_evidence_only(prefix):
-        from src.hsf_paths import evidence_dir
+        from src.elwand_paths import evidence_dir
         results = []
         try:
             for name in sorted(os.listdir(str(evidence_dir()))):
@@ -1507,7 +1507,7 @@ class App(tk.Tk):
 
     @staticmethod
     def _autocomplete_evidence(prefix):
-        from src.hsf_paths import evidence_dir
+        from src.elwand_paths import evidence_dir
         results = ["all"]
         try:
             for name in sorted(os.listdir(str(evidence_dir()))):
@@ -1612,15 +1612,15 @@ class App(tk.Tk):
             return
         fname = args[0]
         if file_type == "dictionary":
-            from src.hsf_paths import lst_dir
+            from src.elwand_paths import lst_dir
             base = str(lst_dir())
             title = f"Dictionary \u2014 {fname}"
         elif file_type == "poc":
-            from src.hsf_paths import pocs_dir
+            from src.elwand_paths import pocs_dir
             base = str(pocs_dir())
             title = f"POC \u2014 {fname}"
         else:
-            from src.hsf_paths import rules_dir
+            from src.elwand_paths import rules_dir
             base = str(rules_dir())
             title = f"Rule \u2014 {fname}"
         path = os.path.join(base, fname)
@@ -1869,7 +1869,7 @@ class App(tk.Tk):
 
     @staticmethod
     def _next_project_name():
-        from src.hsf_paths import evidence_dir
+        from src.elwand_paths import evidence_dir
         for i in range(1, 100):
             name = f"project_{i:02d}"
             if not os.path.isdir(os.path.join(str(evidence_dir()), name)):
@@ -1930,7 +1930,7 @@ class App(tk.Tk):
             return
 
         from src.machines.credential_db import load_users, load_passwords
-        from src.hsf_paths import lst_dir
+        from src.elwand_paths import lst_dir
 
         userlist = None
         users = None
@@ -2020,7 +2020,7 @@ class App(tk.Tk):
             return
 
         from src.machines.credential_db import load_hashes
-        from src.hsf_paths import hashcat_db, lst_dir
+        from src.elwand_paths import hashcat_db, lst_dir
 
         mode = None
         htype = ""
@@ -2247,7 +2247,7 @@ class App(tk.Tk):
             self.console.error(f"Unknown dicma mode: {mode}. Use users/related/passwords/rules.")
 
     def _run_dicma_users(self, names, out_file, light=False):
-        from src.hsf_paths import lst_dir
+        from src.elwand_paths import lst_dir
         out_path = os.path.join(str(lst_dir()), out_file)
         self._run_dicma_async(lambda: self._dicma_users_thread(names, out_path, light))
 
@@ -2262,7 +2262,7 @@ class App(tk.Tk):
             f"Users dictionary saved to: {out_path}"))
 
     def _run_dicma_related(self, words, out_file, n1, n2, n3):
-        from src.hsf_paths import lst_dir
+        from src.elwand_paths import lst_dir
         out_path = os.path.join(str(lst_dir()), out_file)
         self._run_dicma_async(lambda: self._dicma_related_thread(words, out_path, n1, n2, n3))
 
@@ -2287,7 +2287,7 @@ class App(tk.Tk):
             f"Related words ({len(result)}) saved to: {out_path}"))
 
     def _run_dicma_passwords(self, words, out_file, light=False, full=False):
-        from src.hsf_paths import lst_dir
+        from src.elwand_paths import lst_dir
         out_path = os.path.join(str(lst_dir()), out_file)
         self._run_dicma_async(lambda: self._dicma_passwords_thread(words, out_path, light, full))
 
@@ -2303,7 +2303,7 @@ class App(tk.Tk):
             f"Passwords dictionary saved to: {out_path}"))
 
     def _run_dicma_rules(self, dict_file, out_file, light=False, full=False):
-        from src.hsf_paths import lst_dir, rules_dir
+        from src.elwand_paths import lst_dir, rules_dir
         out_path = os.path.join(str(rules_dir()), out_file)
         self._run_dicma_async(lambda: self._dicma_rules_thread(dict_file, out_path, light, full))
 
@@ -2705,7 +2705,7 @@ class App(tk.Tk):
         self.visualizer.activate_view(view_name)
 
     def _open_dictionary_view(self, fname):
-        from src.hsf_paths import lst_dir
+        from src.elwand_paths import lst_dir
         from .views.file_detail import open_file_search
         path = os.path.join(str(lst_dir()), fname)
         if not os.path.isfile(path):
@@ -2713,7 +2713,7 @@ class App(tk.Tk):
         open_file_search(self, path, f"Dictionary \u2014 {fname}")
 
     def _open_rule_view(self, fname):
-        from src.hsf_paths import rules_dir
+        from src.elwand_paths import rules_dir
         from .views.file_detail import open_file_search
         path = os.path.join(str(rules_dir()), fname)
         if not os.path.isfile(path):
@@ -2721,7 +2721,7 @@ class App(tk.Tk):
         open_file_search(self, path, f"Rule \u2014 {fname}")
 
     def _open_poc_view(self, fname):
-        from src.hsf_paths import pocs_dir
+        from src.elwand_paths import pocs_dir
         from .views.file_detail import open_file_search
         path = os.path.join(str(pocs_dir()), fname)
         if not os.path.isfile(path):
@@ -2729,7 +2729,7 @@ class App(tk.Tk):
         open_file_search(self, path, f"POC \u2014 {fname}", file_type="poc")
 
     def _open_report_view(self, fname):
-        from src.hsf_paths import reports_dir
+        from src.elwand_paths import reports_dir
         path = os.path.join(str(reports_dir()), fname)
         if not os.path.isfile(path):
             return
@@ -3894,7 +3894,7 @@ class App(tk.Tk):
     def _cmd_debug_ctx_screenshot(self, args):
         import json, os
         from datetime import datetime
-        from src.hsf_paths import runtime_logs_dir
+        from src.elwand_paths import runtime_logs_dir
 
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"ctx_screenshot_{ts}.json"
@@ -3939,7 +3939,7 @@ class App(tk.Tk):
                 "Consultor mode. Commands: exit, stop, reset, compact, clear, menu."
             )
         self.console.set_mode_handler(self._consultor_handler, "Consultor", "#e6b422",
-            commands={"exit": "Quit HSF", "stop": "Interrupt execution",
+            commands={"exit": "Quit Elwand", "stop": "Interrupt execution",
                       "reset": "Clear conversation and cache", "compact": "Compact context",
                       "clear": "Clear the console", "menu": "Show help"})
         self._update_mode_prompt()
@@ -3952,7 +3952,7 @@ class App(tk.Tk):
         if text.lower() == "menu":
             self.console.info(
                 "Consultor mode commands:\n"
-                "  exit    - Quit HSF\n"
+                "  exit    - Quit Elwand\n"
                 "  stop    - Interrupt the current consultor execution\n"
                 "  reset   - Clear conversation history, clear cache, start fresh\n"
                 "  compact - Manually compact the conversation context\n"
@@ -3995,7 +3995,7 @@ class App(tk.Tk):
     def _leave_consultor_mode(self):
         self._consultor_mode = False
         self.console.set_mode_handler(None)
-        self.console.prompt_label.config(text="HSF> ", fg="#ffffff")
+        self.console.prompt_label.config(text="Elwand> ", fg="#ffffff")
         if not self._silent_mode_cycle:
             self.console.info("Left consultor mode.")
 
@@ -4089,7 +4089,7 @@ class App(tk.Tk):
 
     def _clear_cache(self):
         try:
-            from src.hsf_paths import cache_dir
+            from src.elwand_paths import cache_dir
             d = str(cache_dir())
             if os.path.isdir(d):
                 for f in os.listdir(d):
@@ -4249,7 +4249,7 @@ class App(tk.Tk):
                 "Agent mode. Commands: exit, stop, reset, compact, clear, menu."
             )
         self.console.set_mode_handler(self._agent_handler, "Agent", "#5ba3ec",
-            commands={"exit": "Quit HSF", "stop": "Interrupt execution",
+            commands={"exit": "Quit Elwand", "stop": "Interrupt execution",
                       "reset": "Clear conversation and cache", "compact": "Compact context",
                       "clear": "Clear the console", "menu": "Show help"})
         self._update_mode_prompt()
@@ -4282,7 +4282,7 @@ class App(tk.Tk):
         if text.lower() == "menu":
             self.console.info(
                 "Agent mode commands:\n"
-                "  exit    - Quit HSF\n"
+                "  exit    - Quit Elwand\n"
                 "  stop    - Interrupt the current agent execution\n"
                 "  reset   - Clear conversation history, clear cache, start fresh\n"
                 "  compact - Manually compact the conversation context\n"
@@ -4304,7 +4304,7 @@ class App(tk.Tk):
     def _leave_agent_mode(self):
         self._agent_mode = False
         self.console.set_mode_handler(None)
-        self.console.prompt_label.config(text="HSF> ", fg="#ffffff")
+        self.console.prompt_label.config(text="Elwand> ", fg="#ffffff")
         if not self._silent_mode_cycle:
             self.console.info("Left agent mode.")
 
@@ -4511,7 +4511,7 @@ class App(tk.Tk):
         threading.Thread(target=_run, daemon=True).start()
 
     def _build_model_context(self):
-        parts = ["HSF state:"]
+        parts = ["Elwand state:"]
         from src.machines import store, domain_db
         machines = store.get_all()
         if machines:
@@ -4725,11 +4725,11 @@ class App(tk.Tk):
     def _cmd_add_file(self, file_type, args):
         from tkinter import filedialog
         if file_type == "dictionary":
-            from src.hsf_paths import lst_dir
+            from src.elwand_paths import lst_dir
             dst_dir = str(lst_dir())
             title = "Select dictionary file"
         else:
-            from src.hsf_paths import rules_dir
+            from src.elwand_paths import rules_dir
             dst_dir = str(rules_dir())
             title = "Select rule file"
         path = filedialog.askopenfilename(
@@ -4882,7 +4882,7 @@ class App(tk.Tk):
             return None
         mode = int(type_str)
         import sqlite3
-        from src.hsf_paths import hashcat_db
+        from src.elwand_paths import hashcat_db
         try:
             with sqlite3.connect(str(hashcat_db())) as conn:
                 row = conn.execute(
@@ -4935,7 +4935,7 @@ class App(tk.Tk):
             if not wordlist:
                 self.console.body("Usage: use fuzzer dir <target> <wordlist> [port]")
                 return
-            from src.hsf_paths import lst_dir
+            from src.elwand_paths import lst_dir
             wl_path = os.path.join(str(lst_dir()), wordlist)
             if not os.path.isfile(wl_path):
                 self.console.error(f"Wordlist not found: {wordlist}")
@@ -4968,7 +4968,7 @@ class App(tk.Tk):
                 self.console.body("Usage: use fuzzer vhost <target> <wordlist>")
                 return
             wordlist = args[2]
-            from src.hsf_paths import lst_dir
+            from src.elwand_paths import lst_dir
             wl_path = os.path.join(str(lst_dir()), wordlist)
             if not os.path.isfile(wl_path):
                 self.console.error(f"Wordlist not found: {wordlist}")
@@ -4999,7 +4999,7 @@ class App(tk.Tk):
                 self.console.body("Usage: use fuzzer dns <target> <wordlist>")
                 return
             wordlist = args[2]
-            from src.hsf_paths import lst_dir
+            from src.elwand_paths import lst_dir
             wl_path = os.path.join(str(lst_dir()), wordlist)
             if not os.path.isfile(wl_path):
                 self.console.error(f"Wordlist not found: {wordlist}")
@@ -5293,7 +5293,7 @@ class App(tk.Tk):
 
     def _cmd_delete_evidence_single(self, args):
         import shutil
-        from src.hsf_paths import evidence_dir
+        from src.elwand_paths import evidence_dir
         if not args:
             self.console.body("Usage: delete evidence <name|all>")
             return
@@ -5454,7 +5454,7 @@ class App(tk.Tk):
         if not args:
             self.console.body("Usage: delete dictionary <filename|all>")
             return
-        from src.hsf_paths import lst_dir
+        from src.elwand_paths import lst_dir
         import os as _os
         d = str(lst_dir())
         target = args[0]
@@ -5478,7 +5478,7 @@ class App(tk.Tk):
         if not args:
             self.console.body("Usage: delete rule <filename|all>")
             return
-        from src.hsf_paths import rules_dir
+        from src.elwand_paths import rules_dir
         import os as _os
         d = str(rules_dir())
         target = args[0]
@@ -5502,7 +5502,7 @@ class App(tk.Tk):
         if not args:
             self.console.body("Usage: delete poc <filename|all>")
             return
-        from src.hsf_paths import pocs_dir
+        from src.elwand_paths import pocs_dir
         import os as _os
         d = str(pocs_dir())
         target = args[0]
@@ -5526,7 +5526,7 @@ class App(tk.Tk):
         if not args:
             self.console.body("Usage: delete report <filename|all>")
             return
-        from src.hsf_paths import reports_dir
+        from src.elwand_paths import reports_dir
         import os as _os
         d = str(reports_dir())
         target = args[0]
@@ -5583,7 +5583,7 @@ class App(tk.Tk):
             load_credentials, delete_credential, load_hashes, load_tickets,
         )
         from src.machines.people_db import load_people
-        from src.hsf_paths import pocs_dir
+        from src.elwand_paths import pocs_dir
 
         deleted = 0
 
@@ -5625,7 +5625,7 @@ class App(tk.Tk):
         self.console.success(f"Inventory cleared ({deleted} items). Machines, domains, rules and dictionaries preserved.")
 
     def _cmd_delete_cache(self, args):
-        from src.hsf_paths import cache_dir
+        from src.elwand_paths import cache_dir
         d = str(cache_dir())
         deleted = 0
         if os.path.isdir(d):
@@ -5650,7 +5650,7 @@ class App(tk.Tk):
 
     def _cmd_delete_all(self):
         import shutil
-        from src.hsf_paths import evidence_dir, pocs_dir, cache_dir
+        from src.elwand_paths import evidence_dir, pocs_dir, cache_dir
         from src.machines.people_db import delete_all as del_people
         from src.shells import shell_db
 
@@ -5728,7 +5728,7 @@ class App(tk.Tk):
             wifi_monitor.shutdown()
         except Exception:
             pass
-        hsf_settings.save()
+        elwand_settings.save()
         event_bus.stop()
         self.update_idletasks()
         self.destroy()

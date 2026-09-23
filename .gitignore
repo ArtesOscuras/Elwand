@@ -29,7 +29,7 @@ databases/
 wfuzz/
 
 # Datos runtime (pipx / dev)
-.hsf/
+.elwand/
 chrome_profile/
 evidence/
 credentials/credentials.dbs

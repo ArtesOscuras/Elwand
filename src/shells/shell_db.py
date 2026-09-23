@@ -3,7 +3,7 @@ import socket
 import threading
 import time as _time
 from datetime import datetime
-from src.hsf_paths import logs_dir as _logs_dir
+from src.elwand_paths import logs_dir as _logs_dir
 
 
 # --- debug logging -----------------------------------------------------------

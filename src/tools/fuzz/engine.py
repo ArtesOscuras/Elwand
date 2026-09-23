@@ -9,7 +9,7 @@ TIMEOUT = 5
 MAX_WORKERS = 20
 SHOW_CODES = {200, 201, 204, 301, 302, 307, 400, 401, 403, 404, 405, 500, 502, 503}
 ALL_CODES = list(SHOW_CODES)
-USER_AGENT = "HSF/1.0"
+USER_AGENT = "Elwand/1.0"
 
 _ssl_context = ssl.create_default_context()
 _ssl_context.check_hostname = False

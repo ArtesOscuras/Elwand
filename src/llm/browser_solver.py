@@ -17,7 +17,7 @@ import time
 import urllib.request
 from urllib.parse import urlparse
 
-from src.hsf_paths import antibot_profile_dir
+from src.elwand_paths import antibot_profile_dir
 from src.tools.webrecorder.browser_finder import find_browsers
 from src.tools.webrecorder.cdp import CDPClient
 

@@ -7,7 +7,7 @@ The attack alternates:
     concurrent sniffer blocks injection on some drivers, e.g. rt2800usb);
   * an OBSERVE window: the interface sniffs for a few seconds; frames are fed to
     the WiFi monitor pipeline so a reconnection handshake is captured and
-    written to disk like any other HSF handshake.
+    written to disk like any other Elwand handshake.
 
 It supports several targets (BSSIDs) so the same network can be attacked on
 both bands at once (2.4 + 5 GHz) — clients roam between them, so attacking only
@@ -102,7 +102,7 @@ def _ecsa_action(bssid, dst, to_ch, count, opclass, rate):
 
 def _handshake_path(ssid, bssid):
     try:
-        from src.hsf_paths import handshakes_dir
+        from src.elwand_paths import handshakes_dir
         safe = "".join(c if c.isalnum() or c in "._-" else "_"
                        for c in (ssid or "hidden")) or "hidden"
         return os.path.join(str(handshakes_dir()),
@@ -152,7 +152,7 @@ def csa_pulse(iface, bssid=None, client=None, ssid="", channel=0,
     tinfo = [(b, c, _dead_chan(c, int(opt["target_chan"]))) for b, c in tg]
     paths = [_handshake_path(ssid, b) for b, _, _ in tinfo]
     base_handshakes = wm.get_stats().get("handshakes", 0)
-    # Pre-register the BSSIDs so HSF attributes EAPOL even before its first
+    # Pre-register the BSSIDs so Elwand attributes EAPOL even before its first
     # beacon is sniffed in the observe window.
     try:
         for b, _, _ in tinfo:

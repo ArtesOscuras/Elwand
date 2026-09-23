@@ -5,7 +5,7 @@ from src.gui import fonts
 from src.gui import icons
 from .base import BaseView
 from .nav import build as build_nav
-from src.hsf_paths import pocs_dir
+from src.elwand_paths import pocs_dir
 
 MUTED = "#888888"
 BRIGHT = "#ffffff"

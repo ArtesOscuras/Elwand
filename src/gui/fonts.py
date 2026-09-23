@@ -4,7 +4,7 @@ import subprocess
 import sys
 import tkinter as tk
 import tkinter.font as tkfont
-from src.hsf_paths import fonts_dir as _fonts_dir
+from src.elwand_paths import fonts_dir as _fonts_dir
 
 _FAMILY = None
 _FAMILY_BOLD = None
@@ -118,14 +118,14 @@ def init(root):
         return
 
     try:
-        root.tk.call("font", "create", "HSF-Font", "-file", regular)
-        _FAMILY = "HSF-Font"
+        root.tk.call("font", "create", "Elwand-Font", "-file", regular)
+        _FAMILY = "Elwand-Font"
         bold = os.path.join(base, "JetBrainsMonoNL-Bold.ttf")
         if os.path.isfile(bold):
-            root.tk.call("font", "create", "HSF-Font-Bold", "-file", bold)
-            _FAMILY_BOLD = "HSF-Font-Bold"
+            root.tk.call("font", "create", "Elwand-Font-Bold", "-file", bold)
+            _FAMILY_BOLD = "Elwand-Font-Bold"
         else:
-            _FAMILY_BOLD = "HSF-Font"
+            _FAMILY_BOLD = "Elwand-Font"
     except tk.TclError:
         _set("Menlo")
 

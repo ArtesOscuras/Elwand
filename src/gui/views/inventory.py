@@ -4,7 +4,7 @@ import time
 import tkinter as tk
 from datetime import datetime
 from src.gui import icons
-from src.hsf_paths import logs_dir
+from src.elwand_paths import logs_dir
 from .base import BaseView
 from .nav import build as build_nav
 

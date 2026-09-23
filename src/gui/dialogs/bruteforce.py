@@ -4,7 +4,7 @@ from tkinter import ttk
 from src.gui import fonts
 from src.machines import store
 from src.tools.bruteforce import BruteForceEngine
-from src.hsf_paths import lst_dir as _lst_dir
+from src.elwand_paths import lst_dir as _lst_dir
 
 MUTED = "#888888"
 BRIGHT = "#ffffff"

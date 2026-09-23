@@ -3,9 +3,9 @@ requires = ["setuptools>=75.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "hsf"
+name = "elwand"
 version = "1.0.0"
-description = "Hack Station Framework - Network pentesting GUI"
+description = "Elwand - Your AI-Powered Security Workbench"
 requires-python = ">=3.11"
 dependencies = [
     "zeroconf>=0.149.0",
@@ -23,7 +23,7 @@ dependencies = [
 ]
 
 [project.scripts]
-hsf = "src.cli:main"
+elwand = "src.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["src*"]

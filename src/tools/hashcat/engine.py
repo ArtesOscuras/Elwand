@@ -73,7 +73,7 @@ class HashcatEngine:
 
     def _make_outfile(self):
         try:
-            fd, path = tempfile.mkstemp(prefix="hsf_hashcat_", suffix=".out")
+            fd, path = tempfile.mkstemp(prefix="elwand_hashcat_", suffix=".out")
             os.close(fd)
             os.unlink(path)
             self._outfile_path = path

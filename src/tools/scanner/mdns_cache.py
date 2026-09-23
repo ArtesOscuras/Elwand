@@ -4,7 +4,7 @@ import time
 import threading
 
 
-from src.hsf_paths import databases_dir as _databases_dir
+from src.elwand_paths import databases_dir as _databases_dir
 
 _cache = {}
 _save_lock = threading.Lock()

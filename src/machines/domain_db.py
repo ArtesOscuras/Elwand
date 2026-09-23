@@ -2,7 +2,7 @@ import os
 import re
 import sqlite3
 from datetime import datetime
-from src.hsf_paths import databases_dir as _databases_dir
+from src.elwand_paths import databases_dir as _databases_dir
 
 
 _DB_DIR = None

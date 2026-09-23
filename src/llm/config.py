@@ -1,6 +1,6 @@
 import json
 import os
-from src.hsf_paths import settings_file as _settings_dir
+from src.elwand_paths import settings_file as _settings_dir
 
 _LLM_CONFIG_FILE = os.path.join(os.path.dirname(str(_settings_dir())), "llm.json")
 
@@ -32,7 +32,7 @@ _DEFAULTS = {
     "active_models": {"opencode": "big-pickle"},
     "prompts": {
         "system": (
-            "You are an AI assistant operating within HSF, a penetration testing program. "
+            "You are an AI assistant operating within Elwand, a penetration testing program. "
             "Your objective is to assist the user with any tasks they request.\n\n"
             "Default behavior:\n"
             "- Only perform the specific functions the user asks for.\n"
@@ -126,7 +126,7 @@ _DEFAULTS = {
             "- No parse. Any parameter or input must be a global variable at the "
             "beginning of the code.\n"
             "- Any RCE or reverse shell will not have a dedicated listener. "
-            "HSF already has a reverse shell listener at ports 8443 (no root) "
+            "Elwand already has a reverse shell listener at ports 8443 (no root) "
             "or 443 (root).\n"
             "- After write or edit every POC stop, and ask user what to do.\n\n"
             "Rules for report generation or edition:\n"

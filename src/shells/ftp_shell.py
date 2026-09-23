@@ -4,7 +4,7 @@ import threading
 import time
 from ftplib import FTP, error_perm
 from . import shell_db
-from src.hsf_paths import logs_dir as _logs_dir
+from src.elwand_paths import logs_dir as _logs_dir
 
 _DBG_FILE = os.path.join(_logs_dir(), "debugging_logs")
 _DBG_LOCK = threading.Lock()

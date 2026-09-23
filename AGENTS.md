@@ -1,10 +1,10 @@
 # AGENTS.md
 
-# HSF (Hack Station Framework)
+# Elwand (Your AI-Powered Security Workbench)
 
 ## Project Overview
 
-HSF (Hack Station Framework) is a Python-based penetration testing platform that provides both a command-line interface and a graphical user interface within the same application.
+Elwand is a Python-based penetration testing platform that provides both a command-line interface and a graphical user interface within the same application.
 
 The application is intended to assist security professionals during assessments by combining interactive workflows, evidence collection, and structured data visualization.
 
@@ -31,7 +31,7 @@ The application consists of two major UI areas:
 
 The bottom portion of the interface contains an interactive console.
 
-This console allows users to operate HSF through command-line interactions while the graphical interface remains active.
+This console allows users to operate Elwand through command-line interactions while the graphical interface remains active.
 
 Features implemented for the GUI should not break console-based workflows, and vice versa.
 
@@ -41,7 +41,7 @@ Features implemented for the GUI should not break console-based workflows, and v
 
 The upper portion of the interface displays graphical views.
 
-These views present information that HSF has collected and stored in its databases during operation.
+These views present information that Elwand has collected and stored in its databases during operation.
 
 Views should primarily act as visual representations of persisted data rather than independent sources of truth.
 
@@ -69,7 +69,7 @@ When modifying navigation behavior:
 
 ### Mouse and Clickable Elements
 
-HSF uses a **hover-only** interaction model. The mouse cursor never changes (`cursor` is always the system default, never `"hand2"`). Clickability is communicated through visual hover effects:
+Elwand uses a **hover-only** interaction model. The mouse cursor never changes (`cursor` is always the system default, never `"hand2"`). Clickability is communicated through visual hover effects:
 
 **Clickable text** (nav links, machine names, domain links, hash types, etc.):
 - Normal state: no underline, `fg="#ffffff"` (bright) or `fg="#888888"` (muted)
@@ -216,14 +216,14 @@ This pattern is already used in `HashcatDialog`, `InitDialog`, `_CredentialGener
 
 ---
 
-### Path Centralization (`src/hsf_paths.py`)
+### Path Centralization (`src/elwand_paths.py`)
 
 All filesystem paths are defined in a single module. Never use `os.path.dirname(__file__)` to locate resources.
 
 * **Package data** (bundled with pipx): `fonts_dir()`, `icons_dir()`, `hashcat_db()`, `logs_dir()`
 * **Runtime data** (user's home): `databases_dir()`, `credentials_dir()`, `evidence_dir()`, `chrome_profile_dir()`, `antibot_profile_dir()`, `lst_dir()`, `rules_dir()`, `pocs_dir()`, `reports_dir()`, `cache_dir()`, `settings_file()`, `session_file()`, `runtime_logs_dir()`
 * Runtime directories are created lazily with `os.makedirs(exist_ok=True)`.
-* Override runtime root via `HSF_HOME` environment variable.
+* Override runtime root via `Elwand_HOME` environment variable.
 
 ---
 
@@ -242,7 +242,7 @@ General rules:
 
 ## Settings Persistence (`src/settings.py`)
 
-User preferences (console font size, view zoom level) are persisted to `~/.local/share/hsf/settings.json`.
+User preferences (console font size, view zoom level) are persisted to `~/.local/share/elwand/settings.json`.
 
 * `load()` / `save()` — read/write JSON with thread-safe I/O.
 * `get(key, default)` / `set(key, value)` — access in-memory dict, thread-safe.
@@ -252,7 +252,7 @@ User preferences (console font size, view zoom level) are persisted to `~/.local
 
 ## Session Persistence (`src/llm/session.py`)
 
-The LLM conversation context (and the rendered console output) is persisted to a **single file** `~/.local/share/hsf/session.json` (path via `session_file()` in `src/hsf_paths.py`), so it survives a restart.
+The LLM conversation context (and the rendered console output) is persisted to a **single file** `~/.local/share/elwand/session.json` (path via `session_file()` in `src/elwand_paths.py`), so it survives a restart.
 
 * `save(messages, mode=None, context_injected=False, total_api_tokens=0, console_segments=None)` — writes atomically (temp file + `os.replace`) under a `threading.Lock`.
 * `load()` — reads and returns the data dict, or `None` if missing/corrupt.
@@ -300,7 +300,7 @@ Guidelines:
 
 ## Fonts
 
-HSF must not depend on fonts provided by the operating system.
+Elwand must not depend on fonts provided by the operating system.
 
 The application uses its own bundled fonts located at:
 
@@ -318,7 +318,7 @@ Requirements:
 
 ## Packaging and Distribution
 
-HSF is intended to be installed using:
+Elwand is intended to be installed using:
 
 ```
 pipx
@@ -365,7 +365,7 @@ Avoid introducing large dependency trees.
 
 ## External Binary Dependencies
 
-HSF may rely on external security tools that are expected to exist on the host system.
+Elwand may rely on external security tools that are expected to exist on the host system.
 
 Examples include:
 
@@ -413,7 +413,7 @@ The WiFi subsystem is **platform-split**: Linux does full passive monitoring + i
 * **Channel hopping works via CoreWLAN** (public API). `wifi_macos.set_channel(iface, chan)` uses `CWInterface.setWLANChannel:error:` (the API `airport` used) and always picks the **20 MHz** variant (beacons are 20 MHz wide; 40/80 MHz variants miss them). `wifi_macos.supported_channels(iface)` returns the radio's own channel list (2.4 + 5 GHz incl. DFS). **The radio latches onto the band it is on when `tcpdump` starts** (start it on 5 GHz and it only captures 5 GHz, even while changing channel), so `capture_loop()` runs **one `tcpdump` per band** — it binds each session by setting that band's first channel, then `_hop_band()` cycles the band's channels for `len(band) * HOP_DWELL + 5` s. `HOP_DWELL = 0.6` and the extra **+5 s slack** matter: `set_channel()` adds overhead, so a band pass takes longer than `len(band) * HOP_DWELL`, and without the slack the last channels of the band (e.g. 5 GHz ch161 / Pixel_4431) were cut off before the capture was stopped and their beacons were missed. `setWLANChannel` refuses to change the channel while the interface is associated, which is exactly the monitor-mode state. **Do not** try `dumpcap -k` (prints "Setting 802.11 channels is not supported on this platform") or `ifconfig <iface> channel` ("bad value") — they do not work on macOS 26; CoreWLAN is the only working path. Requires `pyobjc-framework-CoreWLAN` (already a darwin dependency) and root. The user can **lock a channel** (`wifi_monitor.lock_channel`): `capture_loop()` then opens a single `tcpdump` session on that channel and `_hop_band()` parks on it instead of cycling. Because the radio latches its band, a lock is honoured on both platforms, and the session is immediately recreated when the lock changes or is released (detected by `_pump()`/`_hop_band()` comparing `wifi_monitor._locked_channel`), so switching to a channel on the other band rebinds correctly. This lets a user park the radio on an AP's channel to catch a 4-way handshake — but macOS cannot inject, so the handshake only appears if a client naturally (re)connects.
 * The old `airport` CLI was removed by Apple (only `airportd.sb` remains); `tcpdump -I` + CoreWLAN `setWLANChannel` replace it.
 * Non-root: no capture → `WifiView` falls back to the CoreWLAN scan (scan-only). `WifiDetailView` shows "Probe capture requires root permissions in Mac OS."
-* Note: CoreWLAN scanning needs **Location Services** granted to the terminal; running as **root** (sudo) loses that grant and returns empty SSIDs — run HSF as the normal user for scanning, or as root for monitor capture.
+* Note: CoreWLAN scanning needs **Location Services** granted to the terminal; running as **root** (sudo) loses that grant and returns empty SSIDs — run Elwand as the normal user for scanning, or as root for monitor capture.
 * `iface` discovery falls back to parsing `networksetup -listallhardwareports` if CoreWLAN is unavailable.
 * No PMF field via CoreWLAN.
 
@@ -426,12 +426,12 @@ The WiFi subsystem is **platform-split**: Linux does full passive monitoring + i
 
 ## Evidence Collection
 
-HSF includes mechanisms for recording and preserving evidence generated during assessments.
+Elwand includes mechanisms for recording and preserving evidence generated during assessments.
 
 Evidence is stored under:
 
 ```
-~/.local/share/hsf/evidence/
+~/.local/share/elwand/evidence/
 ```
 
 Purpose:
@@ -451,18 +451,18 @@ Guidelines:
 
 ### LLM Integration (`src/llm/`)
 
-HSF integrates with LLMs via an extensible provider system supporting any OpenAI-compatible API (OpenAI, Anthropic, DeepSeek, Ollama, OpenRouter, etc.).
+Elwand integrates with LLMs via an extensible provider system supporting any OpenAI-compatible API (OpenAI, Anthropic, DeepSeek, Ollama, OpenRouter, etc.).
 
 **Architecture:**
 
-* `config.py` — Persists provider configs to `~/.local/share/hsf/llm.json`. Each provider key doubles as its display name (no separate `name` field). Per-provider `base_url`, `api_key`, `models`, and optional `context_limit` (manual override; blank = auto). Active model is per-provider (`active_models` dict, not global — avoids cross-provider model confusion). System prompts stored in `prompts` dict (deep-merged from defaults on load). Built-in default providers: `opencode` (free tier at `https://opencode.ai/zen/v1`, empty `api_key` — the free models don't require a key, but a user with an opencode zen subscription can fill their own key) and `ollama` (local). New installs start with `opencode` active and `big-pickle` as the model.
-* `models_catalog.py` — resolves the model's real context window the way opencode does: downloads the **models.dev** catalog (`https://models.dev/api.json`) with `urllib.request` (no new deps), caches it to `~/.local/share/hsf/databases/models_catalog.json` (TTL 24h), and exposes `lookup_context_limit(model_name)`. `refresh_async()` prefetches in a daemon thread (never blocks the GUI). The OpenAI `/models` endpoint does **not** return context limits — that's why the catalog is used.
+* `config.py` — Persists provider configs to `~/.local/share/elwand/llm.json`. Each provider key doubles as its display name (no separate `name` field). Per-provider `base_url`, `api_key`, `models`, and optional `context_limit` (manual override; blank = auto). Active model is per-provider (`active_models` dict, not global — avoids cross-provider model confusion). System prompts stored in `prompts` dict (deep-merged from defaults on load). Built-in default providers: `opencode` (free tier at `https://opencode.ai/zen/v1`, empty `api_key` — the free models don't require a key, but a user with an opencode zen subscription can fill their own key) and `ollama` (local). New installs start with `opencode` active and `big-pickle` as the model.
+* `models_catalog.py` — resolves the model's real context window the way opencode does: downloads the **models.dev** catalog (`https://models.dev/api.json`) with `urllib.request` (no new deps), caches it to `~/.local/share/elwand/databases/models_catalog.json` (TTL 24h), and exposes `lookup_context_limit(model_name)`. `refresh_async()` prefetches in a daemon thread (never blocks the GUI). The OpenAI `/models` endpoint does **not** return context limits — that's why the catalog is used.
 * `client.py` — `LLMClient` wraps `openai.OpenAI`. `chat()` / `chat_stream()` / `chat_with_tools()`. Prepends purpose-specific system prompt unless messages already contain a `system` role. Timeout: 300s. `chat_with_tools()` is fully streaming (`stream=True` + `stream_options={"include_usage": True}`), checks `stop_event` per chunk, and returns the accumulated final `content` string (or `None`).
 * `settings.py` — Settings dialog: **Models** tab (provider cards, click to edit/set active) + **Prompts** tab (editable system prompts per purpose).
 
 **Opencode Headers Mimic (`client.py`):**
 
-HSF identifies itself as the official OpenCode client to the opencode zen API. This ensures compatibility and avoids spurious `FreeUsageLimitError` (429) from servers that validate the client identity.
+Elwand identifies itself as the official OpenCode client to the opencode zen API. This ensures compatibility and avoids spurious `FreeUsageLimitError` (429) from servers that validate the client identity.
 
 When the active provider is `opencode`:
 
@@ -546,7 +546,7 @@ Tools are defined as a list of OpenAI function-calling schemas in the `TOOLS` va
 
 | Tool | Description |
 |---|---|
-| `check_status` | Get current HSF state summary: all machine IPs with hostname, domain, device type, and port counts; all domain names; plus counts of users, credentials, passwords, hashes, evidence sessions, shell sessions |
+| `check_status` | Get current Elwand state summary: all machine IPs with hostname, domain, device type, and port counts; all domain names; plus counts of users, credentials, passwords, hashes, evidence sessions, shell sessions |
 | `check_machine` | Get all known info about a machine (IP, hostname, IPv6, MAC, model, device type, OS, domain, timestamps, ports, banners, web services, users) |
 | `check_domain` | Get all known info about a domain (subdomains, directories, web services, machines) |
 | `check_inventory` | Get full inventory: users, credentials, passwords, hashes, people, tickets, dictionaries, rules |
@@ -604,7 +604,7 @@ Tools are defined as a list of OpenAI function-calling schemas in the `TOOLS` va
 | Tool | Description |
 |---|---|
 | `dicma_generate_users` | Generate username permutations from a person's full name (`full_name`, optional `output_name`) |
-| `dicma_find_related` | Find semantically related words via LLM expansion (`words`, optional `n1`/`n2`/`n3`, `output_name`). Uses active LLM config from HSF settings |
+| `dicma_find_related` | Find semantically related words via LLM expansion (`words`, optional `n1`/`n2`/`n3`, `output_name`). Uses active LLM config from Elwand settings |
 | `dicma_generate_passwords` | Generate password permutations from seed words (`words`, optional `mode`, `output_name`) |
 | `dicma_generate_rules` | Generate hashcat rules from built-in patterns or a custom dictionary (`dictionary` optional, `mode`, `output_name`) |
 
@@ -649,10 +649,10 @@ Tools are defined as a list of OpenAI function-calling schemas in the `TOOLS` va
 
 **POC system overview:**
 
-POCs (Proof of Concept) are Python scripts generated by the LLM agent to demonstrate security vulnerabilities or exploit techniques. They are stored in the `pocs/` directory under `~/.local/share/hsf/pocs/`.
+POCs (Proof of Concept) are Python scripts generated by the LLM agent to demonstrate security vulnerabilities or exploit techniques. They are stored in the `pocs/` directory under `~/.local/share/elwand/pocs/`.
 
 **Directory and path resolution:**
-- `src/hsf_paths.py` — `pocs_dir()` returns `Path` to `~/.local/share/hsf/pocs/`, created lazily with `os.makedirs(exist_ok=True)`.
+- `src/elwand_paths.py` — `pocs_dir()` returns `Path` to `~/.local/share/elwand/pocs/`, created lazily with `os.makedirs(exist_ok=True)`.
 - Unlike `lst_dir()` and `rules_dir()`, `pocs_dir()` does not seed initial files from the package — POCs are created on-demand by the agent.
 
 **GUI integration:**
@@ -689,10 +689,10 @@ POCs (Proof of Concept) are Python scripts generated by the LLM agent to demonst
 
 ### Reports System
 
-Reports are markdown documents (`.md`) that record findings. They are stored in the `reports/` directory under `~/.local/share/hsf/reports/` (created lazily, no package seeding). They can be created/edited manually through the GUI, or generated by the agent via the `report_write`/`report_read` tools.
+Reports are markdown documents (`.md`) that record findings. They are stored in the `reports/` directory under `~/.local/share/elwand/reports/` (created lazily, no package seeding). They can be created/edited manually through the GUI, or generated by the agent via the `report_write`/`report_read` tools.
 
 **Directory and path resolution:**
-- `src/hsf_paths.py` — `reports_dir()` returns `Path` to `~/.local/share/hsf/reports/`, created lazily.
+- `src/elwand_paths.py` — `reports_dir()` returns `Path` to `~/.local/share/elwand/reports/`, created lazily.
 
 **GUI integration:**
 - `ReportsView` (`src/gui/views/reports.py`) — lists report files with icon (`report.png`), size, and delete button (same poll-based pattern as `PocsView`). Has a **Back** button (→ `inventory`) and a **New** button that opens `ReportDialog` to create a report manually.
@@ -716,7 +716,7 @@ Reports are markdown documents (`.md`) that record findings. They are stored in 
 **Implementation details for POC tools** (`src/llm/tools.py`):
 
 - `fetch_url()` uses `curl_cffi` (Chrome impersonation) with a Chrome 143 User-Agent.
-- On Cloudflare 403 challenges (`cf-mitigated: challenge` header), retries with `"opencode/HSF"` User-Agent.
+- On Cloudflare 403 challenges (`cf-mitigated: challenge` header), retries with `"opencode/Elwand"` User-Agent.
 - TLS certificate verification is disabled (`verify=False`) to support self-signed certificates on internal targets. `urllib3.disable_warnings()` suppresses insecure request warnings (for the fallback DuckDuckGo search).
 - HTML content is converted to markdown via `html2text` or to plain text via `html.parser` (stdlib).
 - Response size is capped at 5MB; timeout defaults to 30 seconds.
@@ -746,7 +746,7 @@ Reports are markdown documents (`.md`) that record findings. They are stored in 
 
 **Cross-platform browser discovery** is in `src/tools/webrecorder/browser_finder.py` (GUI-free: Chrome, Chromium, Brave, Edge via `shutil.which` + known macOS/Windows paths, so it also works on Linux). `src/tools/webrecorder/browsers.py` re-exports `find_browsers` for backward compatibility.
 
-**Safety:** a browser is launched only when `webfetch` is called with `antibot=true`. The solver runs in the agent's daemon thread and never touches tkinter; CDP runs on a dedicated port (9333) with a dedicated profile (`~/.local/share/hsf/antibot_profile/`), separate from the webrecorder's 9222/`chrome_profile`.
+**Safety:** a browser is launched only when `webfetch` is called with `antibot=true`. The solver runs in the agent's daemon thread and never touches tkinter; CDP runs on a dedicated port (9333) with a dedicated profile (`~/.local/share/elwand/antibot_profile/`), separate from the webrecorder's 9222/`chrome_profile`.
 
 **Known limitations:**
 
@@ -756,7 +756,7 @@ Reports are markdown documents (`.md`) that record findings. They are stored in 
 
 ### Context Management & Compaction
 
-HSF automatically manages LLM context to prevent overflow during long agent or consultor sessions.
+Elwand automatically manages LLM context to prevent overflow during long agent or consultor sessions.
 
 **Context limit resolution** (`_get_model_context_limit()` in `src/gui/app.py`) — priority order:
 1. Manual override: the active provider's `context_limit` field in `llm.json`.
@@ -792,7 +792,7 @@ The summarizer receives the current cache file listing (with associated URLs whe
 - All tool results pass through `_bound_tool_output()` in `src/llm/tools.py` before entering context
 - Checks two thresholds: byte limit and line limit
 - Per-tool byte limits in `TOOL_BYTE_LIMITS`; per-tool line limits in `TOOL_LINE_LIMITS`
-- If output exceeds limits, full content is saved to `~/.local/share/hsf/cache/` and a truncated preview is returned
+- If output exceeds limits, full content is saved to `~/.local/share/elwand/cache/` and a truncated preview is returned
 - The truncation marker includes the exact `read_cache("filename")` command to expand
 - Preview format: first half of lines (head) + truncation marker + last half of lines (tail)
 
@@ -812,7 +812,7 @@ The summarizer receives the current cache file listing (with associated URLs whe
 - This is compression for summarization only — the original tool results in current messages are preserved
 
 **Cache System:**
-- Directory: `~/.local/share/hsf/cache/` (created lazily)
+- Directory: `~/.local/share/elwand/cache/` (created lazily)
 - Files named `tool_{timestamp}_{tool_name}.txt`
 - Cleaned on `reset` command or `delete cache`
 - Tools: `list_files(cache)` to list, `read_cache(filename, offset=1, limit=200)` to read, or `read_cache(filename, regex="pattern", context_before=2, context_after=10)` to search within cached files. Use `delete cache` or `delete_file(cache, filename)` to remove.
@@ -906,7 +906,7 @@ def _cmd_agent(self, args):
         self._enter_agent_mode()    # sets prompt to blue "Agent>"
         return
     prompt = " ".join(args)
-    self._agent_ask(prompt)          # one-shot, stays in HSF> prompt
+    self._agent_ask(prompt)          # one-shot, stays in Elwand> prompt
 
 # Interactive handler — all console input routed here
 def _agent_handler(self, text):
@@ -951,7 +951,7 @@ def _agent_ask(self, prompt):
 On the **first** agent or consultor call of a session, a lightweight state summary is injected at position 0 of `_llm_messages`:
 
 ```
-HSF state: Machines: #1 10.0.0.1, #2 10.0.0.2. Domains: acme.local.
+Elwand state: Machines: #1 10.0.0.1, #2 10.0.0.2. Domains: acme.local.
 Use check_status for details, check_inventory for inventory.
 ```
 

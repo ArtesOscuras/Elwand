@@ -1,6 +1,6 @@
 """macOS Wi-Fi scanning backend based on CoreWLAN (pyobjc).
 
-This module is imported lazily and only ever used when HSF runs on macOS.
+This module is imported lazily and only ever used when Elwand runs on macOS.
 It provides the same normalized network dictionaries as the Linux backend so
 the GUI can render them without platform-specific code.
 
@@ -129,7 +129,7 @@ def _read_exact(stream, n):
 def cleanup_capture():
     """Kill leftover monitor tcpdump processes that hold /dev/bpf* devices.
 
-    If a previous capture was interrupted (Ctrl+C, crash, HSF killed) the
+    If a previous capture was interrupted (Ctrl+C, crash, Elwand killed) the
     tcpdump process can survive and keep the BPF device busy, which makes the
     next capture fail or return nothing. Best effort; needs root to kill the
     root-owned ones."""

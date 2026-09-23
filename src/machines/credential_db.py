@@ -1,7 +1,7 @@
 import os
 import sqlite3
 from datetime import datetime
-from src.hsf_paths import credentials_dir as _credentials_dir
+from src.elwand_paths import credentials_dir as _credentials_dir
 
 
 _DB_PATH = None

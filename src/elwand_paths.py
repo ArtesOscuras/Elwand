@@ -1,8 +1,13 @@
 import os
+import shutil
 from pathlib import Path
 from importlib.resources import files
 
 _PKG = files("src")
+
+_DATA_HOME_NAME = "elwand"
+_LEGACY_DATA_HOME_NAME = "hsf"
+_migrated = False
 
 def fonts_dir() -> Path:
     return _PKG / "fonts"
@@ -13,18 +18,40 @@ def icons_dir() -> Path:
 def hashcat_db() -> Path:
     return _PKG / "data" / "hashcat.dbs"
 
-def _get_data_home() -> Path:
-    override = os.environ.get("HSF_HOME")
-    if override:
-        return Path(override)
+def _compute_base_home() -> Path:
     sudo_user = os.environ.get("SUDO_USER")
     if sudo_user and os.geteuid() == 0:
         import pwd
         try:
-            return Path(pwd.getpwnam(sudo_user).pw_dir) / ".local" / "share" / "hsf"
+            return Path(pwd.getpwnam(sudo_user).pw_dir)
         except Exception:
             pass
-    return Path.home() / ".local" / "share" / "hsf"
+    return Path.home()
+
+
+def _migrate_legacy_data_home(new_home: Path) -> None:
+    global _migrated
+    if _migrated:
+        return
+    _migrated = True
+    old_home = new_home.parent / _LEGACY_DATA_HOME_NAME
+    if old_home == new_home:
+        return
+    try:
+        if old_home.is_dir() and not new_home.exists():
+            new_home.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(old_home), str(new_home))
+    except (OSError, PermissionError):
+        pass
+
+
+def _get_data_home() -> Path:
+    override = os.environ.get("ELWAND_HOME") or os.environ.get("HSF_HOME")
+    if override:
+        return Path(override)
+    new_home = _compute_base_home() / ".local" / "share" / _DATA_HOME_NAME
+    _migrate_legacy_data_home(new_home)
+    return new_home
 
 
 def chown_to_real_user(path):

@@ -3,7 +3,7 @@ import time
 import tkinter as tk
 from datetime import datetime
 from src.gui import fonts
-from src.hsf_paths import logs_dir
+from src.elwand_paths import logs_dir
 from .views import BaseView
 
 _DBG_FILE = os.path.join(logs_dir(), "debugging_logs")

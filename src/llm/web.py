@@ -20,7 +20,7 @@ _CHROME_UA = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/143.0.0.0 Safari/537.36"
 )
-_HSF_UA = "opencode/HSF"
+_ELWAND_UA = "opencode/Elwand"
 
 _DDG_URL = "https://lite.duckduckgo.com/lite/"
 
@@ -339,7 +339,7 @@ def _ddg_search(query, retries=2):
     user_agents = [
         _CHROME_UA,
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
-        _HSF_UA,
+        _ELWAND_UA,
     ]
     for attempt in range(retries):
         ua = user_agents[attempt % len(user_agents)]

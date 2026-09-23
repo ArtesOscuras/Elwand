@@ -8,7 +8,7 @@ from tkinter import ttk
 from src.gui import fonts
 from src.machines import credential_db
 from src.tools.hashcat import HashcatEngine
-from src.hsf_paths import hashcat_db as _hashcat_db
+from src.elwand_paths import hashcat_db as _hashcat_db
 
 BG = "#111111"
 BG_WIDGET = "#000000"
@@ -913,7 +913,7 @@ class HashcatDialog(tk.Toplevel):
 
     def _browse_wordlist(self):
         from tkinter import filedialog
-        from src.hsf_paths import lst_dir
+        from src.elwand_paths import lst_dir
         f = filedialog.askopenfilename(
             title="Select wordlist",
             initialdir=str(lst_dir()),
@@ -923,7 +923,7 @@ class HashcatDialog(tk.Toplevel):
 
     def _browse_rules(self):
         from tkinter import filedialog
-        from src.hsf_paths import rules_dir
+        from src.elwand_paths import rules_dir
         f = filedialog.askopenfilename(
             title="Select rules file",
             initialdir=str(rules_dir()),

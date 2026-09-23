@@ -139,7 +139,7 @@ class Console(tk.Frame):
 
         self.prompt_label = tk.Label(
             input_frame,
-            text="HSF> ",
+            text="Elwand> ",
             bg=BG_INPUT,
             fg=FG,
             font=(fonts.family(), self._font_size),
@@ -451,7 +451,7 @@ class Console(tk.Frame):
                 self._is_system = False
                 self.prompt_label.config(
                     text=f"{self._mode_label}> "
-                    if self._mode_handler else "HSF> ",
+                    if self._mode_handler else "Elwand> ",
                     fg=self._mode_fg if self._mode_handler else FG)
                 self.writeln(f"! stop", color=FG)
                 if self._system_stop_handler:
@@ -550,7 +550,7 @@ class Console(tk.Frame):
             self._mode_handler(raw)
             return
 
-        self.writeln(f"HSF> {raw}", color=FG)
+        self.writeln(f"Elwand> {raw}", color=FG)
 
         parts = raw.split()
         cmd = parts[0].lower()
@@ -615,7 +615,7 @@ class Console(tk.Frame):
             self._is_system = False
             self.prompt_label.config(
                 text=f"{self._mode_label}> "
-                if self._mode_handler else "HSF> ",
+                if self._mode_handler else "Elwand> ",
                 fg=self._mode_fg if self._mode_handler else FG)
             return
         if event.keysym in ("BackSpace", "Delete"):
