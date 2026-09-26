@@ -46,7 +46,7 @@ def serialize_messages(messages):
     return out
 
 
-def save(messages, mode=None, context_injected=False, total_api_tokens=0, console_segments=None, session_id=None):
+def save(messages, mode=None, context_injected=False, total_api_tokens=0, console_segments=None, session_id=None, project_id=None):
     import datetime as _datetime
     data = {
         "messages": serialize_messages(messages),
@@ -55,6 +55,7 @@ def save(messages, mode=None, context_injected=False, total_api_tokens=0, consol
         "total_api_tokens": total_api_tokens,
         "console_segments": console_segments,
         "llm_session_id": session_id,
+        "llm_project_id": project_id,
         "updated": _datetime.datetime.now().isoformat(),
     }
     path = _session_file()

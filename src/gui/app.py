@@ -631,6 +631,7 @@ class App(tk.Tk):
         self._llm_messages = []
         self._llm_request_id = None
         self._llm_session_id = None
+        self._llm_project_id = None
         self._silent_mode_cycle = False
         self._last_ctx_hash = None
         self._context_injected = False
@@ -886,8 +887,8 @@ class App(tk.Tk):
         self.console.set_subcommands("add", ["machine", "domain", "credential", "user", "password", "hash", "people", "dictionary", "rule"])
         self.console.register_command("init", self._cmd_init, "Re-run initialization checks")
         self.console.register_command("settings", self._cmd_settings, "Open settings dialog")
-        self.console.register_command("debug", self._cmd_debug, "Debug utilities (ctx_screenshot)")
-        self.console.set_subcommands("debug", ["ctx_screenshot"])
+        self.console.register_command("debug", self._cmd_debug, "Debug utilities")
+        self.console.set_subcommands("debug", ["ctx_screenshot", "ch_opencode_ses_params"])
         self.console.register_command("exit", self._cmd_exit, "Close the application")
 
         self.console.set_system_handler(self._run_system)
@@ -3966,13 +3967,35 @@ class App(tk.Tk):
 
     def _cmd_debug(self, args):
         if not args:
-            self.console.info("Usage: debug ctx_screenshot")
+            self.console.info("Usage: debug <ctx_screenshot|ch_opencode_ses_params>")
             return
         sub = args[0].lower()
         if sub == "ctx_screenshot":
             self._cmd_debug_ctx_screenshot(args[1:])
+        elif sub == "ch_opencode_ses_params":
+            self._cmd_debug_ch_opencode_ses_params()
         else:
-            self.console.info(f"Unknown debug subcommand: {sub}. Use: ctx_screenshot")
+            self.console.info(
+                f"Unknown debug subcommand: {sub}. Use: ctx_screenshot, "
+                f"ch_opencode_ses_params")
+
+    def _cmd_debug_ch_opencode_ses_params(self):
+        """Rotate the opencode session and project ids.
+
+        The request (message) id already rotates per user turn, so the next
+        prompt gets a new one automatically.
+        """
+        import hashlib
+        import os as _os
+        from src.llm.client import _generate_opencode_id
+        self._llm_session_id = _generate_opencode_id("ses_", descending=True)
+        self._llm_project_id = hashlib.sha1(_os.urandom(32)).hexdigest()
+        self._llm_request_id = None
+        self._save_session()
+        self.console.success(
+            "opencode session parameters changed:\n"
+            f"  x-opencode-session: {self._llm_session_id}\n"
+            f"  x-opencode-project: {self._llm_project_id}")
 
     def _cmd_debug_ctx_screenshot(self, args):
         import json, os
@@ -4210,7 +4233,8 @@ class App(tk.Tk):
                 context_injected=self._context_injected,
                 total_api_tokens=getattr(self, '_total_api_tokens', 0),
                 console_segments=segments,
-                session_id=getattr(self, '_llm_session_id', None))
+                session_id=getattr(self, '_llm_session_id', None),
+                project_id=getattr(self, '_llm_project_id', None))
         except Exception as e:
             _ctx_log(f"session save ERROR: {e}")
 
@@ -4225,6 +4249,7 @@ class App(tk.Tk):
         self._context_injected = False
         self._total_api_tokens = data.get("total_api_tokens", 0)
         self._llm_session_id = data.get("llm_session_id")
+        self._llm_project_id = data.get("llm_project_id")
         segments = data.get("console_segments")
         if segments:
             try:
@@ -4312,7 +4337,8 @@ class App(tk.Tk):
         try:
             from src.llm import LLMClient
             client = LLMClient(purpose="agent", request_id=self._llm_request_id,
-                               session_id=self._llm_session())
+                               session_id=self._llm_session(),
+                               project_id=self._llm_project_id)
             self.console.after(0, lambda: self.console.warning("Compacting context..."))
             ok = compaction.compact_messages(self._llm_messages, client, limit)
             elapsed = (_datetime.datetime.now() - t0).total_seconds()
@@ -4504,7 +4530,8 @@ class App(tk.Tk):
             try:
                 from src.llm import LLMClient
                 client = LLMClient(purpose="agent", request_id=self._llm_request_id,
-                                   session_id=self._llm_session_id)
+                                   session_id=self._llm_session_id,
+                                   project_id=self._llm_project_id)
                 _on_tool = self._make_tool_logger(stop)
                 content = client.chat_with_tools(
                     self._llm_messages, on_tool=_on_tool, tool_context=self,
@@ -4584,7 +4611,8 @@ class App(tk.Tk):
                 from src.llm import LLMClient
                 from src.llm.tools import CONSULTOR_TOOLS
                 client = LLMClient(request_id=self._llm_request_id,
-                                   session_id=self._llm_session_id)
+                                   session_id=self._llm_session_id,
+                                   project_id=self._llm_project_id)
                 _on_tool = self._make_tool_logger(stop)
                 content = client.chat_with_tools(
                     self._llm_messages, tool_context=self, allowed_tools=CONSULTOR_TOOLS,

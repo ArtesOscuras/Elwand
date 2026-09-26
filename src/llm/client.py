@@ -46,7 +46,7 @@ def _generate_opencode_id(prefix, descending=True):
 
 class LLMClient:
     def __init__(self, config=None, purpose="consultor", request_id=None,
-                 session_id=None):
+                 session_id=None, project_id=None):
         import src.llm.config as _cfg
         if config is None:
             config = _cfg.load()
@@ -82,9 +82,11 @@ class LLMClient:
             # user turn and is shared by all tool-call round-trips within it.
             self._session_id = session_id or _generate_opencode_id("ses_", descending=True)
             self._request_id = request_id or _generate_opencode_id("msg_", descending=False)
+            self._project_id = project_id or _OPENCODE_PROJECT
         else:
             self._session_id = None
             self._request_id = None
+            self._project_id = None
 
     def _ensure_client(self):
         if self._client is None:
@@ -110,7 +112,7 @@ class LLMClient:
         if self._provider_id != "opencode":
             return None
         headers = {
-            "x-opencode-project": _OPENCODE_PROJECT,
+            "x-opencode-project": self._project_id,
             "x-opencode-session": self._session_id,
             "x-opencode-request": self._request_id,
             "x-opencode-client": "cli",
