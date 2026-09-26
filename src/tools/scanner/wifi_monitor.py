@@ -55,7 +55,7 @@ _handshake_state = {}
 _handshake_count = 0
 _hold_until = {}
 
-_hash_registered = set()
+_hash_registered = {}
 
 _locked_channel = None
 
@@ -609,17 +609,25 @@ def _write_handshake_hc22000(bssid, client, ssid):
     except Exception as e:
         _emit_error(f"Could not write handshake hc22000: {e}")
         return
-    _register_handshake_hash(bssid, path)
+    _register_handshake_hash(bssid, line)
 
 
-def _register_handshake_hash(bssid, path):
-    if bssid in _hash_registered:
+def _register_handshake_hash(bssid, line):
+    line = (line or "").strip()
+    if not line:
         return
     try:
         from src.machines import credential_db
-        credential_db.save_hash_entry(
-            "WPA handshake", path, hascat_mode="22000", origin="wifi monitor")
-        _hash_registered.add(bssid)
+        existing_id = _hash_registered.get(bssid)
+        if existing_id:
+            # Same BSSID seen again: keep the most recent hash line.
+            credential_db.update_hash_value(existing_id, line)
+        else:
+            hid = credential_db.save_hash_entry(
+                "WPA handshake", line, hascat_mode="22000",
+                origin="wifi monitor")
+            if hid:
+                _hash_registered[bssid] = hid
     except Exception:
         pass
 

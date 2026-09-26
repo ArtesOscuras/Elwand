@@ -673,6 +673,11 @@ class App(tk.Tk):
         start_autosave()
         store.load()
         start_machines_autosave(store)
+        try:
+            from src.machines import credential_db
+            credential_db.repair_handshake_hashes()
+        except Exception:
+            pass
 
         self.after(500, self._run_init_checks)
 

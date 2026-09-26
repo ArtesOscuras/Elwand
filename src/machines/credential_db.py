@@ -325,6 +325,39 @@ def delete_hash_entry(hash_id):
         pass
 
 
+def update_hash_value(hash_id, hash_value):
+    _init_db_path()
+    try:
+        with sqlite3.connect(_DB_PATH) as conn:
+            conn.execute("UPDATE hashes SET hash = ? WHERE id = ?",
+                         (hash_value, hash_id))
+    except (PermissionError, OSError, sqlite3.OperationalError):
+        pass
+
+
+def repair_handshake_hashes():
+    """Repair legacy WPA handshake rows.
+
+    They used to store the path to the .hc22000 file in the `hash` column;
+    replace it with the last hash line of that file.
+    """
+    for item in load_hashes():
+        if (item.get("type") or "") != "WPA handshake":
+            continue
+        value = (item.get("hash") or "").strip()
+        if not value or value.startswith("WPA*"):
+            continue
+        if not (os.path.isfile(value) and value.lower().endswith(".hc22000")):
+            continue
+        try:
+            with open(value, "r", errors="replace") as f:
+                lines = [ln.strip() for ln in f if ln.strip()]
+        except (PermissionError, OSError):
+            continue
+        if lines:
+            update_hash_value(item["id"], lines[-1])
+
+
 def _init_tickets_table(conn):
     conn.execute("""
         CREATE TABLE IF NOT EXISTS tickets (
