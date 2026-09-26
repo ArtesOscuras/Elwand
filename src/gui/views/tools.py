@@ -9,7 +9,7 @@ MUTED = "#888888"
 BRIGHT = "#ffffff"
 
 COL_GAP = "   "
-ICON_SIZE = 50
+ICON_BASE = 50
 
 
 class ToolsView(BaseView):
@@ -125,7 +125,7 @@ class ToolsView(BaseView):
         name_px = font.measure(" " * w_name)
         desc_px = font_desc.measure(" " * w_desc)
 
-        row_content_px = ICON_SIZE + gap_px + name_px + gap_px + desc_px
+        row_content_px = icons.scaled(ICON_BASE) + gap_px + name_px + gap_px + desc_px
 
         w = self.text.winfo_width()
         if w > row_content_px:
@@ -136,7 +136,7 @@ class ToolsView(BaseView):
 
         center_px = tw.measure(center_pad)
         tabs = []
-        t = center_px + ICON_SIZE + gap_px
+        t = center_px + icons.scaled(ICON_BASE) + gap_px
         tabs.append(t)
         t += name_px + gap_px
         tabs.append(t)
@@ -154,7 +154,7 @@ class ToolsView(BaseView):
 
         self.text.insert(tk.END, center_pad, "bright")
 
-        icon = icons.icon(f"{action}.png", size=ICON_SIZE)
+        icon = icons.icon(f"{action}.png", size=icons.scaled(ICON_BASE))
         if icon:
             self.text.image_create(tk.END, image=icon)
         else:

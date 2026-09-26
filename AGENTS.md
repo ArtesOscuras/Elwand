@@ -125,6 +125,8 @@ Key functions:
 
 When adding new views, **always use `view_font` / `view_font_bold` instead of raw font tuples**. This ensures the view responds to zoom without additional work.
 
+**Icons (`src/gui/icons.py`):** icon sizes are reference sizes that must be scaled with `icons.scaled(base)`, which multiplies by the global scale (`windowing.ui_scale() * fonts.view_scale()`). Pass the scaled value to `icons.icon(name, size=icons.scaled(base))` and use the same value in any manual pixel layout (row widths, tab stops), otherwise icons and columns will drift after a zoom or on a HiDPI screen. `icons.delete_icon()` and `all_icons()` already scale internally. On zoom, `nav._zoom()` calls `set_zoom_callback` (wired by `App._on_zoom_changed`) to force the active view to re-render so the new icon sizes take effect immediately.
+
 ---
 
 ### GUI Layout Stability on macOS Aqua

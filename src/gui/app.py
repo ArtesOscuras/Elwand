@@ -643,8 +643,10 @@ class App(tk.Tk):
         self._shell_listener = None
 
         from src.gui.views.nav import set_settings_callback as _nav_set_settings
+        from src.gui.views.nav import set_zoom_callback as _nav_set_zoom_cb
         from .dialogs.settings import SettingsDialog
         _nav_set_settings(lambda: SettingsDialog(self))
+        _nav_set_zoom_cb(self._on_zoom_changed)
 
         try:
             from src.llm import models_catalog
@@ -5725,6 +5727,26 @@ class App(tk.Tk):
         self.visualizer._refresh_labels(self.visualizer.get_active_view())
         self.winfo_toplevel().update_idletasks()
         return "break"
+
+    def _on_zoom_changed(self):
+        view = self.visualizer.get_active_view()
+        if view is None:
+            return
+        if hasattr(view, "_on_resize"):
+            try:
+                view._on_resize(None)
+                return
+            except Exception:
+                pass
+        if hasattr(view, "_last_hash"):
+            view._last_hash = None
+        if hasattr(view, "_rendered"):
+            view._rendered = False
+        if hasattr(view, "_poll"):
+            try:
+                view._poll()
+            except Exception:
+                pass
 
     def _safe_after(self, callback, *args):
         try:

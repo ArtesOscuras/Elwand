@@ -11,7 +11,7 @@ BRIGHT = "#ffffff"
 INFO = "#5ba3ec"
 
 COL_GAP = "   "
-ICON_SIZE = 50
+ICON_BASE = 50
 
 
 class PeopleView(BaseView):
@@ -149,7 +149,7 @@ class PeopleView(BaseView):
         def col_w(n):
             return font.measure(" " * n)
 
-        row_px = ICON_SIZE + gap_px + col_w(w_name) + gap_px + col_w(w_info) + char_w + 20
+        row_px = icons.scaled(ICON_BASE) + gap_px + col_w(w_name) + gap_px + col_w(w_info) + char_w + 20
 
         w = self.text.winfo_width()
         if w > row_px:
@@ -160,7 +160,7 @@ class PeopleView(BaseView):
 
         center_px = font.measure(center_pad)
         tabs = []
-        t = center_px + ICON_SIZE + gap_px
+        t = center_px + icons.scaled(ICON_BASE) + gap_px
         tabs.append(t)
         t += col_w(w_name) + gap_px
         tabs.append(t)
@@ -192,7 +192,7 @@ class PeopleView(BaseView):
 
         self.text.insert(tk.END, center_pad, "bright")
 
-        icon = icons.icon("people.png", size=ICON_SIZE)
+        icon = icons.icon("people.png", size=icons.scaled(ICON_BASE))
         if icon:
             self.text.image_create(tk.END, image=icon)
         else:

@@ -25,7 +25,7 @@ BRIGHT = "#ffffff"
 DISABLED_FG = "#444444"
 
 COL_GAP = "   "
-ICON_SIZE = 50
+ICON_BASE = 50
 
 
 class InventoryView(BaseView):
@@ -142,7 +142,7 @@ class InventoryView(BaseView):
         self._font12 = fonts.view_font(12)
 
         for item in self._items:
-            icons.icon(item["icon"], size=ICON_SIZE)
+            icons.icon(item["icon"], size=icons.scaled(ICON_BASE))
 
         self._rendered = False
         self._poll_id = None
@@ -189,7 +189,7 @@ class InventoryView(BaseView):
         gap_px = self._font16.measure(COL_GAP)
         char_w = self._font16.measure(" ")
 
-        row_content_px = ICON_SIZE + gap_px + name_px + gap_px + desc_px
+        row_content_px = icons.scaled(ICON_BASE) + gap_px + name_px + gap_px + desc_px
 
         w = self.text.winfo_width()
         if w > row_content_px:
@@ -200,7 +200,7 @@ class InventoryView(BaseView):
 
         center_px = self._font16.measure(center_pad)
         tabs = []
-        t = center_px + ICON_SIZE + gap_px
+        t = center_px + icons.scaled(ICON_BASE) + gap_px
         tabs.append(t)
         t += name_px + gap_px
         tabs.append(t)
@@ -220,7 +220,7 @@ class InventoryView(BaseView):
 
         self.text.insert(tk.END, center_pad, "bright")
 
-        icon = icons.icon(icon_name, size=ICON_SIZE)
+        icon = icons.icon(icon_name, size=icons.scaled(ICON_BASE))
         if icon:
             self.text.image_create(tk.END, image=icon)
         else:

@@ -1,5 +1,6 @@
 import os
 from PIL import Image, ImageTk
+from src.gui import fonts, windowing
 from src.elwand_paths import icons_dir as _icons_dir
 
 _ICONS_DIR = str(_icons_dir())
@@ -8,6 +9,12 @@ _cache = {}
 
 def _path(name):
     return os.path.join(_ICONS_DIR, name)
+
+
+def scaled(base):
+    """Scale a reference icon size by the global UI scale (DPI) and zoom."""
+    factor = windowing.ui_scale() * fonts.view_scale()
+    return max(1, int(round(base * factor)))
 
 
 def icon(name, size=50):
@@ -35,11 +42,12 @@ def all_icons(size=50):
         if not fname.lower().endswith(".png"):
             continue
         name = os.path.splitext(fname)[0].lower()
-        img = icon(fname, size)
+        img = icon(fname, scaled(size))
         if img:
             result[name] = img
     return result
 
 
 def delete_icon():
-    return icon("delete.png", size=20)
+    return icon("delete.png", size=scaled(20))
+

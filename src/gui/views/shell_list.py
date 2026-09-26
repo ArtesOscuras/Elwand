@@ -16,7 +16,7 @@ ERR_COLOR = "#f44747"
 _agent_allowed = set()
 
 COL_GAP = "   "
-ICON_SIZE = 50
+ICON_BASE = 50
 
 
 class ShellListView(BaseView):
@@ -130,7 +130,7 @@ class ShellListView(BaseView):
 
         self.text.insert(tk.END, "\t", "bright")
 
-        icon = icons.icon("shells.png", size=ICON_SIZE)
+        icon = icons.icon("shells.png", size=icons.scaled(ICON_BASE))
         if icon:
             self.text.image_create(tk.END, image=icon)
         else:
@@ -196,7 +196,7 @@ class ShellListView(BaseView):
         def col_w(n):
             return font.measure(" " * n)
 
-        row_content_px = col_w(w_id) + gap_px + ICON_SIZE + gap_px + col_w(w_ip) + gap_px + col_w(w_type) + gap_px + col_w(w_status)
+        row_content_px = col_w(w_id) + gap_px + icons.scaled(ICON_BASE) + gap_px + col_w(w_ip) + gap_px + col_w(w_type) + gap_px + col_w(w_status)
 
         w = self.text.winfo_width()
         if w > row_content_px:
@@ -209,7 +209,7 @@ class ShellListView(BaseView):
         tabs = []
         t = center_px + col_w(w_id) + gap_px
         tabs.append(t)
-        t += ICON_SIZE + gap_px
+        t += icons.scaled(ICON_BASE) + gap_px
         tabs.append(t)
         t += col_w(w_ip) + gap_px
         tabs.append(t)

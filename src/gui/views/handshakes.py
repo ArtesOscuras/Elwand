@@ -11,7 +11,7 @@ MUTED = "#888888"
 BRIGHT = "#ffffff"
 
 COL_GAP = "   "
-ICON_SIZE = 50
+ICON_BASE = 50
 MIN_NAME = 12
 
 
@@ -136,7 +136,7 @@ class HandshakesView(BaseView):
             return font.measure(" " * n)
 
         w_size = 8
-        row_px = ICON_SIZE + gap_px + col_w(w_name) + gap_px + col_w(w_size) + gap_px + 20
+        row_px = icons.scaled(ICON_BASE) + gap_px + col_w(w_name) + gap_px + col_w(w_size) + gap_px + 20
 
         w = self.text.winfo_width()
         if w > row_px:
@@ -146,7 +146,7 @@ class HandshakesView(BaseView):
             center_pad = "  "
 
         center_px = font.measure(center_pad)
-        tabs = [center_px + ICON_SIZE + gap_px]
+        tabs = [center_px + icons.scaled(ICON_BASE) + gap_px]
         tabs.append(tabs[0] + col_w(w_name) + gap_px)
         tabs.append(tabs[1] + col_w(w_size) + gap_px)
 
@@ -172,7 +172,7 @@ class HandshakesView(BaseView):
 
                 self.text.insert(tk.END, center_pad, "bright")
 
-                hs_icon = icons.icon("handshake.png", size=ICON_SIZE)
+                hs_icon = icons.icon("handshake.png", size=icons.scaled(ICON_BASE))
                 if hs_icon:
                     self.text.image_create(tk.END, image=hs_icon)
                 else:

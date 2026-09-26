@@ -11,7 +11,7 @@ MUTED = "#888888"
 BRIGHT = "#ffffff"
 
 COL_GAP = "   "
-ICON_SIZE = 50
+ICON_BASE = 50
 MIN_NAME = 12
 
 
@@ -147,7 +147,7 @@ class ReportsView(BaseView):
             return font.measure(" " * n)
 
         w_size = 8
-        row_px = ICON_SIZE + gap_px + col_w(w_name) + gap_px + col_w(w_size) + gap_px + 20
+        row_px = icons.scaled(ICON_BASE) + gap_px + col_w(w_name) + gap_px + col_w(w_size) + gap_px + 20
 
         w = self.text.winfo_width()
         if w > row_px:
@@ -157,7 +157,7 @@ class ReportsView(BaseView):
             center_pad = "  "
 
         center_px = font.measure(center_pad)
-        tabs = [center_px + ICON_SIZE + gap_px]
+        tabs = [center_px + icons.scaled(ICON_BASE) + gap_px]
         tabs.append(tabs[0] + col_w(w_name) + gap_px)
         tabs.append(tabs[1] + col_w(w_size) + gap_px)
 
@@ -183,7 +183,7 @@ class ReportsView(BaseView):
 
                 self.text.insert(tk.END, center_pad, "bright")
 
-                rep_icon = icons.icon("report.png", size=ICON_SIZE)
+                rep_icon = icons.icon("report.png", size=icons.scaled(ICON_BASE))
                 if rep_icon:
                     self.text.image_create(tk.END, image=rep_icon)
                 else:

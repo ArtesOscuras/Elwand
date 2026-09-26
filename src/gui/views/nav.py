@@ -15,7 +15,9 @@ _ORDER = [
 _frame = None
 _btns = []
 _zoom_labels = []
+_icon_buttons = []
 _settings_callback = None
+_zoom_callback = None
 
 
 def build(parent, active_view, navigator):
@@ -57,7 +59,7 @@ def build(parent, active_view, navigator):
 
     settings_frame = tk.Frame(_frame, bg="#000000")
     settings_frame.pack(side=tk.LEFT, padx=(15, 0))
-    settings_img = icons.icon("settings.png", size=34)
+    settings_img = icons.icon("settings.png", size=icons.scaled(34))
     settings_btn = tk.Label(
         settings_frame, image=settings_img, bg="#000000",
         cursor="",
@@ -67,6 +69,7 @@ def build(parent, active_view, navigator):
     settings_btn.bind("<Button-1>", lambda e: _settings_callback and _settings_callback())
     settings_btn.bind("<Enter>", lambda e: settings_btn.config(bg="#222222"))
     settings_btn.bind("<Leave>", lambda e: settings_btn.config(bg="#000000"))
+    _icon_buttons.append((settings_btn, "settings.png", 34))
 
     tk.Frame(_frame, bg="#000000", width=40).pack(side=tk.LEFT)
     tk.Frame(_frame, bg="#000000").pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -97,6 +100,8 @@ def _zoom(delta):
     from src.settings import set as _set_setting, save as _save_settings
     fonts.set_view_scale(fonts.view_scale() + delta)
     _update_label()
+    _refresh_icons()
+    _notify_zoom()
     _set_setting("view_scale", fonts.view_scale())
     _save_settings()
 
@@ -106,9 +111,34 @@ def set_settings_callback(fn):
     _settings_callback = fn
 
 
+def set_zoom_callback(fn):
+    global _zoom_callback
+    _zoom_callback = fn
+
+
 def set_initial_zoom(scale):
     fonts.set_view_scale(scale)
     _update_label()
+    _refresh_icons()
+
+
+def _notify_zoom():
+    if _zoom_callback:
+        try:
+            _zoom_callback()
+        except Exception:
+            pass
+
+
+def _refresh_icons():
+    for btn, name, base in _icon_buttons:
+        try:
+            img = icons.icon(name, size=icons.scaled(base))
+            if img is not None:
+                btn.config(image=img)
+                btn.image = img
+        except tk.TclError:
+            pass
 
 
 def _update_label():

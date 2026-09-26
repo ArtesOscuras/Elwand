@@ -17,7 +17,7 @@ MEDIUM = "#e6b422"
 WEAK = "#cc3333"
 
 COL_GAP = "   "
-ICON_SIZE = 50
+ICON_BASE = 50
 
 BSSID_W = 17
 MIN_SSID = 12
@@ -325,7 +325,7 @@ class WifiView(BaseView):
             return font.measure(" " * n)
 
         bssid_px = col_w(BSSID_W)
-        row_px = (ICON_SIZE + gap_px + col_w(w_ssid) + gap_px + bssid_px + gap_px +
+        row_px = (icons.scaled(ICON_BASE) + gap_px + col_w(w_ssid) + gap_px + bssid_px + gap_px +
                   col_w(w_sig) + gap_px + col_w(w_sec) + gap_px +
                   col_w(w_chan) + gap_px + col_w(w_freq))
 
@@ -338,7 +338,7 @@ class WifiView(BaseView):
 
         center_px = font.measure(center_pad)
         tabs = []
-        t = center_px + ICON_SIZE + gap_px
+        t = center_px + icons.scaled(ICON_BASE) + gap_px
         tabs.append(t)
         t += col_w(w_ssid) + gap_px
         tabs.append(t)
@@ -383,7 +383,7 @@ class WifiView(BaseView):
     def _insert_line(self, n, center_pad):
         self.text.insert(tk.END, center_pad, "bright")
 
-        icon = icons.icon("wifi.png", size=ICON_SIZE)
+        icon = icons.icon("wifi.png", size=icons.scaled(ICON_BASE))
         if icon:
             self.text.image_create(tk.END, image=icon)
         else:

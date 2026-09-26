@@ -12,7 +12,7 @@ MUTED = "#888888"
 BRIGHT = "#ffffff"
 
 COL_GAP = "   "
-ICON_SIZE = 50
+ICON_BASE = 50
 
 
 class NetworkView(BaseView):
@@ -110,18 +110,18 @@ class NetworkView(BaseView):
     def _guess_icon(machine):
         dt = (machine.device_type or "device unknown").lower()
         if dt == "device unknown":
-            return icons.icon("question.png", size=50)
+            return icons.icon("question.png", size=icons.scaled(ICON_BASE))
         if dt == "gateway":
-            return icons.icon("router.png", size=50) or icons.icon("question.png", size=50)
+            return icons.icon("router.png", size=icons.scaled(ICON_BASE)) or icons.icon("question.png", size=icons.scaled(ICON_BASE))
         if "android probable" in dt:
-            return icons.icon("android2.png", size=50)
+            return icons.icon("android2.png", size=icons.scaled(ICON_BASE))
         for name in ["linux device", "windows", "mac", "android", "ios device",
                       "iphone", "ipad",
                       "ubuntu", "debian", "fedora", "centos", "arch", "kali",
                       "freebsd", "router", "printer", "camera"]:
             if name in dt or dt in name:
-                return icons.icon(f"{name}.png", size=50)
-        return icons.icon("question.png", size=50)
+                return icons.icon(f"{name}.png", size=icons.scaled(ICON_BASE))
+        return icons.icon("question.png", size=icons.scaled(ICON_BASE))
 
     @staticmethod
     def _format_ip(machine):
@@ -217,7 +217,7 @@ class NetworkView(BaseView):
         def col_w(n):
             return font.measure(" " * n)
 
-        row_content_px = col_w(w_id) + gap_px + ICON_SIZE + gap_px + col_w(w_device) + gap_px + col_w(w_hostname) + gap_px + col_w(w_ip) + gap_px + col_w(3)
+        row_content_px = col_w(w_id) + gap_px + icons.scaled(ICON_BASE) + gap_px + col_w(w_device) + gap_px + col_w(w_hostname) + gap_px + col_w(w_ip) + gap_px + col_w(3)
 
         w = self.text.winfo_width()
         if w > row_content_px:
@@ -230,7 +230,7 @@ class NetworkView(BaseView):
         tabs = []
         t = center_px + col_w(w_id) + gap_px
         tabs.append(t)
-        t += ICON_SIZE + gap_px
+        t += icons.scaled(ICON_BASE) + gap_px
         tabs.append(t)
         t += col_w(w_device) + gap_px
         tabs.append(t)
