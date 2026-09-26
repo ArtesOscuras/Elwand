@@ -1,8 +1,10 @@
 import os
+import threading
 import tkinter as tk
 import tkinter.font as tkfont
 from src.gui import fonts
 from src.gui import icons
+from src.gui import windowing
 from .base import BaseView
 from .nav import build as build_nav
 from src.elwand_paths import handshakes_dir
@@ -77,6 +79,16 @@ class HandshakesView(BaseView):
         btn_frame = tk.Frame(self, bg="#000000")
         btn_frame.grid(row=2, column=0, pady=(15, 15))
 
+        extract_btn = tk.Label(
+            btn_frame, text="  Extract hash  ", bg="#222222", fg=BRIGHT,
+            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            padx=15, pady=6,
+        )
+        extract_btn.pack(side=tk.LEFT, padx=(0, 10))
+        extract_btn.bind("<Button-1>", lambda e: self._open_extract())
+        extract_btn.bind("<Enter>", lambda e: extract_btn.config(bg="#333333"))
+        extract_btn.bind("<Leave>", lambda e: extract_btn.config(bg="#222222"))
+
         back_btn = tk.Label(
             btn_frame, text="  \u2190 Back  ", bg="#222222", fg=BRIGHT,
             font=fonts.view_font(10), relief=tk.RAISED, bd=1,
@@ -91,6 +103,9 @@ class HandshakesView(BaseView):
         self._last_hash = None
         self._poll_id = None
         self._resize_id = None
+
+    def _open_extract(self):
+        ExtractHashDialog(self.winfo_toplevel())
 
     def _on_resize(self, event):
         if self._resize_id:
@@ -199,3 +214,219 @@ class HandshakesView(BaseView):
         self.text.yview_moveto(scroll_pos)
         self.text.configure(state=tk.DISABLED)
         self._poll_id = self.after(2000, self._poll)
+
+
+class ExtractHashDialog(tk.Toplevel):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title("Extract hash")
+        windowing.size_dialog(self, 860, 560, min_w=720, min_h=460)
+        self.configure(bg="#111111")
+        self.transient(parent)
+
+        self._pcaps = []
+        self._handshakes = []
+        self._parse_token = 0
+        self._extract_enabled = False
+
+        self.columnconfigure(0, weight=1)
+        self.columnconfigure(1, weight=1)
+        self.rowconfigure(1, weight=1)
+
+        tk.Label(self, text="PCAP files", fg=MUTED, bg="#111111",
+                 font=fonts.view_font_bold(11), anchor="w").grid(
+            row=0, column=0, sticky="ew", padx=(15, 8), pady=(12, 2))
+        tk.Label(self, text="Handshakes found", fg=MUTED, bg="#111111",
+                 font=fonts.view_font_bold(11), anchor="w").grid(
+            row=0, column=1, sticky="ew", padx=(8, 15), pady=(12, 2))
+
+        left = tk.Frame(self, bg="#000000")
+        left.grid(row=1, column=0, sticky="nsew", padx=(15, 8))
+        left.columnconfigure(0, weight=1)
+        left.rowconfigure(0, weight=1)
+        self._pcap_list = tk.Listbox(
+            left, bg="#000000", fg=BRIGHT, font=fonts.view_font(11),
+            selectbackground="#333333", selectforeground=BRIGHT,
+            activestyle="none", borderwidth=0, highlightthickness=0,
+            cursor="", exportselection=False,
+        )
+        self._pcap_list.grid(row=0, column=0, sticky="nsew")
+        self._make_scrollbar(left, self._pcap_list).grid(
+            row=0, column=1, sticky="ns")
+        self._pcap_list.bind("<<ListboxSelect>>", self._on_pcap_select)
+
+        right = tk.Frame(self, bg="#000000")
+        right.grid(row=1, column=1, sticky="nsew", padx=(8, 15))
+        right.columnconfigure(0, weight=1)
+        right.rowconfigure(0, weight=1)
+        self._hs_list = tk.Listbox(
+            right, bg="#000000", fg=BRIGHT, font=fonts.view_font(11),
+            selectbackground="#333333", selectforeground=BRIGHT,
+            activestyle="none", borderwidth=0, highlightthickness=0,
+            cursor="", exportselection=False,
+        )
+        self._hs_list.grid(row=0, column=0, sticky="nsew")
+        self._make_scrollbar(right, self._hs_list).grid(
+            row=0, column=1, sticky="ns")
+        self._hs_list.bind("<<ListboxSelect>>", self._on_hs_select)
+
+        self._status = tk.Label(
+            self, text="", fg=MUTED, bg="#111111",
+            font=fonts.view_font(10), anchor="w", justify=tk.LEFT,
+        )
+        self._status.grid(row=2, column=0, columnspan=2, sticky="ew",
+                          padx=15, pady=(8, 0))
+
+        btns = tk.Frame(self, bg="#111111")
+        btns.grid(row=3, column=0, columnspan=2, sticky="ew",
+                  padx=15, pady=(8, 14))
+
+        self._extract_btn = tk.Label(
+            btns, text="  Extract hash  ", bg="#222222", fg=MUTED,
+            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            padx=15, pady=6, cursor="",
+        )
+        self._extract_btn.pack(side=tk.LEFT)
+        self._extract_btn.bind("<Button-1>", lambda e: self._extract())
+        self._extract_btn.bind(
+            "<Enter>", lambda e: self._extract_hover(True))
+        self._extract_btn.bind(
+            "<Leave>", lambda e: self._extract_hover(False))
+
+        close_btn = tk.Label(
+            btns, text="  Close  ", bg="#222222", fg=BRIGHT,
+            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            padx=15, pady=6, cursor="",
+        )
+        close_btn.pack(side=tk.RIGHT)
+        close_btn.bind("<Button-1>", lambda e: self.destroy())
+        close_btn.bind("<Enter>", lambda e: close_btn.config(bg="#333333"))
+        close_btn.bind("<Leave>", lambda e: close_btn.config(bg="#222222"))
+
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+
+        self._load_pcaps()
+
+        self.update_idletasks()
+        self.wait_visibility()
+        self.grab_set()
+
+    @staticmethod
+    def _make_scrollbar(parent, widget):
+        sb = tk.Scrollbar(parent, orient=tk.VERTICAL, command=widget.yview)
+        sb.configure(bg="#333333", troughcolor="#1a1a1a",
+                     activebackground="#555555", width=10,
+                     borderwidth=0, highlightthickness=0,
+                     elementborderwidth=0)
+        widget.configure(yscrollcommand=sb.set)
+        return sb
+
+    def _set_extract_state(self, enabled):
+        self._extract_enabled = enabled
+        self._extract_btn.config(fg=BRIGHT if enabled else MUTED)
+
+    def _extract_hover(self, entering):
+        if not self._extract_enabled:
+            return
+        self._extract_btn.config(bg="#333333" if entering else "#222222")
+
+    def _post(self, fn, *args):
+        safe = getattr(self.winfo_toplevel(), "_safe_after", None)
+        if callable(safe):
+            safe(fn, *args)
+            return
+        try:
+            if args:
+                self.after(0, fn, *args)
+            else:
+                self.after(0, fn)
+        except (tk.TclError, RuntimeError):
+            pass
+
+    def _load_pcaps(self):
+        base = str(handshakes_dir())
+        try:
+            files = sorted(f for f in os.listdir(base)
+                           if f.lower().endswith(".pcap")
+                           and os.path.isfile(os.path.join(base, f)))
+        except OSError:
+            files = []
+        self._pcaps = [os.path.join(base, f) for f in files]
+        self._pcap_list.delete(0, tk.END)
+        for f in files:
+            self._pcap_list.insert(tk.END, f)
+        if self._pcaps:
+            self._pcap_list.selection_set(0)
+            self._on_pcap_select()
+        else:
+            self._status.config(text="No .pcap files in the handshakes folder.")
+
+    def _on_pcap_select(self, event=None):
+        sel = self._pcap_list.curselection()
+        self._handshakes = []
+        self._hs_list.delete(0, tk.END)
+        self._set_extract_state(False)
+        if not sel or sel[0] >= len(self._pcaps):
+            return
+        path = self._pcaps[sel[0]]
+        self._status.config(text="Parsing handshakes...")
+        self._parse_token += 1
+        threading.Thread(target=self._parse_worker,
+                         args=(path, self._parse_token), daemon=True).start()
+
+    def _parse_worker(self, path, token):
+        from src.tools.scanner import wifi_monitor as wm
+        try:
+            results, err = wm.extract_handshakes_from_pcap(path), None
+        except Exception as e:
+            results, err = [], str(e)
+        self._post(self._show_results, token, results, err)
+
+    def _show_results(self, token, results, err):
+        if token != self._parse_token or not self.winfo_exists():
+            return
+        self._handshakes = results
+        self._hs_list.delete(0, tk.END)
+        if err:
+            self._status.config(text=f"Error parsing pcap: {err}")
+            return
+        if not results:
+            self._status.config(
+                text="No complete handshake found in this pcap.")
+            return
+        for hs in results:
+            ssid = hs["ssid"] or "(hidden)"
+            msgs = "".join(str(m) for m in hs["messages"]) or "?"
+            self._hs_list.insert(
+                tk.END,
+                f"{ssid}   {hs['bssid']}   client {hs['client']}   "
+                f"MSGs {msgs}   mp {hs['message_pair']}")
+        self._status.config(
+            text=f"{len(results)} handshake(s) found. Select one and press "
+                 f"Extract hash.")
+
+    def _on_hs_select(self, event=None):
+        sel = self._hs_list.curselection()
+        self._set_extract_state(bool(sel))
+
+    def _extract(self):
+        sel = self._hs_list.curselection()
+        if not sel or sel[0] >= len(self._handshakes):
+            return
+        line = self._handshakes[sel[0]]["line"]
+        try:
+            from src.machines import credential_db
+            existing = {h.get("hash", "") for h in credential_db.load_hashes()}
+            if line in existing:
+                self._status.config(
+                    text="This hash is already in the inventory.")
+                return
+            hid = credential_db.save_hash_entry(
+                "WPA handshake", line, hascat_mode="22000",
+                origin="manual extract")
+        except Exception as e:
+            self._status.config(text=f"Could not save hash: {e}")
+            return
+        self._status.config(
+            text=f"Hash created (#{hid}). Crack it from the Hashes view "
+                 f"with hashcat.")

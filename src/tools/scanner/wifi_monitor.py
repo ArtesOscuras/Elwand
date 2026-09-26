@@ -632,6 +632,122 @@ def _register_handshake_hash(bssid, line):
         pass
 
 
+def _ssid_from_hc22000(path, bssid):
+    mac = bssid.replace(":", "").lower()
+    try:
+        with open(path, "r", errors="replace") as f:
+            for ln in f:
+                parts = ln.strip().split("*")
+                if len(parts) >= 6 and parts[1] == "02" and parts[3].lower() == mac:
+                    try:
+                        return bytes.fromhex(parts[5]).decode("utf-8", "replace")
+                    except ValueError:
+                        return None
+    except OSError:
+        return None
+    return None
+
+
+def _ssid_for_bssid(bssid, pcap_path=None):
+    with _lock:
+        net = _networks.get(bssid)
+    if net and net.get("ssid") and net["ssid"] != "(hidden)":
+        return net["ssid"]
+    if pcap_path:
+        hc = os.path.splitext(pcap_path)[0] + ".hc22000"
+        if os.path.isfile(hc):
+            ssid = _ssid_from_hc22000(hc, bssid)
+            if ssid:
+                return ssid
+        base = os.path.basename(pcap_path)
+        mac = bssid.replace(":", "").lower()
+        suffix = f"_{mac}.pcap"
+        if base.lower().endswith(suffix):
+            return base[:-len(suffix)]
+    return ""
+
+
+def extract_handshakes_from_pcap(path):
+    """Parse a .pcap file and return the handshakes it contains.
+
+    Returns a list of dicts: ``{bssid, client, ssid, keyver, message_pair,
+    messages, line}`` where ``line`` is a hashcat 22000 hash line.
+    """
+    try:
+        from scapy.utils import PcapReader
+        reader = PcapReader(path)
+    except Exception:
+        return []
+
+    states = {}
+    order = []
+    try:
+        for pkt in reader:
+            if not _is_eapol_key(pkt):
+                continue
+            try:
+                d = pkt[Dot11]
+            except Exception:
+                continue
+            addr1, addr2, addr3 = _mac(d.addr1), _mac(d.addr2), _mac(d.addr3)
+            bssid = addr3 if addr3 and addr3 != _BROADCAST else (addr2 or addr1)
+            if not bssid:
+                continue
+            if addr1 and addr1 != bssid:
+                client = addr1
+            elif addr2 and addr2 != bssid:
+                client = addr2
+            else:
+                continue
+            fields = _extract_eapol(pkt)
+            if not fields:
+                continue
+            key = (bssid, client)
+            st = states.get(key)
+            if st is None:
+                st = states[key] = {"seen": set(), "anonce": None,
+                                    "keymic": None, "keyver": 0, "eapol": None}
+                order.append(key)
+            msg = fields["msg"]
+            if msg:
+                st["seen"].add(msg)
+            if msg == 1 and not st["anonce"]:
+                st["anonce"] = fields["nonce"]
+            elif msg == 2:
+                st["keymic"] = fields["mic"]
+                st["keyver"] = fields["keyver"]
+                st["eapol"] = fields["eapol"]
+            elif msg == 3 and not st["anonce"]:
+                st["anonce"] = fields["nonce"]
+    finally:
+        try:
+            reader.close()
+        except Exception:
+            pass
+
+    results = []
+    for bssid, client in order:
+        st = states[(bssid, client)]
+        complete = ((1 in st["seen"] and 2 in st["seen"])
+                    or (2 in st["seen"] and 3 in st["seen"]))
+        if not (complete and st["anonce"] and st["keymic"] and st["eapol"]):
+            continue
+        ssid = _ssid_for_bssid(bssid, path)
+        msg_pair = _message_pair(st["seen"])
+        line = _build_hc22000_line(ssid, bssid, client, st["anonce"],
+                                   st["keymic"], st["eapol"], msg_pair)
+        results.append({
+            "bssid": bssid,
+            "client": client,
+            "ssid": ssid,
+            "keyver": st["keyver"],
+            "message_pair": msg_pair,
+            "messages": sorted(st["seen"]),
+            "line": line.strip(),
+        })
+    return results
+
+
 def _notify_handshake(bssid, client, ssid):
     try:
         from src import event_bus
