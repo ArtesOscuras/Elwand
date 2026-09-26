@@ -885,8 +885,6 @@ class App(tk.Tk):
         self.console.set_subcommands("add", ["machine", "domain", "credential", "user", "password", "hash", "people", "dictionary", "rule"])
         self.console.register_command("init", self._cmd_init, "Re-run initialization checks")
         self.console.register_command("settings", self._cmd_settings, "Open settings dialog")
-        self.console.register_command("consultor", self._cmd_consultor, "Enter LLM consultor mode")
-        self.console.register_command("agent", self._cmd_agent, "Enter LLM agent mode")
         self.console.register_command("debug", self._cmd_debug, "Debug utilities (ctx_screenshot)")
         self.console.set_subcommands("debug", ["ctx_screenshot"])
         self.console.register_command("exit", self._cmd_exit, "Close the application")
@@ -3964,20 +3962,6 @@ class App(tk.Tk):
     def _cmd_settings(self, args):
         from .dialogs.settings import SettingsDialog
         SettingsDialog(self)
-
-    def _cmd_consultor(self, args):
-        if not args:
-            self._enter_consultor_mode()
-            return
-        prompt = " ".join(args)
-        self._consultor_ask(prompt)
-
-    def _cmd_agent(self, args):
-        if not args:
-            self._enter_agent_mode()
-            return
-        prompt = " ".join(args)
-        self._agent_ask(prompt)
 
     def _cmd_debug(self, args):
         if not args:
