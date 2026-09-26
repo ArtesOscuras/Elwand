@@ -57,13 +57,19 @@ src/gui/views/nav.py
 
 It is located at the top of the views section.
 
-The nav bar includes a **settings gear icon** (`settings.png`, 34px) on the far left that opens `SettingsDialog` via a callback (`set_settings_callback(fn)`) registered by `App.__init__` **before** `_register_views()` so the callback is available when views construct their nav bars. The icon follows the same hover pattern as buttons (`bg="#000000"` → `bg="#222222"`, no cursor change).
+The nav bar includes a **settings gear icon** (`settings.png`, `icons.scaled(34)`) on the far left that opens `SettingsDialog` via a callback (`set_settings_callback(fn)`) registered by `App.__init__` **before** `_register_views()` so the callback is available when views construct their nav bars. The icon follows the same hover pattern as buttons (`bg="#000000"` → `bg="#222222"`, no cursor change).
 
 When modifying navigation behavior:
 
 * Preserve consistency across all views.
 * Avoid introducing view-specific hacks.
 * Keep navigation logic centralized whenever possible.
+
+### Main Window and Fullscreen
+
+The main window opens in **true fullscreen** (`self.attributes("-fullscreen", True)`). It is applied via `self.after(0, self._enter_fullscreen)` so it runs after the window is mapped; `_enter_fullscreen` re-measures the active view's labels (`_refresh_labels`) to avoid the macOS Aqua stale-metrics issue. `F11` toggles fullscreen (`_toggle_fullscreen`); on macOS `<Command-Control-f>` is bound as well because the system may intercept F11 for "Show Desktop". A centered restore geometry (90% of the screen, capped at 1280x800) is set before entering fullscreen so leaving it does not drop to the 800x600 minimum.
+
+Dialog sizing is handled by the central `windowing` module (see "Modal Dialogs and Cross-Platform `grab_set()`"); the main window geometry itself is not run through it.
 
 ---
 
@@ -268,7 +274,7 @@ User preferences (console font size, view zoom level) are persisted to `~/.local
 
 The LLM conversation context (and the rendered console output) is persisted to a **single file** `~/.local/share/elwand/session.json` (path via `session_file()` in `src/elwand_paths.py`), so it survives a restart.
 
-* `save(messages, mode=None, context_injected=False, total_api_tokens=0, console_segments=None)` — writes atomically (temp file + `os.replace`) under a `threading.Lock`.
+* `save(messages, mode=None, context_injected=False, total_api_tokens=0, console_segments=None, session_id=None, project_id=None)` — writes atomically (temp file + `os.replace`) under a `threading.Lock`.
 * `load()` — reads and returns the data dict, or `None` if missing/corrupt.
 * `clear()` — deletes the file.
 
@@ -278,11 +284,14 @@ The persisted dict holds:
 - `context_injected` — whether the state snapshot was already injected.
 - `total_api_tokens` — last `prompt_tokens` from the API (used for the context % and compaction trigger).
 - `console_segments` — list of `[text, color]` pairs, the rendered console output with colors.
+- `llm_session_id` — the opencode `x-opencode-session` id (`ses_`), kept stable across restarts.
+- `llm_project_id` — the opencode `x-opencode-project` id (fixed default unless changed with `debug rotate_opencode_headers`).
+- `updated` — ISO timestamp of the last write.
 
 **Integration (`src/gui/app.py`):**
 - `_save_session()` — snapshots `list(self._llm_messages)` and the console segments, and writes the file. It is called in **real time**: after the user prompt is appended (synchronously), after each tool call/result (`_persist()` inside `chat_with_tools`), and in the `finally` of each exchange. It checks `_closing` and skips during shutdown.
-- `_load_session()` — on startup (`App.__init__`), loads the messages (stripping `_is_context` so the next prompt re-injects a fresh state snapshot), restores `total_api_tokens`, restores the console via `console.restore_segments()`, and returns the saved `mode` so the app re-enters agent/consultor mode.
-- `_clear_session()` — deletes the file. Called by the `reset` command (both modes), which also clears `_llm_messages`, `_total_api_tokens`, and the cache.
+- `_load_session()` — on startup (`App.__init__`), loads the messages (stripping `_is_context` so the next prompt re-injects a fresh state snapshot), restores `total_api_tokens`, the console via `console.restore_segments()`, and the opencode `llm_session_id`/`llm_project_id`; returns the saved `mode` so the app re-enters agent/consultor mode.
+- `_clear_session()` — deletes the file. Called by the `reset` command (both modes), which also clears `_llm_messages`, `_total_api_tokens`, `_llm_session_id`, `_llm_project_id`, and the cache.
 - The console tracks its content as `(text, color)` segments in `Console._segments` (`src/gui/console.py`), updated in `write()` / `_write_segments()` and reset in `_cmd_clear()`.
 
 **Rules:**
@@ -396,6 +405,30 @@ Guidelines:
 
 ---
 
+## Hashcat (`src/tools/hashcat/`, dialog + console)
+
+`HashcatEngine` (`src/tools/hashcat/engine.py`) wraps the `hashcat` binary for background cracking, used by both the hashcat dialog and the `use hashcat` console command.
+
+**Binary resolution:** `resolve("hashcat")` (`src/resolve_binary.py`) checks `PATH`, then a shell-rc alias, then `$SHELL -ic 'command -v'`. Under `sudo` it reads the real user's rc via `SUDO_USER` (`_real_home`), otherwise `~` is root's home and the alias is missed.
+
+**Kernel cache:** before running, `_clear_unreadable_kernels()` removes `<hashcat>/kernels/*.kernel` files the current user cannot read/write (a previous run as root leaves them root-owned and the kernel build fails with `Permission denied`); the cache is regenerated by hashcat. If the build still fails, an actionable hint is emitted.
+
+**Status stream:** the engine runs hashcat with `--status --status-timer=1` plus `--status-json` (when supported) and reads stdout in chunks (`os.read`) so hashcat's no-newline phase messages surface. Callbacks:
+- `on_status(dict)` — normalized status from the JSON line: `state`, `progress`, `recovered`, `speed`, `elapsed`, `eta`, `devices`.
+- `on_phase(label)` — coarse phases from the raw stream: `Preparing hashes…`, `Preparing kernels…`, `Initializing backend…`, `Running self-test…`, `Autotuning…`.
+- `on_output` — remaining raw lines (errors/warnings); `on_cracked` / `on_done`.
+Without `--status-json` support it falls back to regex parsing (`Progress` / `Recovered`).
+
+**Clean status view (dialog, `src/gui/dialogs/hashcat.py`):** a shared `_StatusPanel` (Crack and Mask tabs) shows a progress bar, `Status`, `current/total (%)`, `Speed`, `Elapsed`/`ETA`, `Recovered`, device util/temp, and a small event log; the raw output is behind a **Details** toggle. During the pre-crack phase (kernel compile / autotune) the bar is **indeterminate/animated** and the phase is shown; once running it becomes determinate and it stays at the crack percentage when found. UI updates are **thread-safe**: engine callbacks enqueue into a `queue.Queue` drained on the main thread (`_drain`, every 50 ms); a 1 s ticker keeps `Elapsed`/`ETA` moving.
+
+**Console output (`use hashcat`, `app.py`):** collapsed to `[*] Preparing hashcat…`, then `[*] Running hashcat    ETA ~HH:MM:SS` (once), a transient live line via `Console.live_status()` (`hashcat: Running 18% … ETA …`), then `[+] Cracked: …` / `[+] Hashcat done. …`. Raw phases are not shown in the console (they live in the dialog's Details). The full hash is printed in the `hashcat -m …` line.
+
+**Hash selection (`app.py`):** `_hash_choices()` returns `(label, token)` pairs — label `#<id>  <truncated hash>…`, token the short `#<id>:<hash prefix>`. `Console` inserts the token so the prompt stays small, and `_find_hash(token)` resolves a full hash, `#id`, `#id:preview`, a bare id, or a unique hash prefix back to the stored row. Used by `use hashcat`, `view hash`, and `delete hash`.
+
+**Console input height:** `Console._input_set()` schedules `_sync_input_height()` so the multi-line input grows when autocomplete inserts a value (not only when typing).
+
+---
+
 ## WiFi Monitor (`src/tools/scanner/wifi_monitor.py`)
 
 The WiFi subsystem is **platform-split**: Linux does full passive monitoring + injection; macOS can do **monitor RX (capture)** and scanning, but **no injection**.
@@ -430,6 +463,21 @@ The WiFi subsystem is **platform-split**: Linux does full passive monitoring + i
 * Note: CoreWLAN scanning needs **Location Services** granted to the terminal; running as **root** (sudo) loses that grant and returns empty SSIDs — run Elwand as the normal user for scanning, or as root for monitor capture.
 * `iface` discovery falls back to parsing `networksetup -listallhardwareports` if CoreWLAN is unavailable.
 * No PMF field via CoreWLAN.
+
+### Wifi Operator (`src/gui/dialogs/wifi_operator.py`)
+
+The dialog has two tabs (Deauther / CSA Spoof), each with an interface selector, a network list, a client list, and a **parameter frame**:
+
+* **CSA Spoof** reads its fields from `csa_attack.DEFAULTS` (`target_chan`, `attack_window`, `observe_window`, `count`, `csa_interval`, `tx_rate`, `duration`) plus an "All networks with this ESSID" toggle.
+* **Deauther** reads from `wifi_monitor.DEAUTH_DEFAULTS` (`count`, `reason`, `interval`, `rate`) — the same defaults `deauth()` has always used. `deauth(bssid, client=None, iface=None, count=64, reason=7, interval=0.005, rate=2)` passes them to `_send_deauth()` (radiotap Rate + inter-frame interval). Reason is a plain numeric `Entry`.
+
+### Handshakes (capture → hash → extract)
+
+* The monitor writes `<SSID>_<BSSID>.pcap` (frames) and appends a hashcat 22000 line to `<SSID>_<BSSID>.hc22000` when a 4-way handshake completes. It registers the **raw `WPA*02*…` line** (not the file path) in the `hashes` table (`type="WPA handshake"`, `hascat_mode="22000"`); the same BSSID seen again updates that row with the latest line.
+* `credential_db.repair_handshake_hashes()` (called once at startup) rewrites legacy rows that stored the `.hc22000` path with the last line of that file.
+* `wifi_monitor.extract_handshakes_from_pcap(path)` parses a `.pcap` and returns the handshakes it holds (`{bssid, client, ssid, keyver, messages, message_pair, line}`); the ESSID comes from the live networks, the sibling `.hc22000`, or the filename.
+* The **Handshakes view** lists `.pcap` files. Clicking a name opens `ExtractHashDialog` with that pcap preselected; the **Extract hash** button opens it with the first pcap. The dialog derives the 22000 line, lets the user select a handshake, and saves it (`origin="manual extract"`).
+* Console: `delete handshake <file|all>` removes the `.pcap` and its `.hc22000` sibling; its autocomplete lists every pcap plus `all`. In the Inventory, **Handshakes** sits right below **Hashes**.
 
 **Rules for changes:**
 * Never let macOS code run on Linux or vice versa — every platform branch must early-return.
@@ -483,22 +531,23 @@ When the active provider is `opencode`:
 1. **API Key**: `api_key` defaults to `"public"` (the opencode free-tier credential) if left empty. Users with a subscription can override it in Settings.
 2. **SDK Suppression**: The Python openai SDK injects `x-stainless-*` headers identifying it as an OpenAI Python SDK consumer. These are removed **per request** by passing them with `Omit()` in `extra_headers` (`_opencode_headers()`); `default_headers` only overrides `User-Agent`.
 3. **Request Headers**: Every API call includes `extra_headers` with:
-   - `x-opencode-project`: project id. Real opencode sends the sha1 of the git remote (or the root commit), or `global` when there is no repo. Elwand has no project concept, so a fixed plausible sha1 is used (`_OPENCODE_PROJECT`).
+   - `x-opencode-project`: project id. Real opencode sends the sha1 of the git remote (or the root commit), or `global` when there is no repo. Elwand has no project concept, so a fixed plausible sha1 is used as the default (`_OPENCODE_PROJECT`); it is overridable per client via `LLMClient(project_id=...)`, persisted in `session.json`, and rotated with `debug rotate_opencode_headers`.
    - `x-opencode-session`: the **session** id (`ses_` prefix), **stable for the whole Elwand session**, persisted in `session.json` and rotated only on `reset`.
    - `x-opencode-request`: the **user-turn** id (`msg_` prefix), generated once per user prompt and reused by every tool-call round-trip within that turn.
    - `x-opencode-client`: Always `"cli"`.
 4. **ID Format**: IDs follow OpenCode's `identifier.ts` format: prefix + 6 bytes hex (timestamp; `descending` = inverted, used for `ses_`; ascending for `msg_`) + 14 random alphanumeric chars (`[0-9A-Za-z]`). Generated by `_generate_opencode_id()`.
 5. **User-Agent**: Set to `opencode/latest/1.2.3/cli`.
-6. **Reset**: `reset` clears `_llm_session_id` and `_llm_request_id`, so the next call gets a fresh session and turn id. The stable session id is stored by `App._llm_session()` and persisted via `session.save(..., session_id=...)`.
+6. **Reset**: `reset` clears `_llm_session_id`, `_llm_project_id`, and `_llm_request_id`, so the next call gets a fresh session, project, and turn id. The stable session id is stored by `App._llm_session()` and persisted via `session.save(..., session_id=..., project_id=...)`. The `debug rotate_opencode_headers` command rotates the session and project ids on demand (the request id already rotates per turn).
 7. **DICMA tools**: `dicma_find_related` also applies the same opencode headers when the active provider is `opencode`.
 
 For all other providers (ollama, custom), the behavior is unchanged — no headers are injected, no API key is forced.
 
 **Console integration:**
 
-* `consultor` — enters LLM mode (prompt changes to yellow `Consultor>`). All input sent to LLM. Full conversation history maintained. `exit` closes the app. Responses stream line-by-line. Consultor may call read-only tools (via `chat_with_tools(allowed_tools=CONSULTOR_TOOLS)`).
-* `consultor <prompt>` — one-shot query without entering mode.
-* `agent` — enters agent mode (blue `Agent>`); full tool access. `agent <prompt>` is a one-shot query.
+* **Consultor / Agent modes** are entered via the **Tab mode cycle** (Normal → Consultor → Agent). The old `consultor`/`agent` console commands were removed, and there is no one-shot `<mode> <prompt>` form anymore.
+  * **Consultor** turns the prompt yellow (`Consultor>`); all input is sent to the LLM, which may call only read-only tools (`chat_with_tools(allowed_tools=CONSULTOR_TOOLS)`).
+  * **Agent** turns the prompt blue (`Agent>`) with full tool access.
+  * Both modes accept the same inline commands: `exit`, `stop`, `reset`, `compact`, `clear`, `menu`, and `debug`.
 * `settings` — opens LLM configuration dialog.
 
 Both modes display the model output in white, marked with a colored `▣` (blue for agent, orange for consultor); the echoed prompt is `User prompt > ` colored by mode.
@@ -521,9 +570,16 @@ The provider editor (`_open_provider_dialog` in `src/gui/dialogs/settings.py`) u
 * **Models** — an editable `ttk.Combobox`. Auto-detection triggers on `<FocusOut>` of the Base URL or API Key fields, running the OpenAI `models.list()` API call in a daemon thread. A "Detect" button provides manual fallback. Callbacks catch `tk.TclError` to avoid crashes if the dialog is closed before detection completes.
 * **Provider selector** — uses `tk.OptionMenu` (not `ttk.Combobox` with `state="readonly"`) because macOS Aqua ignores ttk dark theme styling on readonly comboboxes, displaying a bright white background.
 
+### Debug Commands
+
+`debug` is a console command available in **all three prompts** (`Elwand>`, `Consultor>`, `Agent>`). In agent/consultor modes it is intercepted by `App._maybe_debug_command()` only for known subcommands, so a prompt that merely starts with the word "debug" falls through to the model.
+
+* `debug ctx_screenshot` — writes a JSON snapshot of the current LLM context to `runtime_logs_dir()`.
+* `debug rotate_opencode_headers` — generates a new opencode session id and a new project id (40-hex sha1), resets the request id, and persists them via `_save_session()`. See "Opencode Headers Mimic".
+
 ### Agent Tool-Calling (`src/llm/client.py` → `chat_with_tools()`)
 
-The agent mode gives the LLM the ability to call **60 tools** that read and modify application state and trigger network operations. It is activated via the `agent` console command or `agent <one-shot prompt>`.
+The agent mode gives the LLM the ability to call **60 tools** that read and modify application state and trigger network operations. It is activated by cycling into agent mode with **Tab** (see "Console integration").
 
 **Tool-calling loop** (fully streaming):
 
@@ -902,28 +958,21 @@ self._closing = False         # set in _on_close; guards worker-thread work duri
 self._llm_running = False     # guards against concurrent agent/consultor exchanges
 self._agent_stop_event = None
 self._llm_messages = []        # shared conversation history (agent + consultor)
+self._llm_request_id = None    # opencode per-turn request id (msg_)
+self._llm_session_id = None    # opencode session id (ses_, stable + persisted)
+self._llm_project_id = None    # opencode project id (overrides the fixed default)
 self._context_injected = False # one-shot: injected on first prompt only
 self._total_api_tokens = 0     # last known prompt_tokens reported by the API
 ```
 
-**Console command registration:**
+**Entry:**
 
-```python
-self.console.register_command("agent", self._cmd_agent, "Enter LLM agent mode")
-```
+There is no `agent`/`consultor` console command. Modes are entered through the **Tab mode cycle**: `Console.set_mode_cycle_callback(self._cycle_mode)` → `_cycle_mode()` → `_enter_agent_mode()` / `_enter_consultor_mode()` (the prompt turns blue/yellow).
 
 **Lifecycle:**
 
 ```python
-# Entry: `agent` (interactive) or `agent <prompt>` (one-shot)
-def _cmd_agent(self, args):
-    if not args:
-        self._enter_agent_mode()    # sets prompt to blue "Agent>"
-        return
-    prompt = " ".join(args)
-    self._agent_ask(prompt)          # one-shot, stays in Elwand> prompt
-
-# Interactive handler — all console input routed here
+# Interactive handler — all console input routed here while in agent mode
 def _agent_handler(self, text):
     if text.strip().lower() == "exit":
         self._on_close()             # closes the app (not just leaving mode)
@@ -931,6 +980,7 @@ def _agent_handler(self, text):
     if text.strip().lower() == "stop":
         self._agent_stop_event.set()
         return
+    # reset / compact / clear / menu / debug are handled here too
     self._agent_ask(text)
 
 # Core request — runs in daemon thread, dispatches to main via _safe_after()
@@ -974,7 +1024,7 @@ This gives the LLM a snapshot of available targets. After the first injection, `
 
 **`_build_model_context()`** now returns only machine IPs/IDs and domain names in a single line (~50-200 tokens). The heavy per-machine SQLite queries (ports, banners, web services) and inventory details (users, credentials, hashes, evidence, shells, dictionaries, rules, POCs) are no longer injected — the LLM uses tools (`check_status`, `check_inventory`, `check_machine`, `check_domain`) to query them on demand.
 
-The `reset` command clears `_llm_messages`, resets `_context_injected = False` and `_total_api_tokens = 0`, and deletes the persisted session (`_clear_session()`), so the next prompt re-injects the current state snapshot.
+The `reset` command clears `_llm_messages`, resets `_context_injected = False` and `_total_api_tokens = 0`, rotates the opencode ids (`_llm_session_id`/`_llm_project_id`/`_llm_request_id`), clears the cache, and deletes the persisted session (`_clear_session()`), so the next prompt re-injects the current state snapshot.
 
 **Comparison with previous design:**
 
@@ -995,7 +1045,7 @@ This mechanism is **shared** between agent and consultor modes via the shared `s
 
 | Feature | **Agent** mode | **Consultor** mode |
 |---|---|---|
-| Command | `agent` | `consultor` |
+| Entry | Tab mode cycle | Tab mode cycle |
 | Purpose | `"agent"` | `"consultor"` |
 | System prompt | Shared `system` prompt + `[MODE: AGENT]` message | Shared `system` prompt + `[MODE: CONSULTOR]` message (lists read-only tools) |
 | Tool calling | **Yes** — `chat_with_tools()` (all 60 tools) | **Yes** — `chat_with_tools(allowed_tools=CONSULTOR_TOOLS)` (23 read-only tools; the rest are sent but denied) |
@@ -1004,7 +1054,7 @@ This mechanism is **shared** between agent and consultor modes via the shared `s
 | Shared history | Yes (`self._llm_messages`) | Yes (`self._llm_messages`) |
 | Context % display | Yes (`Agent (45%)>`) | Yes (`Consultor (45%)>`) |
 | Spinner while processing | Yes | Yes |
-| Commands | `exit`, `stop`, `reset`, `compact`, `menu` | `exit`, `stop`, `reset`, `compact`, `menu` |
+| Commands | `exit`, `stop`, `reset`, `compact`, `clear`, `menu`, `debug` | `exit`, `stop`, `reset`, `compact`, `clear`, `menu`, `debug` |
 | Tab mode cycle | Cycles without interrupting agent | Cycles without interrupting consultor |
 
 **Rules for agent development:**
