@@ -888,7 +888,7 @@ class App(tk.Tk):
         self.console.register_command("init", self._cmd_init, "Re-run initialization checks")
         self.console.register_command("settings", self._cmd_settings, "Open settings dialog")
         self.console.register_command("debug", self._cmd_debug, "Debug utilities")
-        self.console.set_subcommands("debug", ["ctx_screenshot", "ch_opencode_ses_params"])
+        self.console.set_subcommands("debug", ["ctx_screenshot", "rotate_opencode_headers"])
         self.console.register_command("exit", self._cmd_exit, "Close the application")
 
         self.console.set_system_handler(self._run_system)
@@ -3967,19 +3967,19 @@ class App(tk.Tk):
 
     def _cmd_debug(self, args):
         if not args:
-            self.console.info("Usage: debug <ctx_screenshot|ch_opencode_ses_params>")
+            self.console.info("Usage: debug <ctx_screenshot|rotate_opencode_headers>")
             return
         sub = args[0].lower()
         if sub == "ctx_screenshot":
             self._cmd_debug_ctx_screenshot(args[1:])
-        elif sub == "ch_opencode_ses_params":
-            self._cmd_debug_ch_opencode_ses_params()
+        elif sub == "rotate_opencode_headers":
+            self._cmd_debug_rotate_opencode_headers()
         else:
             self.console.info(
                 f"Unknown debug subcommand: {sub}. Use: ctx_screenshot, "
-                f"ch_opencode_ses_params")
+                f"rotate_opencode_headers")
 
-    def _cmd_debug_ch_opencode_ses_params(self):
+    def _cmd_debug_rotate_opencode_headers(self):
         """Rotate the opencode session and project ids.
 
         The request (message) id already rotates per user turn, so the next
