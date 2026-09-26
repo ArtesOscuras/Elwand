@@ -552,6 +552,10 @@ For all other providers (ollama, custom), the behavior is unchanged — no heade
 
 **`set` command (Elwand> prompt):** `set provider` alone prints the active provider and the available ones; `set provider <name>` switches the active provider, ensuring `active_models[<name>]` is set (defaults to the provider's first model) and persisting `llm.json`. The arg-2 popup lists every configured provider, marking the active one with a leading `*` (registered via `console.set_arg2_provider("set", "provider", App._autocomplete_providers)`; handler `App._cmd_set` → `_cmd_set_providers`).
 
+**Provider management (Elwand> prompt):**
+* `add provider` — opens the provider editor dialog in "new" mode (`open_provider_dialog(parent, config, refresh_cb, is_new=True)`); on save it persists `llm.json` and prints a console confirmation via the refresh callback.
+* `delete provider` — arg-1 `provider`; the arg-2 popup lists every configured provider (same `*`-marked list as `set provider`), and `delete provider <name>` removes it, switching `active_provider` to the first remaining one if the deleted provider was active and refusing to delete the last provider (`App._cmd_delete_provider`).
+
 Both modes display the model output in white, marked with a colored `▣` (blue for agent, orange for consultor); the echoed prompt is `User prompt > ` colored by mode.
 
 **Markdown rendering:** the agent/consultor output is rendered as markdown, following opencode's dark-theme colors: headers (`#`–`######`) and `**bold**` in bold white; `*italic*`/`_italic_` in yellow; inline `` `code` `` in green; blockquotes (`>`) in yellow; links `[text](url)` show the text in cyan; list markers `-`/`*`/`+` in blue and `1.` in cyan; horizontal rules (`---`) in grey; fenced code blocks (```) with a dark background; tables are aligned with `│`/`─` box-drawing. Only agent/consultor output is rendered; all other console messages (info, warnings, `[tool]`, `User prompt >`) stay plain. The markdown logic lives in `MarkdownRenderer` (`src/gui/markdown.py`), a standalone class that renders into any `tk.Text` widget — the console delegates to it (`Console._insert_markdown` → `MarkdownRenderer.insert_line`), and the report detail view uses it directly (`render()`). State (`_in_code_block`, `_table_buffer`) is tracked per line and reset at the start of each exchange (`reset_markdown_state()`), flushed at the end (`flush_markdown()`), and preserved across restarts by re-rendering `"__md__"` segments in `restore_segments()`.
@@ -566,7 +570,7 @@ Both modes display the model output in white, marked with a colored `▣` (blue 
 
 **Provider Edit Dialog:**
 
-The provider editor (`_open_provider_dialog` in `src/gui/dialogs/settings.py`) uses these design patterns:
+The provider editor lives in `src/gui/dialogs/settings.py` as the module-level `open_provider_dialog(parent, config, refresh_cb=None, is_new=False, preselected=None)` (so it can be opened outside the settings dialog, e.g. from the console). `SettingsDialog._open_provider_dialog` is a thin wrapper that passes `self._config` and `self._refresh_providers`. It uses these design patterns:
 
 * **Single "Name" field** — the provider key doubles as its display name. Changing the name renames the provider (updates `active_provider` and `active_models` references automatically).
 * **Models** — an editable `ttk.Combobox`. Auto-detection triggers on `<FocusOut>` of the Base URL or API Key fields, running the OpenAI `models.list()` API call in a daemon thread. A "Detect" button provides manual fallback. Callbacks catch `tk.TclError` to avoid crashes if the dialog is closed before detection completes.

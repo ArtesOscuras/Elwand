@@ -882,9 +882,9 @@ class App(tk.Tk):
         self.console.register_command("stop", self._cmd_stop, "Stop listeners")
         self.console.set_subcommands("stop", ["shells-listener", "mdns-listener", "scanner", "bruteforce", "fuzzer", "webrecorder", "tcpscan", "udpscan", "whatweb", "port-inspector", "bannergrab", "hashcat"])
         self.console.register_command("delete", self._cmd_delete, "Delete stored data")
-        self.console.set_subcommands("delete", ["all", "dbs", "credential", "evidence", "hash", "handshake", "machine", "domain", "user", "password", "shell", "people", "dictionary", "rule", "poc", "report", "inventory", "cache", "wifi"])
+        self.console.set_subcommands("delete", ["all", "dbs", "credential", "evidence", "hash", "handshake", "machine", "domain", "user", "password", "shell", "people", "dictionary", "rule", "poc", "report", "inventory", "cache", "wifi", "provider"])
         self.console.register_command("add", self._cmd_add, "Add to inventory")
-        self.console.set_subcommands("add", ["machine", "domain", "credential", "user", "password", "hash", "people", "dictionary", "rule"])
+        self.console.set_subcommands("add", ["machine", "domain", "credential", "user", "password", "hash", "people", "dictionary", "rule", "provider"])
         self.console.register_command("init", self._cmd_init, "Re-run initialization checks")
         self.console.register_command("settings", self._cmd_settings, "Open settings dialog")
         self.console.register_command("set", self._cmd_set, "Adjust settings")
@@ -910,6 +910,7 @@ class App(tk.Tk):
         self.console.set_arg2_provider("delete", "dictionary", self._autocomplete_delete_dictionary)
         self.console.set_arg2_provider("delete", "rule", self._autocomplete_delete_rules)
         self.console.set_arg2_provider("delete", "poc", self._autocomplete_delete_pocs)
+        self.console.set_arg2_provider("delete", "provider", self._autocomplete_providers)
 
         self.console.set_arg2_provider("view", "machine", self._autocomplete_store_ip_noall)
         self.console.set_arg2_provider("view", "domain", self._autocomplete_domain_only)
@@ -4910,7 +4911,7 @@ class App(tk.Tk):
 
     def _cmd_add(self, args):
         if not args:
-            self.console.body("Usage: add <machine|domain|credential|user|password|hash>")
+            self.console.body("Usage: add <machine|domain|credential|user|password|hash|provider>")
             return
         sub = args[0].lower()
         rest = args[1:]
@@ -4932,6 +4933,8 @@ class App(tk.Tk):
             self._cmd_add_file("dictionary", rest)
         elif sub == "rule":
             self._cmd_add_file("rule", rest)
+        elif sub == "provider":
+            self._cmd_add_provider()
         else:
             self.console.error(f"Unknown add target: {sub}")
 
@@ -4958,6 +4961,14 @@ class App(tk.Tk):
             self.console.success(f"{file_type.capitalize()} '{fname}' added")
         except OSError as e:
             self.console.error(f"Failed to copy file: {e}")
+
+    def _cmd_add_provider(self):
+        from .dialogs.settings import open_provider_dialog
+        from src.llm import config as llm_config
+        open_provider_dialog(
+            self, llm_config.load(),
+            lambda: self.console.success("Provider configuration updated."),
+            is_new=True)
 
     def _run_domain(self, domain):
         self.console.after(0, lambda: self.console.info(f"Resolving {domain}..."))
@@ -5432,7 +5443,7 @@ class App(tk.Tk):
 
     def _cmd_delete(self, args):
         if not args:
-            self.console.body("Usage: delete <all|dbs|inventory|machine|domain|user|credential|password|hash|handshake|people|shell|evidence|poc|report|dictionary|rule|cache|wifi>")
+            self.console.body("Usage: delete <all|dbs|inventory|machine|domain|user|credential|password|hash|handshake|people|shell|evidence|poc|report|dictionary|rule|cache|wifi|provider>")
             return
         sub = args[0].lower()
         if sub == "all":
@@ -5473,6 +5484,8 @@ class App(tk.Tk):
             self._cmd_delete_cache(args[1:])
         elif sub == "wifi":
             self._cmd_delete_wifi()
+        elif sub == "provider":
+            self._cmd_delete_provider(args[1:])
         else:
             self.console.error(f"Unknown delete target: {sub}.")
 
@@ -5480,6 +5493,33 @@ class App(tk.Tk):
         from src.tools.scanner import wifi_monitor
         wifi_monitor.clear()
         self.console.success("WiFi networks and probes cleared.")
+
+    def _cmd_delete_provider(self, args):
+        from src.llm import config as llm_config
+        cfg = llm_config.load()
+        providers = cfg.get("providers", {})
+        pids = list(providers.keys())
+        if not args:
+            self.console.body("Usage: delete provider <provider>")
+            return
+        target = args[0].lower()
+        match = next((p for p in pids if p.lower() == target), None)
+        if not match:
+            self.console.error(
+                f"Unknown provider: {args[0]}. Available: {', '.join(pids)}")
+            return
+        if len(pids) <= 1:
+            self.console.error("Cannot delete the last provider.")
+            return
+        del providers[match]
+        cfg["providers"] = providers
+        cfg.get("active_models", {}).pop(match, None)
+        if cfg.get("active_provider") == match:
+            cfg["active_provider"] = list(providers.keys())[0]
+        llm_config.save(cfg)
+        self.console.success(
+            f"Provider '{match}' deleted "
+            f"(active: {cfg.get('active_provider')}).")
 
     def _cmd_delete_creds(self, args):
         from src.machines.credential_db import delete_all

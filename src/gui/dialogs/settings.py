@@ -467,358 +467,363 @@ class SettingsDialog(tk.Toplevel):
     # ─── Provider Edit Dialog ────────────────────────────────
 
     def _open_provider_dialog(self, is_new=False, preselected=None):
-        dialog = tk.Toplevel(self)
-        dialog.title("New Provider" if is_new else "Edit Provider")
-        dialog.configure(bg=BG)
-        dialog.transient(self)
+        open_provider_dialog(self, self._config, self._refresh_providers,
+                             is_new=is_new, preselected=preselected)
 
-        dialog.columnconfigure(0, weight=0)
-        dialog.columnconfigure(1, weight=1)
 
-        style = ttk.Style()
-        style.configure("TCombobox",
-                         fieldbackground=BG_WIDGET,
-                         foreground=FG,
-                         insertcolor=FG,
-                         selectbackground=SEL_BG,
-                         selectforeground=FG,
-                         arrowsize=12)
+def open_provider_dialog(parent, config, refresh_cb=None, is_new=False, preselected=None):
+    dialog = tk.Toplevel(parent)
+    dialog.title("New Provider" if is_new else "Edit Provider")
+    dialog.configure(bg=BG)
+    dialog.transient(parent)
 
-        providers = self._config.get("providers", {})
-        active = self._config.get("active_provider", "")
-        active_models = self._config.get("active_models", {})
+    dialog.columnconfigure(0, weight=0)
+    dialog.columnconfigure(1, weight=1)
 
-        row = 0
+    style = ttk.Style()
+    style.configure("TCombobox",
+                     fieldbackground=BG_WIDGET,
+                     foreground=FG,
+                     insertcolor=FG,
+                     selectbackground=SEL_BG,
+                     selectforeground=FG,
+                     arrowsize=12)
 
-        if not is_new:
-            tk.Label(
-                dialog, text="Provider:", font=fonts.view_font(11),
-                fg=FG_DIM, bg=BG,
-            ).grid(row=row, column=0, sticky="w", padx=15, pady=(10, 3))
-            pids = list(providers.keys())
-            sel = preselected or active
-            if not pids:
-                pid_var = tk.StringVar(value="")
-            else:
-                init = sel if sel in pids else pids[0]
-                pid_var = tk.StringVar(value=init)
-            option = tk.OptionMenu(dialog, pid_var, pid_var.get(),
-                                    *([p for p in pids if p != pid_var.get()] if pids else []))
-            option.config(bg=BG_WIDGET, fg=FG, font=fonts.view_font(11),
-                           borderwidth=0, highlightthickness=1,
-                           highlightcolor="#333333", highlightbackground="#333333",
-                           activebackground=SEL_BG, activeforeground=FG)
-            option["menu"].config(bg=BG_WIDGET, fg=FG, font=fonts.view_font(11))
-            option.grid(row=row, column=1, sticky="ew", padx=15, pady=(10, 3))
-            row += 1
+    providers = config.get("providers", {})
+    active = config.get("active_provider", "")
+    active_models = config.get("active_models", {})
+
+    row = 0
+
+    if not is_new:
+        tk.Label(
+            dialog, text="Provider:", font=fonts.view_font(11),
+            fg=FG_DIM, bg=BG,
+        ).grid(row=row, column=0, sticky="w", padx=15, pady=(10, 3))
+        pids = list(providers.keys())
+        sel = preselected or active
+        if not pids:
+            pid_var = tk.StringVar(value="")
         else:
-            pid_var = None
-
-        tk.Label(
-            dialog, text="Name:", font=fonts.view_font(11),
-            fg=FG_DIM, bg=BG,
-        ).grid(row=row, column=0, sticky="w", padx=15, pady=(5, 3))
-        name_var = tk.StringVar()
-        tk.Entry(
-            dialog, textvariable=name_var, bg=BG_WIDGET, fg=FG,
-            insertbackground=FG, font=fonts.view_font(11),
-            borderwidth=1, relief=tk.FLAT,
-            highlightthickness=1, highlightcolor="#333333",
-            highlightbackground="#333333",
-        ).grid(row=row, column=1, sticky="ew", padx=15, pady=(5, 3))
+            init = sel if sel in pids else pids[0]
+            pid_var = tk.StringVar(value=init)
+        option = tk.OptionMenu(dialog, pid_var, pid_var.get(),
+                                *([p for p in pids if p != pid_var.get()] if pids else []))
+        option.config(bg=BG_WIDGET, fg=FG, font=fonts.view_font(11),
+                       borderwidth=0, highlightthickness=1,
+                       highlightcolor="#333333", highlightbackground="#333333",
+                       activebackground=SEL_BG, activeforeground=FG)
+        option["menu"].config(bg=BG_WIDGET, fg=FG, font=fonts.view_font(11))
+        option.grid(row=row, column=1, sticky="ew", padx=15, pady=(10, 3))
         row += 1
+    else:
+        pid_var = None
 
-        tk.Label(
-            dialog, text="Base URL:", font=fonts.view_font(11),
-            fg=FG_DIM, bg=BG,
-        ).grid(row=row, column=0, sticky="w", padx=15, pady=(5, 3))
-        url_var = tk.StringVar()
-        url_entry = tk.Entry(
-            dialog, textvariable=url_var, bg=BG_WIDGET, fg=FG,
-            insertbackground=FG, font=fonts.view_font(11),
-            borderwidth=1, relief=tk.FLAT,
-            highlightthickness=1, highlightcolor="#333333",
-            highlightbackground="#333333",
-        )
-        url_entry.grid(row=row, column=1, sticky="ew", padx=15, pady=(5, 3))
-        row += 1
+    tk.Label(
+        dialog, text="Name:", font=fonts.view_font(11),
+        fg=FG_DIM, bg=BG,
+    ).grid(row=row, column=0, sticky="w", padx=15, pady=(5, 3))
+    name_var = tk.StringVar()
+    tk.Entry(
+        dialog, textvariable=name_var, bg=BG_WIDGET, fg=FG,
+        insertbackground=FG, font=fonts.view_font(11),
+        borderwidth=1, relief=tk.FLAT,
+        highlightthickness=1, highlightcolor="#333333",
+        highlightbackground="#333333",
+    ).grid(row=row, column=1, sticky="ew", padx=15, pady=(5, 3))
+    row += 1
 
-        tk.Label(
-            dialog, text="API Key:", font=fonts.view_font(11),
-            fg=FG_DIM, bg=BG,
-        ).grid(row=row, column=0, sticky="w", padx=15, pady=(5, 3))
-        key_var = tk.StringVar()
-        key_entry = tk.Entry(
-            dialog, textvariable=key_var, show="*",
-            bg=BG_WIDGET, fg=FG, insertbackground=FG,
-            font=fonts.view_font(11), borderwidth=1, relief=tk.FLAT,
-            highlightthickness=1, highlightcolor="#333333",
-            highlightbackground="#333333",
-        )
-        key_entry.grid(row=row, column=1, sticky="ew", padx=15, pady=(5, 3))
-        row += 1
+    tk.Label(
+        dialog, text="Base URL:", font=fonts.view_font(11),
+        fg=FG_DIM, bg=BG,
+    ).grid(row=row, column=0, sticky="w", padx=15, pady=(5, 3))
+    url_var = tk.StringVar()
+    url_entry = tk.Entry(
+        dialog, textvariable=url_var, bg=BG_WIDGET, fg=FG,
+        insertbackground=FG, font=fonts.view_font(11),
+        borderwidth=1, relief=tk.FLAT,
+        highlightthickness=1, highlightcolor="#333333",
+        highlightbackground="#333333",
+    )
+    url_entry.grid(row=row, column=1, sticky="ew", padx=15, pady=(5, 3))
+    row += 1
 
-        tk.Label(
-            dialog, text="Models:", font=fonts.view_font(11),
-            fg=FG_DIM, bg=BG,
-        ).grid(row=row, column=0, sticky="w", padx=15, pady=(5, 3))
+    tk.Label(
+        dialog, text="API Key:", font=fonts.view_font(11),
+        fg=FG_DIM, bg=BG,
+    ).grid(row=row, column=0, sticky="w", padx=15, pady=(5, 3))
+    key_var = tk.StringVar()
+    key_entry = tk.Entry(
+        dialog, textvariable=key_var, show="*",
+        bg=BG_WIDGET, fg=FG, insertbackground=FG,
+        font=fonts.view_font(11), borderwidth=1, relief=tk.FLAT,
+        highlightthickness=1, highlightcolor="#333333",
+        highlightbackground="#333333",
+    )
+    key_entry.grid(row=row, column=1, sticky="ew", padx=15, pady=(5, 3))
+    row += 1
 
-        model_var = tk.StringVar()
-        model_combo = ttk.Combobox(
-            dialog, textvariable=model_var,
-            font=fonts.view_font(11),
-        )
-        model_combo.grid(row=row, column=1, sticky="ew", padx=15, pady=(5, 3))
+    tk.Label(
+        dialog, text="Models:", font=fonts.view_font(11),
+        fg=FG_DIM, bg=BG,
+    ).grid(row=row, column=0, sticky="w", padx=15, pady=(5, 3))
 
-        detect_btn = tk.Label(
-            dialog, text=" Detect ", bg="#222222", fg=FG,
-            font=fonts.view_font(9), relief=tk.RAISED, bd=1,
-            padx=8, pady=3,
-        )
-        detect_btn.grid(row=row, column=2, padx=(5, 15), pady=(5, 3))
-        detect_btn.bind("<Enter>", lambda e: detect_btn.config(bg="#333333"))
-        detect_btn.bind("<Leave>", lambda e: detect_btn.config(bg="#222222"))
+    model_var = tk.StringVar()
+    model_combo = ttk.Combobox(
+        dialog, textvariable=model_var,
+        font=fonts.view_font(11),
+    )
+    model_combo.grid(row=row, column=1, sticky="ew", padx=15, pady=(5, 3))
 
-        def _ollama_context_length(base, model):
-            if not model or not base:
-                return None
-            if "11434" not in base and "ollama" not in base.lower():
-                return None
+    detect_btn = tk.Label(
+        dialog, text=" Detect ", bg="#222222", fg=FG,
+        font=fonts.view_font(9), relief=tk.RAISED, bd=1,
+        padx=8, pady=3,
+    )
+    detect_btn.grid(row=row, column=2, padx=(5, 15), pady=(5, 3))
+    detect_btn.bind("<Enter>", lambda e: detect_btn.config(bg="#333333"))
+    detect_btn.bind("<Leave>", lambda e: detect_btn.config(bg="#222222"))
+
+    def _ollama_context_length(base, model):
+        if not model or not base:
+            return None
+        if "11434" not in base and "ollama" not in base.lower():
+            return None
+        try:
+            import urllib.request
+            root = base.rstrip("/")
+            if root.endswith("/v1"):
+                root = root[:-3].rstrip("/")
+            payload = json.dumps({"name": model}).encode("utf-8")
+            req = urllib.request.Request(
+                root + "/api/show", data=payload,
+                headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=8) as r:
+                data = json.loads(r.read().decode("utf-8"))
+            info = data.get("model_info") or {}
+            for k, v in info.items():
+                if isinstance(k, str) and k.lower().endswith("context_length") and isinstance(v, int) and v > 0:
+                    return v
+            return None
+        except Exception:
+            return None
+
+    def _run_detect():
+        url = url_var.get().strip()
+        key = key_var.get().strip()
+        if not url:
+            return
+        feedback.config(text="Detecting models...", fg=SUCCESS)
+        detect_btn.config(text=" ... ", fg=FG_DIM)
+        def _run():
             try:
-                import urllib.request
-                root = base.rstrip("/")
-                if root.endswith("/v1"):
-                    root = root[:-3].rstrip("/")
-                payload = json.dumps({"name": model}).encode("utf-8")
-                req = urllib.request.Request(
-                    root + "/api/show", data=payload,
-                    headers={"Content-Type": "application/json"})
-                with urllib.request.urlopen(req, timeout=8) as r:
-                    data = json.loads(r.read().decode("utf-8"))
-                info = data.get("model_info") or {}
-                for k, v in info.items():
-                    if isinstance(k, str) and k.lower().endswith("context_length") and isinstance(v, int) and v > 0:
-                        return v
-                return None
-            except Exception:
-                return None
+                from openai import OpenAI
+                client = OpenAI(base_url=url, api_key=key or "none")
+                api_models = client.models.list()
+                ids = [m.id for m in api_models.data]
+                ctx = _ollama_context_length(url, ids[0] if ids else None)
+                dialog.after(0, lambda: _on_detect(ids, ctx))
+            except Exception as e:
+                dialog.after(0, lambda err=str(e): _on_error(err))
+        def _on_detect(ids, ctx=None):
+            try:
+                model_combo['values'] = ids
+                if ids and model_var.get() not in ids:
+                    model_var.set(ids[0])
+                if ctx and not ctx_limit_var.get().strip():
+                    ctx_limit_var.set(str(ctx))
+                feedback.config(text=f"Found {len(ids)} model(s).", fg=SUCCESS)
+                detect_btn.config(text=" Detect ", fg=FG)
+            except tk.TclError:
+                pass
+        def _on_error(err):
+            try:
+                feedback.config(text=f"Detection failed: {err}", fg=ERR)
+                detect_btn.config(text=" Detect ", fg=FG)
+                dialog.after(4000, lambda: feedback.config(text="", fg=SUCCESS))
+            except tk.TclError:
+                pass
+        import threading
+        threading.Thread(target=_run, daemon=True).start()
 
-        def _run_detect():
-            url = url_var.get().strip()
-            key = key_var.get().strip()
-            if not url:
-                return
-            feedback.config(text="Detecting models...", fg=SUCCESS)
-            detect_btn.config(text=" ... ", fg=FG_DIM)
-            def _run():
-                try:
-                    from openai import OpenAI
-                    client = OpenAI(base_url=url, api_key=key or "none")
-                    api_models = client.models.list()
-                    ids = [m.id for m in api_models.data]
-                    ctx = _ollama_context_length(url, ids[0] if ids else None)
-                    dialog.after(0, lambda: _on_detect(ids, ctx))
-                except Exception as e:
-                    dialog.after(0, lambda err=str(e): _on_error(err))
-            def _on_detect(ids, ctx=None):
-                try:
-                    model_combo['values'] = ids
-                    if ids and model_var.get() not in ids:
-                        model_var.set(ids[0])
-                    if ctx and not ctx_limit_var.get().strip():
-                        ctx_limit_var.set(str(ctx))
-                    feedback.config(text=f"Found {len(ids)} model(s).", fg=SUCCESS)
-                    detect_btn.config(text=" Detect ", fg=FG)
-                except tk.TclError:
-                    pass
-            def _on_error(err):
-                try:
-                    feedback.config(text=f"Detection failed: {err}", fg=ERR)
-                    detect_btn.config(text=" Detect ", fg=FG)
-                    dialog.after(4000, lambda: feedback.config(text="", fg=SUCCESS))
-                except tk.TclError:
-                    pass
-            import threading
-            threading.Thread(target=_run, daemon=True).start()
+    def _on_focus_out(event):
+        if event.widget is url_entry or event.widget is key_entry:
+            _run_detect()
 
-        def _on_focus_out(event):
-            if event.widget is url_entry or event.widget is key_entry:
-                _run_detect()
+    url_entry.bind("<FocusOut>", _on_focus_out)
+    key_entry.bind("<FocusOut>", _on_focus_out)
 
-        url_entry.bind("<FocusOut>", _on_focus_out)
-        key_entry.bind("<FocusOut>", _on_focus_out)
+    detect_btn.bind("<Button-1>", lambda e: _run_detect())
 
-        detect_btn.bind("<Button-1>", lambda e: _run_detect())
+    row += 1
 
-        row += 1
+    tk.Label(
+        dialog, text="Context limit (tokens):", font=fonts.view_font(11),
+        fg=FG_DIM, bg=BG,
+    ).grid(row=row, column=0, sticky="w", padx=15, pady=(5, 3))
+    ctx_limit_var = tk.StringVar()
+    tk.Entry(
+        dialog, textvariable=ctx_limit_var, bg=BG_WIDGET, fg=FG,
+        insertbackground=FG, font=fonts.view_font(11),
+        borderwidth=1, relief=tk.FLAT,
+        highlightthickness=1, highlightcolor="#333333",
+        highlightbackground="#333333",
+    ).grid(row=row, column=1, sticky="ew", padx=15, pady=(5, 3))
+    row += 1
 
-        tk.Label(
-            dialog, text="Context limit (tokens):", font=fonts.view_font(11),
-            fg=FG_DIM, bg=BG,
-        ).grid(row=row, column=0, sticky="w", padx=15, pady=(5, 3))
-        ctx_limit_var = tk.StringVar()
-        tk.Entry(
-            dialog, textvariable=ctx_limit_var, bg=BG_WIDGET, fg=FG,
-            insertbackground=FG, font=fonts.view_font(11),
-            borderwidth=1, relief=tk.FLAT,
-            highlightthickness=1, highlightcolor="#333333",
-            highlightbackground="#333333",
-        ).grid(row=row, column=1, sticky="ew", padx=15, pady=(5, 3))
-        row += 1
+    feedback = tk.Label(
+        dialog, text="", font=fonts.view_font(9),
+        fg=SUCCESS, bg=BG,
+    )
+    feedback.grid(row=row, column=0, columnspan=2, pady=(8, 0))
+    row += 1
 
-        feedback = tk.Label(
-            dialog, text="", font=fonts.view_font(9),
-            fg=SUCCESS, bg=BG,
-        )
-        feedback.grid(row=row, column=0, columnspan=2, pady=(8, 0))
-        row += 1
+    btn_inner = tk.Frame(dialog, bg=BG)
+    btn_inner.grid(row=row, column=0, columnspan=2, sticky="ew",
+                   padx=15, pady=(10, 10))
 
-        btn_inner = tk.Frame(dialog, bg=BG)
-        btn_inner.grid(row=row, column=0, columnspan=2, sticky="ew",
-                       padx=15, pady=(10, 10))
+    tk.Label(
+        btn_inner, text="  Close  ", bg="#222222", fg=FG,
+        font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+        padx=15, pady=6,
+    ).pack(side=tk.RIGHT, padx=(5, 0))
+    close_btn = btn_inner.winfo_children()[-1]
+    close_btn.bind("<Button-1>", lambda e: dialog.destroy())
+    close_btn.bind("<Enter>", lambda e: close_btn.config(bg="#333333"))
+    close_btn.bind("<Leave>", lambda e: close_btn.config(bg="#222222"))
 
-        tk.Label(
-            btn_inner, text="  Close  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6,
-        ).pack(side=tk.RIGHT, padx=(5, 0))
-        close_btn = btn_inner.winfo_children()[-1]
-        close_btn.bind("<Button-1>", lambda e: dialog.destroy())
-        close_btn.bind("<Enter>", lambda e: close_btn.config(bg="#333333"))
-        close_btn.bind("<Leave>", lambda e: close_btn.config(bg="#222222"))
+    save_btn = tk.Label(
+        btn_inner, text="  Save  ", bg="#222222", fg=FG,
+        font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+        padx=15, pady=6,
+    )
+    save_btn.pack(side=tk.RIGHT)
+    save_btn.bind("<Enter>", lambda e: save_btn.config(bg="#333333"))
+    save_btn.bind("<Leave>", lambda e: save_btn.config(bg="#222222"))
 
-        save_btn = tk.Label(
-            btn_inner, text="  Save  ", bg="#222222", fg=FG,
+    if not is_new:
+        del_btn = tk.Label(
+            btn_inner, text="  Delete  ", bg="#222222", fg=ERR,
             font=fonts.view_font(10), relief=tk.RAISED, bd=1,
             padx=15, pady=6,
         )
-        save_btn.pack(side=tk.RIGHT)
-        save_btn.bind("<Enter>", lambda e: save_btn.config(bg="#333333"))
-        save_btn.bind("<Leave>", lambda e: save_btn.config(bg="#222222"))
+        del_btn.pack(side=tk.RIGHT, padx=(5, 0))
+        del_btn.bind("<Enter>", lambda e: del_btn.config(bg="#333333"))
+        del_btn.bind("<Leave>", lambda e: del_btn.config(bg="#222222"))
 
-        if not is_new:
-            del_btn = tk.Label(
-                btn_inner, text="  Delete  ", bg="#222222", fg=ERR,
-                font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-                padx=15, pady=6,
-            )
-            del_btn.pack(side=tk.RIGHT, padx=(5, 0))
-            del_btn.bind("<Enter>", lambda e: del_btn.config(bg="#333333"))
-            del_btn.bind("<Leave>", lambda e: del_btn.config(bg="#222222"))
-
-            def _delete():
-                pid = pid_var.get().strip()
-                if pid not in providers:
-                    return
-                if len(providers) <= 1:
-                    feedback.config(text="Cannot delete the last provider.")
-                    dialog.after(1500, lambda: feedback.config(text=""))
-                    return
-                del providers[pid]
-                if self._config["active_provider"] == pid:
-                    remaining = list(providers.keys())
-                    self._config["active_provider"] = remaining[0]
-                    am = self._config.get("active_models", {})
-                    if pid in am:
-                        del am[pid]
-                self._config["providers"] = providers
-                llm.config.save(self._config)
-                self._refresh_providers()
-                feedback.config(text=f"Deleted '{pid}'.")
-                dialog.after(800, dialog.destroy)
-
-            del_btn.bind("<Button-1>", lambda e: _delete())
-
-        def _load_provider():
-            if is_new:
-                name_var.set("")
-                url_var.set("")
-                key_var.set("")
-                model_var.set("")
-                ctx_limit_var.set("")
-                model_combo['values'] = []
-                return
+        def _delete():
             pid = pid_var.get().strip()
-            p = providers.get(pid, {})
-            name_var.set(pid)
-            url_var.set(p.get("base_url", ""))
-            key_var.set(p.get("api_key", ""))
-            ctx = p.get("context_limit", "")
-            ctx_limit_var.set(str(ctx) if ctx else "")
-            model_list = p.get("models", [])
-            model_combo['values'] = model_list
-            am = active_models.get(pid, "")
-            if am:
-                model_var.set(am)
-            elif model_list:
-                model_var.set(model_list[0])
-            else:
-                model_var.set("")
-
-        def _save():
-            name = name_var.get().strip()
-            if not name:
+            if pid not in providers:
                 return
-            if is_new:
-                if name in providers:
+            if len(providers) <= 1:
+                feedback.config(text="Cannot delete the last provider.")
+                dialog.after(1500, lambda: feedback.config(text=""))
+                return
+            del providers[pid]
+            if config["active_provider"] == pid:
+                remaining = list(providers.keys())
+                config["active_provider"] = remaining[0]
+                am = config.get("active_models", {})
+                if pid in am:
+                    del am[pid]
+            config["providers"] = providers
+            llm.config.save(config)
+            refresh_cb and refresh_cb()
+            feedback.config(text=f"Deleted '{pid}'.")
+            dialog.after(800, dialog.destroy)
+
+        del_btn.bind("<Button-1>", lambda e: _delete())
+
+    def _load_provider():
+        if is_new:
+            name_var.set("")
+            url_var.set("")
+            key_var.set("")
+            model_var.set("")
+            ctx_limit_var.set("")
+            model_combo['values'] = []
+            return
+        pid = pid_var.get().strip()
+        p = providers.get(pid, {})
+        name_var.set(pid)
+        url_var.set(p.get("base_url", ""))
+        key_var.set(p.get("api_key", ""))
+        ctx = p.get("context_limit", "")
+        ctx_limit_var.set(str(ctx) if ctx else "")
+        model_list = p.get("models", [])
+        model_combo['values'] = model_list
+        am = active_models.get(pid, "")
+        if am:
+            model_var.set(am)
+        elif model_list:
+            model_var.set(model_list[0])
+        else:
+            model_var.set("")
+
+    def _save():
+        name = name_var.get().strip()
+        if not name:
+            return
+        if is_new:
+            if name in providers:
+                feedback.config(text="Name already exists.")
+                dialog.after(1500, lambda: feedback.config(text=""))
+                return
+            new_key = name
+        else:
+            old_key = pid_var.get().strip()
+            new_key = name
+            if new_key != old_key:
+                if new_key in providers:
                     feedback.config(text="Name already exists.")
                     dialog.after(1500, lambda: feedback.config(text=""))
                     return
-                new_key = name
-            else:
-                old_key = pid_var.get().strip()
-                new_key = name
-                if new_key != old_key:
-                    if new_key in providers:
-                        feedback.config(text="Name already exists.")
-                        dialog.after(1500, lambda: feedback.config(text=""))
-                        return
-                    providers[new_key] = providers.pop(old_key)
-                    if self._config["active_provider"] == old_key:
-                        self._config["active_provider"] = new_key
-                    am = active_models
-                    if old_key in am:
-                        am[new_key] = am.pop(old_key)
-                        self._config["active_models"] = am
-            combo_models = list(model_combo['values'])
-            selected = model_var.get().strip()
-            if selected and selected not in combo_models:
-                combo_models.append(selected)
-            providers[new_key] = {
-                "base_url": url_var.get().strip(),
-                "api_key": key_var.get().strip(),
-                "models": combo_models,
-            }
-            ctx_raw = ctx_limit_var.get().strip()
-            if ctx_raw:
-                try:
-                    ctx_int = int(ctx_raw)
-                    if ctx_int > 0:
-                        providers[new_key]["context_limit"] = ctx_int
-                except ValueError:
-                    pass
-            if selected:
-                active_models[new_key] = selected
-                self._config["active_models"] = active_models
-            self._config["providers"] = providers
-            if is_new:
-                self._config.setdefault("active_provider", new_key)
-            else:
-                self._config["active_provider"] = new_key
-            llm.config.save(self._config)
-            self._refresh_providers()
-            feedback.config(text="Saved.")
-            dialog.after(800, dialog.destroy)
+                providers[new_key] = providers.pop(old_key)
+                if config["active_provider"] == old_key:
+                    config["active_provider"] = new_key
+                am = active_models
+                if old_key in am:
+                    am[new_key] = am.pop(old_key)
+                    config["active_models"] = am
+        combo_models = list(model_combo['values'])
+        selected = model_var.get().strip()
+        if selected and selected not in combo_models:
+            combo_models.append(selected)
+        providers[new_key] = {
+            "base_url": url_var.get().strip(),
+            "api_key": key_var.get().strip(),
+            "models": combo_models,
+        }
+        ctx_raw = ctx_limit_var.get().strip()
+        if ctx_raw:
+            try:
+                ctx_int = int(ctx_raw)
+                if ctx_int > 0:
+                    providers[new_key]["context_limit"] = ctx_int
+            except ValueError:
+                pass
+        if selected:
+            active_models[new_key] = selected
+            config["active_models"] = active_models
+        config["providers"] = providers
+        if is_new:
+            config.setdefault("active_provider", new_key)
+        else:
+            config["active_provider"] = new_key
+        llm.config.save(config)
+        refresh_cb and refresh_cb()
+        feedback.config(text="Saved.")
+        dialog.after(800, dialog.destroy)
 
-        if not is_new:
-            pid_var.trace_add("write", lambda *_: _load_provider())
-            _load_provider()
-            if url_var.get().strip():
-                _run_detect()
+    if not is_new:
+        pid_var.trace_add("write", lambda *_: _load_provider())
+        _load_provider()
+        if url_var.get().strip():
+            _run_detect()
 
-        save_btn.bind("<Button-1>", lambda e: _save())
+    save_btn.bind("<Button-1>", lambda e: _save())
 
-        windowing.min_size(dialog, 540, 1)
-        dialog.update_idletasks()
-        dialog.wait_visibility()
-        dialog.grab_set()
+    windowing.min_size(dialog, 540, 1)
+    dialog.update_idletasks()
+    dialog.wait_visibility()
+    dialog.grab_set()
