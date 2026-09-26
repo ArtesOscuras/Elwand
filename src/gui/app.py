@@ -587,6 +587,10 @@ class App(tk.Tk):
         fonts.set_root(self)
         self.title("Elwand - Your AI-Powered Security Workbench")
         self.minsize(800, 600)
+        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        win_w, win_h = min(1280, int(sw * 0.9)), min(800, int(sh * 0.9))
+        self.geometry(
+            f"{win_w}x{win_h}+{(sw - win_w) // 2}+{(sh - win_h) // 2}")
         self.state("normal")
 
         fonts.init(self)
@@ -659,6 +663,8 @@ class App(tk.Tk):
             self.visualizer.get_active_view())
         self.visualizer.winfo_toplevel().update_idletasks()
 
+        self.after(0, self._enter_fullscreen)
+
         load_mdns_cache()
         start_autosave()
         store.load()
@@ -685,6 +691,8 @@ class App(tk.Tk):
 
         self.bind_all("<Control-f>", self._toggle_focus)
         self.bind_all("<Command-f>",  self._toggle_focus)
+        self.bind_all("<F11>", self._toggle_fullscreen)
+        self.bind_all("<Command-Control-f>", self._toggle_fullscreen)
 
     def _run_init_checks(self):
         from .dialogs.init_dialog import InitDialog
@@ -5694,6 +5702,26 @@ class App(tk.Tk):
                 view.terminal.focus_set()
             return "break"
         self.console.input_text.focus()
+        return "break"
+
+    def _enter_fullscreen(self):
+        try:
+            self.attributes("-fullscreen", True)
+        except tk.TclError:
+            return
+        self.winfo_toplevel().update_idletasks()
+        self.visualizer._refresh_labels(self.visualizer.get_active_view())
+        self.winfo_toplevel().update_idletasks()
+
+    def _toggle_fullscreen(self, event=None):
+        try:
+            current = bool(self.attributes("-fullscreen"))
+            self.attributes("-fullscreen", not current)
+        except tk.TclError:
+            return "break"
+        self.winfo_toplevel().update_idletasks()
+        self.visualizer._refresh_labels(self.visualizer.get_active_view())
+        self.winfo_toplevel().update_idletasks()
         return "break"
 
     def _safe_after(self, callback, *args):
