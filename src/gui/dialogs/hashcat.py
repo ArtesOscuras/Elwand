@@ -64,10 +64,13 @@ class _StatusPanel:
         self._state = "idle"
         self._last_end = 0
         self._details_shown = False
+        self._indeterminate = False
 
         self.progress_var = tk.IntVar(value=0)
-        ttk.Progressbar(parent, variable=self.progress_var, maximum=100).grid(
-            row=row, column=0, columnspan=2, sticky="ew", padx=15, pady=(6, 2))
+        self.bar = ttk.Progressbar(parent, variable=self.progress_var,
+                                   maximum=100)
+        self.bar.grid(row=row, column=0, columnspan=2, sticky="ew",
+                      padx=15, pady=(6, 2))
         row += 1
 
         self.info = tk.Label(parent, text="Ready", font=fonts.view_font(10),
@@ -154,6 +157,7 @@ class _StatusPanel:
         self._details_shown = not self._details_shown
 
     def reset(self):
+        self._set_indeterminate(False)
         self.progress_var.set(0)
         self.info.config(text="Ready")
         self.timing.config(text="")
@@ -167,10 +171,36 @@ class _StatusPanel:
             w.delete("1.0", tk.END)
             w.configure(state=tk.DISABLED)
 
+    def _set_indeterminate(self, on):
+        if on == self._indeterminate:
+            return
+        self._indeterminate = on
+        try:
+            if on:
+                self.bar.configure(mode="indeterminate")
+                self.bar.start(15)
+            else:
+                self.bar.stop()
+                self.bar.configure(mode="determinate")
+        except tk.TclError:
+            pass
+
     def start(self, desc):
         self._started_at = time.time()
-        self._state = "running"
+        self._est_end = None
+        self._state = "starting"
+        self._set_indeterminate(True)
+        self.info.config(text="Status: Starting\u2026")
         self.log(f"[>] {desc}", "info")
+        self.tick()
+
+    def phase(self, label):
+        if not self._started_at:
+            self._started_at = time.time()
+        self._state = "preparing"
+        self._set_indeterminate(True)
+        self.info.config(text=f"Status: {label}")
+        self.log(f"[*] {label}", "muted")
         self.tick()
 
     def log(self, text, tag=None):
@@ -189,6 +219,8 @@ class _StatusPanel:
 
     def set_status(self, st):
         self._state = st["state"]
+        if self._state in ("running", "cracked", "exhausted"):
+            self._set_indeterminate(False)
         cur, end = st["progress"]
         rec = st["recovered"]
         self._last_end = end
@@ -220,6 +252,7 @@ class _StatusPanel:
     def set_progress(self, done, total, recovered):
         if not self._started_at:
             self._started_at = time.time()
+        self._set_indeterminate(False)
         if total > 0:
             pct = int(done * 100 / total)
             self.progress_var.set(max(0, min(100, pct)))
@@ -231,14 +264,15 @@ class _StatusPanel:
         self.tick()
 
     def tick(self):
-        if self._state not in ("running", "paused") or not self._started_at:
+        if (self._state not in ("starting", "preparing", "running", "paused")
+                or not self._started_at):
             return
         now = time.time()
         parts = [f"Elapsed {_fmt_hms(now - self._started_at)}"]
         if self._est_end and self._est_end > now:
             parts.append(f"ETA ~{_fmt_hms(self._est_end - now)}")
         elif self._state == "running":
-            parts.append("ETA computing...")
+            parts.append("ETA computing\u2026")
         self.timing.config(text="    ".join(parts))
 
     def cracked(self, plain):
@@ -246,6 +280,7 @@ class _StatusPanel:
 
     def finish(self, cracked_list):
         self._est_end = None
+        self._set_indeterminate(False)
         self.timing.config(text="")
         if cracked_list:
             if self._state != "cracked":
@@ -823,6 +858,7 @@ class HashcatDialog(tk.Toplevel):
             backend=backend,
             on_output=lambda t, c=None: self._ui_q.put(("raw", "mask", t)),
             on_status=lambda st: self._ui_q.put(("status", "mask", st)),
+            on_phase=lambda label: self._ui_q.put(("phase", "mask", label)),
             on_cracked=lambda hv, p: self._ui_q.put(("cracked", "mask", p)),
             on_done=lambda c: self._ui_q.put(("done", "mask", c)),
             on_progress=lambda d, t, r: self._ui_q.put(
@@ -1132,6 +1168,7 @@ class HashcatDialog(tk.Toplevel):
             backend=backend,
             on_output=lambda t, c=None: self._ui_q.put(("raw", "crack", t)),
             on_status=lambda st: self._ui_q.put(("status", "crack", st)),
+            on_phase=lambda label: self._ui_q.put(("phase", "crack", label)),
             on_cracked=lambda hv, p: self._ui_q.put(("cracked", "crack", p)),
             on_done=lambda c: self._ui_q.put(("done", "crack", c)),
             on_progress=lambda d, t, r: self._ui_q.put(
@@ -1190,6 +1227,8 @@ class HashcatDialog(tk.Toplevel):
             self._panel_for(item[1]).log_raw(item[2])
         elif kind == "status":
             self._panel_for(item[1]).set_status(item[2])
+        elif kind == "phase":
+            self._panel_for(item[1]).phase(item[2])
         elif kind == "progress":
             self._panel_for(item[1]).set_progress(item[2], item[3], item[4])
         elif kind == "cracked":

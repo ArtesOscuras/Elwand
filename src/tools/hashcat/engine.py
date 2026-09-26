@@ -33,6 +33,19 @@ _STATUS_NAMES = {
 
 _STATUS_JSON_SUPPORTED = None
 
+_PHASE_MARKERS = [
+    ("Initializing device kernels and memory", "Preparing kernels\u2026"),
+    ("Initializing backend runtime", "Initializing backend\u2026"),
+    ("Autodetecting hash-modes", "Detecting hash mode\u2026"),
+    ("Starting self-test", "Running self-test\u2026"),
+    ("Starting autotune", "Autotuning\u2026"),
+    ("Counting lines in", "Loading wordlist\u2026"),
+    ("Sorting hashes", "Preparing hashes\u2026"),
+    ("Removing duplicate hashes", "Preparing hashes\u2026"),
+    ("Sorting salts", "Preparing hashes\u2026"),
+    ("Comparing hashes with potfile", "Checking potfile\u2026"),
+]
+
 
 def _supports_status_json(binary):
     global _STATUS_JSON_SUPPORTED
@@ -51,7 +64,7 @@ class HashcatEngine:
                  custom_charsets=None, rules_file=None,
                  backend=None,
                  on_output=None, on_cracked=None, on_done=None,
-                 on_progress=None, on_status=None):
+                 on_progress=None, on_status=None, on_phase=None):
         self._mode = str(mode)
         self._hash_value = hash_value
         self._wordlist = wordlist
@@ -64,6 +77,7 @@ class HashcatEngine:
         self._on_done = on_done
         self._on_progress = on_progress
         self._on_status = on_status
+        self._on_phase = on_phase
         self._proc = None
         self._stop_flag = threading.Event()
         self._progress_done = 0
@@ -203,7 +217,7 @@ class HashcatEngine:
             cmd.extend(["--outfile", outfile, "--outfile-format", "2"])
 
         cmd.extend([
-            "--quiet", "--status", "--status-timer=1", "--potfile-disable",
+            "--status", "--status-timer=1", "--potfile-disable",
         ])
         if _supports_status_json(binary):
             cmd.append("--status-json")
@@ -224,7 +238,7 @@ class HashcatEngine:
         try:
             self._proc = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, bufsize=1,
+                bufsize=0,
             )
         except (FileNotFoundError, PermissionError, OSError) as e:
             if self._on_output:
@@ -233,23 +247,7 @@ class HashcatEngine:
             self._finish([])
             return
 
-        for line in self._proc.stdout:
-            if self._stop_flag.is_set():
-                self._proc.terminate()
-                break
-            line = line.rstrip("\n")
-            if not line:
-                continue
-            if line.lstrip().startswith("{") and self._handle_status_json(line):
-                self._poll_outfile()
-                continue
-            self._emit(f"  {line}\n")
-            low = line.lower()
-            if ("build failed" in low or "permission denied" in low
-                    or "no devices" in low):
-                self._kernel_error = True
-            self._parse_progress(line)
-            self._poll_outfile()
+        self._read_stream(self._proc)
 
         try:
             self._proc.wait(timeout=2)
@@ -261,6 +259,64 @@ class HashcatEngine:
         if self._kernel_error and not self._cracked:
             self._emit(self._kernel_hint(binary), "error")
         self._finish(self._cracked)
+
+    def _read_stream(self, proc):
+        """Read hashcat's output in chunks.
+
+        hashcat prints some phase messages ("Initializing device kernels…")
+        without a trailing newline, so a plain line iterator would hold them
+        back. Reading raw chunks lets us surface those markers immediately.
+        """
+        try:
+            fd = proc.stdout.fileno()
+        except Exception:
+            return
+
+        buf = ""
+        emitted = set()
+        while True:
+            if self._stop_flag.is_set():
+                proc.terminate()
+                break
+            try:
+                chunk = os.read(fd, 4096)
+            except OSError:
+                break
+            if not chunk:
+                break
+            buf += chunk.decode("utf-8", errors="replace")
+            self._scan_phases(buf, emitted)
+            while "\n" in buf:
+                line, buf = buf.split("\n", 1)
+                self._handle_line(line)
+            if len(buf) > 65536:
+                buf = buf[-8192:]
+        if buf.strip():
+            self._handle_line(buf)
+
+    def _scan_phases(self, buf, emitted):
+        for marker, label in _PHASE_MARKERS:
+            if label in emitted:
+                continue
+            if marker in buf:
+                emitted.add(label)
+                if self._on_phase:
+                    self._on_phase(label)
+
+    def _handle_line(self, line):
+        line = line.rstrip("\r")
+        if not line.strip():
+            return
+        if line.lstrip().startswith("{") and self._handle_status_json(line):
+            self._poll_outfile()
+            return
+        self._emit(f"  {line}\n")
+        low = line.lower()
+        if ("build failed" in low or "permission denied" in low
+                or "no devices" in low):
+            self._kernel_error = True
+        self._parse_progress(line)
+        self._poll_outfile()
 
     def _kernel_hint(self, binary):
         kdir = self._kernels_dir(binary)
