@@ -1,9 +1,11 @@
 """Hashcat engine — wraps the hashcat binary for background cracking."""
+import json
 import os
 import re
 import subprocess
 import tempfile
 import threading
+import time
 
 from src.resolve_binary import resolve
 
@@ -11,13 +13,45 @@ from src.resolve_binary import resolve
 _PROGRESS_RE = re.compile(r"Progress\.+:\s+(\d+)/(\d+)")
 _RECOVERED_RE = re.compile(r"Recovered\.+:\s+(\d+)/(\d+).*?Digests")
 
+_STATUS_NAMES = {
+    0: "init",
+    1: "autotune",
+    2: "selftest",
+    3: "running",
+    4: "paused",
+    5: "exhausted",
+    6: "cracked",
+    7: "aborted",
+    8: "quit",
+    9: "bypass",
+    10: "aborted",
+    11: "aborted",
+    13: "error",
+    14: "aborted",
+    16: "autodetect",
+}
+
+_STATUS_JSON_SUPPORTED = None
+
+
+def _supports_status_json(binary):
+    global _STATUS_JSON_SUPPORTED
+    if _STATUS_JSON_SUPPORTED is None:
+        try:
+            r = subprocess.run([binary, "--help"], capture_output=True,
+                               text=True, timeout=10)
+            _STATUS_JSON_SUPPORTED = "status-json" in (r.stdout + r.stderr)
+        except Exception:
+            _STATUS_JSON_SUPPORTED = False
+    return _STATUS_JSON_SUPPORTED
+
 
 class HashcatEngine:
     def __init__(self, mode, hash_value, wordlist=None, mask=None,
                  custom_charsets=None, rules_file=None,
                  backend=None,
                  on_output=None, on_cracked=None, on_done=None,
-                 on_progress=None):
+                 on_progress=None, on_status=None):
         self._mode = str(mode)
         self._hash_value = hash_value
         self._wordlist = wordlist
@@ -29,6 +63,7 @@ class HashcatEngine:
         self._on_cracked = on_cracked
         self._on_done = on_done
         self._on_progress = on_progress
+        self._on_status = on_status
         self._proc = None
         self._stop_flag = threading.Event()
         self._progress_done = 0
@@ -38,6 +73,7 @@ class HashcatEngine:
         self._outfile_seen = 0
         self._cracked = []
         self._kernel_error = False
+        self._saw_status_json = False
 
     def start(self):
         threading.Thread(target=self._run, daemon=True).start()
@@ -169,6 +205,8 @@ class HashcatEngine:
         cmd.extend([
             "--quiet", "--status", "--status-timer=1", "--potfile-disable",
         ])
+        if _supports_status_json(binary):
+            cmd.append("--status-json")
         if self._backend:
             cmd.extend(["-D", self._backend])
         if self._rules_file:
@@ -201,6 +239,9 @@ class HashcatEngine:
                 break
             line = line.rstrip("\n")
             if not line:
+                continue
+            if line.lstrip().startswith("{") and self._handle_status_json(line):
+                self._poll_outfile()
                 continue
             self._emit(f"  {line}\n")
             low = line.lower()
@@ -247,8 +288,90 @@ class HashcatEngine:
         if m:
             self._progress_recovered = int(m.group(1))
 
+    def _handle_status_json(self, raw):
+        try:
+            obj = json.loads(raw)
+        except Exception:
+            return False
+        if not isinstance(obj, dict) or "status" not in obj:
+            return False
+
+        self._saw_status_json = True
+
+        try:
+            status_number = int(obj.get("status", -1))
+        except (TypeError, ValueError):
+            status_number = -1
+        state = _STATUS_NAMES.get(status_number, "unknown")
+
+        try:
+            prog = obj.get("progress") or [0, 0]
+            prog = (int(prog[0]), int(prog[1]))
+        except (TypeError, ValueError, IndexError):
+            prog = (0, 0)
+
+        try:
+            rec = obj.get("recovered_hashes") or [0, 0]
+            rec = (int(rec[0]), int(rec[1]))
+        except (TypeError, ValueError, IndexError):
+            rec = (0, 0)
+
+        devices = []
+        speed = 0
+        for d in obj.get("devices") or []:
+            try:
+                sp = int(d.get("speed") or 0)
+            except (TypeError, ValueError):
+                sp = 0
+            speed += sp
+            devices.append({
+                "name": d.get("device_name") or "",
+                "type": d.get("device_type") or "",
+                "speed": sp,
+                "util": int(d.get("util") or 0),
+                "temp": int(d.get("temp") or 0),
+            })
+
+        now = int(time.time())
+        try:
+            tstart = int(obj.get("time_start") or 0)
+        except (TypeError, ValueError):
+            tstart = 0
+        try:
+            est_stop = int(obj.get("estimated_stop") or 0)
+        except (TypeError, ValueError):
+            est_stop = 0
+
+        elapsed = max(0, now - tstart) if tstart else 0
+        eta = max(0, est_stop - now) if est_stop > now else 0
+        if not eta and prog[0] > 0 and prog[1] > prog[0] and elapsed:
+            eta = int(elapsed * (prog[1] - prog[0]) / prog[0])
+
+        self._progress_done, self._progress_total = prog
+        self._progress_recovered = rec[0]
+
+        status = {
+            "state": state,
+            "status_number": status_number,
+            "progress": prog,
+            "recovered": rec,
+            "speed": speed,
+            "elapsed": elapsed,
+            "eta": eta,
+            "devices": devices,
+            "guess_base": obj.get("guess_base"),
+            "mask_len": int(obj.get("guess_mask_length") or 0),
+        }
+
+        if self._on_status:
+            self._on_status(status)
+        elif self._on_progress:
+            self._on_progress(prog[0], prog[1], rec[0])
+        return True
+
     def _finish(self, cracked):
-        if self._on_progress and self._progress_total > 0:
+        if (not self._saw_status_json and self._on_progress
+                and self._progress_total > 0):
             self._on_progress(self._progress_total, self._progress_total,
                               self._progress_recovered)
         if self._on_done:

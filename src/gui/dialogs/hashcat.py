@@ -1,7 +1,10 @@
+import json
 import os
+import queue
 import re
 import sqlite3
 import threading
+import time
 import tkinter as tk
 from collections import defaultdict
 from tkinter import ttk
@@ -20,6 +23,243 @@ ERR_COLOR = "#f44747"
 INFO_COLOR = "#5ba3ec"
 
 
+def _fmt_int(n):
+    try:
+        return f"{int(n):,}"
+    except (TypeError, ValueError):
+        return str(n)
+
+
+def _fmt_hms(sec):
+    sec = max(0, int(sec))
+    h, rem = divmod(sec, 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return f"{h:02d}:{m:02d}:{s:02d}"
+    return f"{m:02d}:{s:02d}"
+
+
+def _fmt_speed(hps):
+    hps = max(0.0, float(hps))
+    if hps >= 1e9:
+        return f"{hps / 1e9:.2f} GH/s"
+    if hps >= 1e6:
+        return f"{hps / 1e6:.2f} MH/s"
+    if hps >= 1e3:
+        return f"{hps / 1e3:.2f} kH/s"
+    return f"{int(hps)} H/s"
+
+
+class _StatusPanel:
+    """Clean, Elwand-styled hashcat status panel.
+
+    Draws a progress bar, live status/timing lines and a small event log.
+    The raw hashcat output lives behind a "Details" toggle.
+    """
+
+    def __init__(self, parent, row):
+        self.parent = parent
+        self._started_at = None
+        self._est_end = None
+        self._state = "idle"
+        self._last_end = 0
+        self._details_shown = False
+
+        self.progress_var = tk.IntVar(value=0)
+        ttk.Progressbar(parent, variable=self.progress_var, maximum=100).grid(
+            row=row, column=0, columnspan=2, sticky="ew", padx=15, pady=(6, 2))
+        row += 1
+
+        self.info = tk.Label(parent, text="Ready", font=fonts.view_font(10),
+                             fg=FG, bg=BG, anchor="w", justify=tk.LEFT)
+        self.info.grid(row=row, column=0, columnspan=2, sticky="ew", padx=15)
+        row += 1
+
+        self.timing = tk.Label(parent, text="", font=fonts.view_font(9),
+                               fg=FG_DIM, bg=BG, anchor="w")
+        self.timing.grid(row=row, column=0, columnspan=2, sticky="ew", padx=15)
+        row += 1
+
+        self.device = tk.Label(parent, text="", font=fonts.view_font(9),
+                               fg=FG_DIM, bg=BG, anchor="w")
+        self.device.grid(row=row, column=0, columnspan=2, sticky="ew",
+                         padx=15, pady=(0, 2))
+        row += 1
+
+        ev_frame = tk.Frame(parent, bg=BG_WIDGET)
+        ev_frame.grid(row=row, column=0, columnspan=2, sticky="nsew",
+                      padx=15, pady=(2, 2))
+        parent.rowconfigure(row, weight=1)
+        ev_frame.columnconfigure(0, weight=1)
+        ev_frame.rowconfigure(0, weight=1)
+        self.events = tk.Text(
+            ev_frame, bg=BG_WIDGET, fg=FG, font=fonts.view_font(10), height=6,
+            state=tk.DISABLED, wrap=tk.WORD, cursor="", borderwidth=0,
+            highlightthickness=0)
+        self.events.grid(row=0, column=0, sticky="nsew")
+        ev_sb = tk.Scrollbar(ev_frame, orient=tk.VERTICAL,
+                             command=self.events.yview)
+        ev_sb.configure(bg="#333333", troughcolor="#1a1a1a",
+                        activebackground="#555555", width=10, borderwidth=0,
+                        highlightthickness=0, elementborderwidth=0)
+        ev_sb.grid(row=0, column=1, sticky="ns")
+        self.events.configure(yscrollcommand=ev_sb.set)
+        for tag, col in (("success", SUCCESS), ("error", ERR_COLOR),
+                         ("info", INFO_COLOR), ("muted", FG_DIM)):
+            self.events.tag_configure(tag, foreground=col)
+        row += 1
+
+        self.details_btn = tk.Label(
+            parent, text="  Details  ", bg="#222222", fg=FG,
+            font=fonts.view_font(9), relief=tk.RAISED, bd=1, padx=10, pady=3,
+            cursor="")
+        self.details_btn.grid(row=row, column=0, sticky="w", padx=15,
+                              pady=(2, 2))
+        self.details_btn.bind("<Button-1>", lambda e: self.toggle_details())
+        self.details_btn.bind("<Enter>",
+                              lambda e: self.details_btn.config(bg="#333333"))
+        self.details_btn.bind("<Leave>",
+                              lambda e: self.details_btn.config(bg="#222222"))
+        row += 1
+
+        self._raw_row = row
+        self.raw_frame = tk.Frame(parent, bg=BG_WIDGET)
+        self.raw_frame.columnconfigure(0, weight=1)
+        self.raw_frame.rowconfigure(0, weight=1)
+        self.raw = tk.Text(
+            self.raw_frame, bg=BG_WIDGET, fg=FG_DIM, font=fonts.view_font(9),
+            height=10, state=tk.DISABLED, wrap=tk.NONE, cursor="",
+            borderwidth=0, highlightthickness=0)
+        self.raw.grid(row=0, column=0, sticky="nsew")
+        raw_sb = tk.Scrollbar(self.raw_frame, orient=tk.VERTICAL,
+                              command=self.raw.yview)
+        raw_sb.configure(bg="#333333", troughcolor="#1a1a1a",
+                         activebackground="#555555", width=10, borderwidth=0,
+                         highlightthickness=0, elementborderwidth=0)
+        raw_sb.grid(row=0, column=1, sticky="ns")
+        self.raw.configure(yscrollcommand=raw_sb.set)
+        self.raw.tag_configure("error", foreground=ERR_COLOR)
+        row += 1
+
+        self.end_row = row
+
+    def toggle_details(self):
+        if self._details_shown:
+            self.raw_frame.grid_forget()
+            self.details_btn.config(text="  Details  ")
+        else:
+            self.raw_frame.grid(row=self._raw_row, column=0, columnspan=2,
+                                sticky="nsew", padx=15, pady=(2, 6))
+            self.details_btn.config(text="  Hide details  ")
+        self._details_shown = not self._details_shown
+
+    def reset(self):
+        self.progress_var.set(0)
+        self.info.config(text="Ready")
+        self.timing.config(text="")
+        self.device.config(text="")
+        self._started_at = None
+        self._est_end = None
+        self._state = "idle"
+        self._last_end = 0
+        for w in (self.events, self.raw):
+            w.configure(state=tk.NORMAL)
+            w.delete("1.0", tk.END)
+            w.configure(state=tk.DISABLED)
+
+    def start(self, desc):
+        self._started_at = time.time()
+        self._state = "running"
+        self.log(f"[>] {desc}", "info")
+        self.tick()
+
+    def log(self, text, tag=None):
+        self.events.configure(state=tk.NORMAL)
+        self.events.insert(tk.END, text + "\n", tag or ())
+        self.events.see(tk.END)
+        self.events.configure(state=tk.DISABLED)
+
+    def log_raw(self, text):
+        self.raw.configure(state=tk.NORMAL)
+        at_bottom = self.raw.yview()[1] >= 1.0
+        self.raw.insert(tk.END, text, "error" if "error" in text.lower() else ())
+        if at_bottom:
+            self.raw.see(tk.END)
+        self.raw.configure(state=tk.DISABLED)
+
+    def set_status(self, st):
+        self._state = st["state"]
+        cur, end = st["progress"]
+        rec = st["recovered"]
+        self._last_end = end
+        parts = [f"Status: {st['state'].capitalize()}"]
+        if end > 0:
+            pct = int(cur * 100 / end)
+            self.progress_var.set(max(0, min(100, pct)))
+            parts.append(f"{_fmt_int(cur)} / {_fmt_int(end)} ({pct}%)")
+        if st["speed"]:
+            parts.append(_fmt_speed(st["speed"]))
+        if rec[1]:
+            parts.append(f"Recovered: {rec[0]}/{rec[1]}")
+        self.info.config(text="    ".join(parts))
+
+        if st["devices"]:
+            d = st["devices"][0]
+            dev = [d["name"] or d["type"] or "Device"]
+            if d.get("util"):
+                dev.append(f"Util {d['util']}%")
+            if d.get("temp", -1) > 0:
+                dev.append(f"Temp {d['temp']}C")
+            self.device.config(text="    ".join(dev))
+
+        if st["elapsed"]:
+            self._started_at = time.time() - st["elapsed"]
+        self._est_end = (time.time() + st["eta"]) if st["eta"] else None
+        self.tick()
+
+    def set_progress(self, done, total, recovered):
+        if not self._started_at:
+            self._started_at = time.time()
+        if total > 0:
+            pct = int(done * 100 / total)
+            self.progress_var.set(max(0, min(100, pct)))
+            parts = [f"Status: Running",
+                     f"{_fmt_int(done)} / {_fmt_int(total)} ({pct}%)"]
+            if recovered:
+                parts.append(f"Recovered: {recovered}")
+            self.info.config(text="    ".join(parts))
+        self.tick()
+
+    def tick(self):
+        if self._state not in ("running", "paused") or not self._started_at:
+            return
+        now = time.time()
+        parts = [f"Elapsed {_fmt_hms(now - self._started_at)}"]
+        if self._est_end and self._est_end > now:
+            parts.append(f"ETA ~{_fmt_hms(self._est_end - now)}")
+        elif self._state == "running":
+            parts.append("ETA computing...")
+        self.timing.config(text="    ".join(parts))
+
+    def cracked(self, plain):
+        self.log(f"[+] Cracked: {plain}  (saved to inventory)", "success")
+
+    def finish(self, cracked_list):
+        self._est_end = None
+        self.timing.config(text="")
+        if cracked_list:
+            if self._state != "cracked":
+                self.info.config(text="Status: Cracked")
+            self.log(f"[*] Finished: {len(cracked_list)} password(s) found",
+                     "info")
+        else:
+            if self._state not in ("exhausted", "cracked"):
+                self.info.config(text="Status: Exhausted")
+            self.progress_var.set(100)
+            self.log("[*] Finished: no password found", "muted")
+        self._state = "idle"
+
+
 class HashcatDialog(tk.Toplevel):
     def __init__(self, parent, active_tab=0):
         super().__init__(parent)
@@ -30,6 +270,10 @@ class HashcatDialog(tk.Toplevel):
         self._hw = None
         self._detect_db = None
         self.result = None
+        self._ui_q = queue.Queue()
+        self._drain_id = None
+        self._tick_id = None
+        self._closing = False
 
         self.title("Hashcat")
         sh = self.winfo_screenheight()
@@ -85,7 +329,6 @@ class HashcatDialog(tk.Toplevel):
     def _build_crack_tab(self, parent):
         parent.columnconfigure(0, weight=0)
         parent.columnconfigure(1, weight=1)
-        parent.rowconfigure(7, weight=1)
 
         row = 0
 
@@ -223,47 +466,12 @@ class HashcatDialog(tk.Toplevel):
         row += 1
 
         tk.Label(
-            parent, text="Output", font=fonts.view_font_bold(11),
+            parent, text="Status", font=fonts.view_font_bold(11),
             fg=FG, bg=BG,
-        ).grid(row=row, column=0, sticky="nw", padx=15, pady=(5, 2))
+        ).grid(row=row, column=0, columnspan=2, sticky="w", padx=15, pady=(6, 0))
 
-        output_frame = tk.Frame(parent, bg=BG_WIDGET)
-        output_frame.grid(row=row, column=1, sticky="nsew", padx=15, pady=(5, 2))
-        output_frame.columnconfigure(0, weight=1)
-        output_frame.rowconfigure(0, weight=1)
-
-        self._output_text = tk.Text(
-            output_frame, bg=BG_WIDGET, fg=FG_DIM, insertbackground=FG,
-            font=fonts.view_font(10), borderwidth=0, highlightthickness=0,
-            state=tk.DISABLED, wrap=tk.WORD,
-        )
-        self._output_text.grid(row=0, column=0, sticky="nsew")
-
-        output_scroll = tk.Scrollbar(output_frame, orient=tk.VERTICAL, command=self._output_text.yview)
-        output_scroll.configure(bg="#333333", troughcolor="#1a1a1a", activebackground="#555555",
-                                width=10, borderwidth=0, highlightthickness=0, elementborderwidth=0)
-        output_scroll.grid(row=0, column=1, sticky="ns")
-        self._output_text.configure(yscrollcommand=output_scroll.set)
-
-        self._output_text.tag_configure("success", foreground=SUCCESS)
-        self._output_text.tag_configure("error", foreground=ERR_COLOR)
-        self._output_text.tag_configure("info", foreground=INFO_COLOR)
-
-        row += 1
-
-        self._progress_var = tk.IntVar(value=0)
-        self._progress_bar = ttk.Progressbar(
-            parent, variable=self._progress_var, maximum=100,
-        )
-        self._progress_bar.grid(row=row, column=0, columnspan=2, sticky="ew", padx=15, pady=(5, 2))
-        row += 1
-
-        self._progress_label = tk.Label(
-            parent, text="Ready", font=fonts.view_font(9),
-            fg=FG_DIM, bg=BG, anchor="w",
-        )
-        self._progress_label.grid(row=row, column=0, columnspan=2, sticky="ew", padx=15)
-        row += 1
+        self._panel = _StatusPanel(parent, row + 1)
+        row = self._panel.end_row
 
         btn_frame = tk.Frame(parent, bg=BG)
         btn_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=15, pady=(8, 10))
@@ -470,56 +678,12 @@ class HashcatDialog(tk.Toplevel):
         row += 1
 
         tk.Label(
-            parent, text="Output", font=fonts.view_font_bold(11),
+            parent, text="Status", font=fonts.view_font_bold(11),
             fg=FG, bg=BG,
-        ).grid(row=row, column=0, sticky="nw", padx=15, pady=(5, 2))
+        ).grid(row=row, column=0, columnspan=2, sticky="w", padx=15, pady=(6, 0))
 
-        output_frame = tk.Frame(parent, bg=BG_WIDGET)
-        output_frame.grid(row=row, column=1, sticky="nsew", padx=15, pady=(5, 2))
-        parent.rowconfigure(row, weight=1)
-        output_frame.columnconfigure(0, weight=1)
-        output_frame.rowconfigure(0, weight=1)
-
-        self._mask_output_text = tk.Text(
-            output_frame, bg=BG_WIDGET, fg=FG_DIM, insertbackground=FG,
-            font=fonts.view_font(10), borderwidth=0, highlightthickness=0,
-            state=tk.DISABLED, wrap=tk.WORD,
-        )
-        self._mask_output_text.grid(row=0, column=0, sticky="nsew")
-
-        output_scroll = tk.Scrollbar(
-            output_frame, orient=tk.VERTICAL,
-            command=self._mask_output_text.yview,
-        )
-        output_scroll.configure(
-            bg="#333333", troughcolor="#1a1a1a", activebackground="#555555",
-            width=10, borderwidth=0, highlightthickness=0, elementborderwidth=0,
-        )
-        output_scroll.grid(row=0, column=1, sticky="ns")
-        self._mask_output_text.configure(yscrollcommand=output_scroll.set)
-
-        self._mask_output_text.tag_configure("success", foreground=SUCCESS)
-        self._mask_output_text.tag_configure("error", foreground=ERR_COLOR)
-        self._mask_output_text.tag_configure("info", foreground=INFO_COLOR)
-        row += 1
-
-        self._mask_progress_var = tk.IntVar(value=0)
-        self._mask_progress_bar = ttk.Progressbar(
-            parent, variable=self._mask_progress_var, maximum=100,
-        )
-        self._mask_progress_bar.grid(
-            row=row, column=0, columnspan=2, sticky="ew", padx=15, pady=(5, 2),
-        )
-        row += 1
-
-        self._mask_progress_label = tk.Label(
-            parent, text="Ready", font=fonts.view_font(9),
-            fg=FG_DIM, bg=BG, anchor="w",
-        )
-        self._mask_progress_label.grid(
-            row=row, column=0, columnspan=2, sticky="ew", padx=15,
-        )
-        row += 1
+        self._mask_panel = _StatusPanel(parent, row + 1)
+        row = self._mask_panel.end_row
 
         mask_btn_frame = tk.Frame(parent, bg=BG)
         mask_btn_frame.grid(
@@ -587,10 +751,10 @@ class HashcatDialog(tk.Toplevel):
     def _on_mask_changed(self, *_):
         mask = self._mask_var.get()
         if mask:
-            self._mask_progress_label.config(
-                text=f"  Mask: {mask} ({mask.count('?')} chars)")
+            self._mask_panel.info.config(
+                text=f"Mask: {mask} ({mask.count('?')} chars)")
         else:
-            self._mask_progress_label.config(text="  Ready")
+            self._mask_panel.info.config(text="Ready")
 
     def _build_mask_hw_buttons(self, hw):
         self._mask_hw_placeholder.destroy()
@@ -626,15 +790,16 @@ class HashcatDialog(tk.Toplevel):
     def _start_mask(self):
         mode = self._mode_var.get().strip()
         if not mode:
-            self._mask_write_output("Hashcat mode is required.\n", "error")
+            self._mask_panel.log("[!] Hashcat mode is required.", "error")
             return
         hash_val = self._hash_val_var.get().strip()
         if not hash_val:
-            self._mask_write_output("No hash selected. Switch to Crack tab.\n", "error")
+            self._mask_panel.log(
+                "[!] No hash selected. Switch to the wordlist tab.", "error")
             return
         mask = self._mask_var.get().strip()
         if not mask:
-            self._mask_write_output("Mask is required.\n", "error")
+            self._mask_panel.log("[!] Mask is required.", "error")
             return
 
         custom_charsets = {}
@@ -643,12 +808,8 @@ class HashcatDialog(tk.Toplevel):
             if val:
                 custom_charsets[key] = val
 
-        self._cracked = []
-        self._mask_output_text.configure(state=tk.NORMAL)
-        self._mask_output_text.delete("1.0", tk.END)
-        self._mask_output_text.configure(state=tk.DISABLED)
-        self._mask_progress_var.set(0)
-        self._mask_progress_label.config(text=f"  Mask: {mask} ({mask.count('?')} chars)")
+        self._begin_run("mask")
+        self._mask_panel.start(f"hashcat -m {mode} -a 3 {mask}")
 
         backend = self._hw_var.get()
         if backend == "auto":
@@ -660,61 +821,15 @@ class HashcatDialog(tk.Toplevel):
             mask=mask,
             custom_charsets=custom_charsets,
             backend=backend,
-            on_output=lambda t, c=None: self._mask_write_output(t, c),
-            on_cracked=self._on_mask_cracked,
-            on_done=self._on_mask_done,
-            on_progress=self._on_mask_progress,
+            on_output=lambda t, c=None: self._ui_q.put(("raw", "mask", t)),
+            on_status=lambda st: self._ui_q.put(("status", "mask", st)),
+            on_cracked=lambda hv, p: self._ui_q.put(("cracked", "mask", p)),
+            on_done=lambda c: self._ui_q.put(("done", "mask", c)),
+            on_progress=lambda d, t, r: self._ui_q.put(
+                ("progress", "mask", d, t, r)),
         )
         self._engine = engine
         engine.start()
-
-    def _on_mask_done(self, cracked):
-        self._engine = None
-        def _update():
-            if not self.winfo_exists():
-                return
-            self._mask_progress_var.set(100)
-            if cracked:
-                self._mask_write_output(
-                    f"\n[+] Done. {len(cracked)} password(s) cracked.\n", "success")
-                self._mask_progress_label.config(
-                    text=f"  Done. {len(cracked)} cracked")
-            else:
-                self._mask_write_output(
-                    "\n[-] Done. No passwords found.\n", "info")
-                self._mask_progress_label.config(
-                    text="  Done. No passwords found")
-        self.after(0, _update)
-
-    def _on_mask_progress(self, done, total, recovered):
-        if not self.winfo_exists():
-            return
-        pct = int(done * 100 / max(total, 1))
-        def _update():
-            if not self.winfo_exists():
-                return
-            self._mask_progress_var.set(pct)
-            parts = [f"  {done}/{total}"]
-            if recovered:
-                parts.append(f"  recovered: {recovered}")
-            self._mask_progress_label.config(text="".join(parts))
-        self.after(0, _update)
-
-    def _mask_write_output(self, text, color=None):
-        self.after(0, lambda: self._mask_do_write(text, color))
-
-    def _mask_do_write(self, text, color=None):
-        if not self.winfo_exists():
-            return
-        self._mask_output_text.configure(state=tk.NORMAL)
-        is_at_bottom = self._mask_output_text.yview()[1] >= 1.0
-        if color:
-            self._mask_output_text.insert(tk.END, text, color)
-        else:
-            self._mask_output_text.insert(tk.END, text)
-        if is_at_bottom:
-            self._mask_output_text.see(tk.END)
-        self._mask_output_text.configure(state=tk.DISABLED)
 
     # ─── Add Hash Tab ───────────────────────────────────────────
 
@@ -980,29 +1095,30 @@ class HashcatDialog(tk.Toplevel):
     def _start(self):
         mode = self._mode_var.get().strip()
         if not mode:
-            self._write_output("Hashcat mode is required.\n", "error")
+            self._panel.log("[!] Hashcat mode is required.", "error")
             return
         hash_val = self._hash_val_var.get().strip()
         if not hash_val:
-            self._write_output("Hash value is required.\n", "error")
+            self._panel.log("[!] Hash value is required.", "error")
             return
         wl = self._wl_var.get().strip()
         if not wl:
-            self._write_output("Wordlist is required.\n", "error")
+            self._panel.log("[!] Wordlist is required.", "error")
             return
         if not os.path.isfile(wl):
-            self._write_output(f"Wordlist not found: {wl}\n", "error")
+            self._panel.log(f"[!] Wordlist not found: {wl}", "error")
             return
 
         rules = self._rules_var.get().strip() or None
         if rules and not os.path.isfile(rules):
-            self._write_output(f"Rules file not found: {rules}\n", "error")
+            self._panel.log(f"[!] Rules file not found: {rules}", "error")
             return
 
-        self._cracked = []
-        self._clear_output()
-        self._progress_var.set(0)
-        self._progress_label.config(text="Running...")
+        self._begin_run("crack")
+        desc = f"hashcat -m {mode} (wordlist: {os.path.basename(wl)})"
+        if rules:
+            desc += f"  rules: {os.path.basename(rules)}"
+        self._panel.start(desc)
 
         backend = self._hw_var.get()
         if backend == "auto":
@@ -1014,81 +1130,83 @@ class HashcatDialog(tk.Toplevel):
             wordlist=wl,
             rules_file=rules,
             backend=backend,
-            on_output=self._write_output,
-            on_cracked=self._on_cracked,
-            on_done=self._on_done,
-            on_progress=self._on_progress,
+            on_output=lambda t, c=None: self._ui_q.put(("raw", "crack", t)),
+            on_status=lambda st: self._ui_q.put(("status", "crack", st)),
+            on_cracked=lambda hv, p: self._ui_q.put(("cracked", "crack", p)),
+            on_done=lambda c: self._ui_q.put(("done", "crack", c)),
+            on_progress=lambda d, t, r: self._ui_q.put(
+                ("progress", "crack", d, t, r)),
         )
         self._engine = engine
         engine.start()
 
+    def _begin_run(self, tab):
+        self._cracked = []
+        self._panel_for(tab).reset()
+        if self._engine is not None:
+            try:
+                self._engine.stop()
+            except Exception:
+                pass
+        self._engine = None
+        self._start_drain()
+        self._start_ticker()
+
+    def _panel_for(self, tab):
+        return self._mask_panel if tab == "mask" else self._panel
+
+    def _start_drain(self):
+        if self._drain_id is None and not self._closing:
+            self._drain_id = self.after(50, self._drain)
+
+    def _drain(self):
+        self._drain_id = None
+        try:
+            while True:
+                self._apply_ui(self._ui_q.get_nowait())
+        except queue.Empty:
+            pass
+        if self._engine is not None and not self._closing:
+            self._drain_id = self.after(50, self._drain)
+
+    def _start_ticker(self):
+        if self._tick_id is None and not self._closing:
+            self._tick_id = self.after(1000, self._tick)
+
+    def _tick(self):
+        self._tick_id = None
+        if self._closing or not self.winfo_exists():
+            return
+        for panel in (getattr(self, "_panel", None),
+                      getattr(self, "_mask_panel", None)):
+            if panel is not None:
+                panel.tick()
+        if self._engine is not None:
+            self._tick_id = self.after(1000, self._tick)
+
+    def _apply_ui(self, item):
+        kind = item[0]
+        if kind == "raw":
+            self._panel_for(item[1]).log_raw(item[2])
+        elif kind == "status":
+            self._panel_for(item[1]).set_status(item[2])
+        elif kind == "progress":
+            self._panel_for(item[1]).set_progress(item[2], item[3], item[4])
+        elif kind == "cracked":
+            self._panel_for(item[1]).cracked(item[2])
+            try:
+                credential_db.save_password(item[2])
+            except Exception:
+                pass
+        elif kind == "done":
+            self._panel_for(item[1]).finish(item[2])
+            self._engine = None
+
     def _stop(self):
         if self._engine:
             self._engine.stop()
-            self._write_output("Stopped.\n", "info")
-            self._mask_write_output("Stopped.\n", "info")
-
-    def _on_cracked(self, hash_val, plain):
-        self._cracked.append(plain)
-        credential_db.save_password(plain)
-        self.after(0, lambda: self._write_output(
-            f"\n[+] Cracked: {plain}  (saved to inventory)\n", "success"))
-
-    def _on_mask_cracked(self, hash_val, plain):
-        self._cracked.append(plain)
-        credential_db.save_password(plain)
-        self.after(0, lambda: self._mask_write_output(
-            f"\n[+] Cracked: {plain}  (saved to inventory)\n", "success"))
-
-    def _on_done(self, cracked):
-        self._engine = None
-        def _update():
-            if not self.winfo_exists():
-                return
-            self._progress_var.set(100)
-            if cracked:
-                self._write_output(
-                    f"\n[+] Done. {len(cracked)} password(s) cracked.\n", "success")
-                self._progress_label.config(text=f"  Done. {len(cracked)} cracked")
-            else:
-                self._write_output("\n[-] Done. No passwords found.\n", "info")
-                self._progress_label.config(text="  Done. No passwords found")
-        self.after(0, _update)
-
-    def _on_progress(self, done, total, recovered):
-        if not self.winfo_exists():
-            return
-        pct = int(done * 100 / max(total, 1))
-        def _update():
-            if not self.winfo_exists():
-                return
-            self._progress_var.set(pct)
-            parts = [f"  {done}/{total}"]
-            if recovered:
-                parts.append(f"  recovered: {recovered}")
-            self._progress_label.config(text="".join(parts))
-        self.after(0, _update)
-
-    def _write_output(self, text, color=None):
-        self.after(0, lambda: self._do_write(text, color))
-
-    def _do_write(self, text, color=None):
-        if not self.winfo_exists():
-            return
-        self._output_text.configure(state=tk.NORMAL)
-        is_at_bottom = self._output_text.yview()[1] >= 1.0
-        if color:
-            self._output_text.insert(tk.END, text, color)
-        else:
-            self._output_text.insert(tk.END, text)
-        if is_at_bottom:
-            self._output_text.see(tk.END)
-        self._output_text.configure(state=tk.DISABLED)
-
-    def _clear_output(self):
-        self._output_text.configure(state=tk.NORMAL)
-        self._output_text.delete("1.0", tk.END)
-        self._output_text.configure(state=tk.DISABLED)
+        self._panel.log("[*] Stopped.", "muted")
+        self._mask_panel.log("[*] Stopped.", "muted")
 
     # ─── Detect Tab ─────────────────────────────────────────────
 
@@ -1360,7 +1478,20 @@ class HashcatDialog(tk.Toplevel):
             current += count
 
     def _on_close(self):
-        self._stop()
+        self._closing = True
+        if self._engine is not None:
+            try:
+                self._engine.stop()
+            except Exception:
+                pass
+        for attr in ("_drain_id", "_tick_id"):
+            aid = getattr(self, attr, None)
+            if aid:
+                try:
+                    self.after_cancel(aid)
+                except tk.TclError:
+                    pass
+                setattr(self, attr, None)
         self.destroy()
 
 
