@@ -8,7 +8,6 @@ _ORDER = [
     ("Domains", "domains"),
     ("Inventory", "inventory"),
     ("Shells", "shells"),
-    ("Evidences", "evidences"),
     ("Services", "services"),
 ]
 
