@@ -5,6 +5,23 @@ import shutil
 import subprocess
 
 
+def _real_home():
+    """Home of the invoking user even when running under sudo.
+
+    `sudo` may set HOME to the target user's home (e.g. /root) and a PATH that
+    does not include the user's tool directories, so the shell rc holding the
+    alias/PATH is not found. SUDO_USER lets us read the real user's rc.
+    """
+    sudo_user = os.environ.get("SUDO_USER")
+    if sudo_user and os.geteuid() == 0:
+        try:
+            import pwd
+            return pwd.getpwnam(sudo_user).pw_dir
+        except Exception:
+            pass
+    return os.path.expanduser("~")
+
+
 def resolve(name):
     if not name:
         return None
@@ -26,7 +43,7 @@ def resolve(name):
 
 def _shell_rc_file():
     shell = os.environ.get("SHELL", "")
-    home = os.path.expanduser("~")
+    home = _real_home()
     candidates = []
     if "zsh" in shell:
         candidates = [os.path.join(home, ".zshrc")]

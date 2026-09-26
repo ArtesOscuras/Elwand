@@ -37,6 +37,7 @@ class HashcatEngine:
         self._outfile_path = None
         self._outfile_seen = 0
         self._cracked = []
+        self._kernel_error = False
 
     def start(self):
         threading.Thread(target=self._run, daemon=True).start()
@@ -48,6 +49,41 @@ class HashcatEngine:
                 self._proc.terminate()
             except Exception:
                 pass
+
+    @staticmethod
+    def _kernels_dir(binary):
+        return os.path.join(os.path.dirname(os.path.realpath(binary)), "kernels")
+
+    def _clear_unreadable_kernels(self, binary):
+        """Drop hashcat kernel-cache files this user cannot read/write.
+
+        hashcat compiles its kernels next to the binary. If a previous run as
+        another user (typically root) left them unreadable, the kernel build
+        fails with 'Permission denied' and nothing is cracked. They are a
+        regenerable cache, so removing them is safe.
+        """
+        kdir = self._kernels_dir(binary)
+        try:
+            names = os.listdir(kdir)
+        except OSError:
+            return
+        removed = 0
+        for name in names:
+            if not name.endswith(".kernel"):
+                continue
+            path = os.path.join(kdir, name)
+            if os.access(path, os.R_OK | os.W_OK):
+                continue
+            try:
+                os.remove(path)
+                removed += 1
+            except OSError:
+                pass
+        if removed:
+            self._emit(
+                f"  [i] Removed {removed} unreadable hashcat kernel cache "
+                f"file(s) (they belonged to another user; hashcat will rebuild "
+                f"them).\n", "info")
 
     @staticmethod
     def is_available():
@@ -114,6 +150,8 @@ class HashcatEngine:
             self._finish([])
             return
 
+        self._clear_unreadable_kernels(binary)
+
         cmd = [binary, "-m", self._mode, self._hash_value]
 
         if self._mask:
@@ -165,6 +203,10 @@ class HashcatEngine:
             if not line:
                 continue
             self._emit(f"  {line}\n")
+            low = line.lower()
+            if ("build failed" in low or "permission denied" in low
+                    or "no devices" in low):
+                self._kernel_error = True
             self._parse_progress(line)
             self._poll_outfile()
 
@@ -175,7 +217,18 @@ class HashcatEngine:
 
         self._poll_outfile()
         self._cleanup_outfile()
+        if self._kernel_error and not self._cracked:
+            self._emit(self._kernel_hint(binary), "error")
         self._finish(self._cracked)
+
+    def _kernel_hint(self, binary):
+        kdir = self._kernels_dir(binary)
+        return (
+            "\n[!] hashcat could not run its compute kernel.\n"
+            f"    The kernel cache at {kdir} is not readable/writable by the\n"
+            "    current user (usually because hashcat/Elwand was run as root\n"
+            "    or with sudo before). Remove it and retry:\n"
+            f'      rm -rf "{kdir}"/*\n')
 
     def _emit(self, text, color=None):
         if self._on_output:
