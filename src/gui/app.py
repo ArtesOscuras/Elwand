@@ -1360,7 +1360,12 @@ class App(tk.Tk):
 
     @staticmethod
     def _hash_choices(include_all=False):
-        """Hash autocomplete entries: '#id  truncated hash', full value inserted."""
+        """Hash autocomplete: '#id  <truncated hash>' label, short token inserted.
+
+        The token inserted into the prompt is ``#<id>:<truncated hash>`` so it
+        stays short; command handlers resolve it back to the full hash with
+        ``_find_hash``.
+        """
         from src.machines.credential_db import load_hashes
         results = []
         if include_all:
@@ -1370,8 +1375,39 @@ class App(tk.Tk):
             hid = h.get("id", "")
             short = hval if len(hval) <= 40 else hval[:40] + "\u2026"
             display = f"#{hid}  {short}" if hid != "" else short
-            results.append((display, hval))
+            token = f"#{hid}:{hval[:40]}" if hid != "" else hval
+            results.append((display, token))
         return results
+
+    @staticmethod
+    def _find_hash(token):
+        """Resolve a console hash token to a stored hash row.
+
+        Accepts the full hash, ``#<id>``, ``#<id>:<preview>``, a bare id, or a
+        unique hash prefix.
+        """
+        from src.machines.credential_db import load_hashes
+        t = (token or "").strip()
+        if not t:
+            return None
+        rows = load_hashes()
+        for h in rows:
+            if h.get("hash") == t:
+                return h
+        if t.startswith("#"):
+            id_part = t[1:].split(":", 1)[0]
+            if id_part.isdigit():
+                for h in rows:
+                    if str(h.get("id")) == id_part:
+                        return h
+        if t.isdigit():
+            for h in rows:
+                if str(h.get("id")) == t:
+                    return h
+        cands = [h for h in rows if (h.get("hash") or "").startswith(t)]
+        if len(cands) == 1:
+            return cands[0]
+        return None
 
     @staticmethod
     def _autocomplete_hashcat_hash(prefix):
@@ -2030,7 +2066,7 @@ class App(tk.Tk):
                 self.console.info("No hashcat engine running.")
             return
 
-        hash_val = args[0]
+        hash_token = args[0]
         wordlist_name = args[1] if len(args) > 1 else None
         if not wordlist_name:
             self.console.body(
@@ -2039,16 +2075,17 @@ class App(tk.Tk):
             )
             return
 
-        from src.machines.credential_db import load_hashes
         from src.elwand_paths import hashcat_db, lst_dir
 
-        mode = None
-        htype = ""
-        for h in load_hashes():
-            if h.get("hash") == hash_val:
-                htype = h.get("type", "")
-                mode = h.get("hascat_mode", "")
-                break
+        h = App._find_hash(hash_token)
+        if not h:
+            self.console.error(
+                "Hash not found in inventory. Add it first via GUI or "
+                "'add hash'.")
+            return
+        hash_val = h.get("hash", "")
+        htype = h.get("type", "")
+        mode = h.get("hascat_mode", "")
 
         if not mode and htype:
             try:
@@ -2139,7 +2176,7 @@ class App(tk.Tk):
         from src.tools.hashcat import HashcatEngine
         self.console.info(
             f"hashcat -m {mode} "
-            f"'{hash_val[:40]}...' {wordlist_name}"
+            f"'{hash_val}' {wordlist_name}"
         )
         self.console.info("Preparing hashcat\u2026")
 
@@ -2692,16 +2729,11 @@ class App(tk.Tk):
         if not args:
             self.console.body("Usage: view hash <hash|id>")
             return
-        from src.machines.credential_db import load_hashes
-        target = args[0]
-        for h in load_hashes():
-            if h["hash"] == target:
-                self._open_hash_view(h["id"])
-                return
-        if target.isdigit():
-            self._open_hash_view(int(target))
+        h = App._find_hash(args[0])
+        if not h:
+            self.console.warning(f"No hash found matching: {args[0]}")
             return
-        self.console.warning(f"No hash found matching: {target}")
+        self._open_hash_view(h["id"])
 
     def _cmd_view_user(self, args):
         if not args:
@@ -5376,15 +5408,10 @@ class App(tk.Tk):
                 count += 1
             self.console.success(f"{count} hashes deleted")
             return
-        for h in load_hashes():
-            if h["hash"] == target:
-                delete_hash_entry(h["id"])
-                self.console.success(f"Hash deleted (id={h['id']})")
-                return
-        if target.isdigit():
-            hid = int(target)
-            delete_hash_entry(hid)
-            self.console.success(f"Hash #{hid} deleted")
+        h = App._find_hash(target)
+        if h:
+            delete_hash_entry(h["id"])
+            self.console.success(f"Hash deleted (id={h['id']})")
             return
         self.console.warning(f"No hash found matching: {target}")
 
