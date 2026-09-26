@@ -3450,7 +3450,7 @@ class App(tk.Tk):
         else:
             method = "connect" + (" (no root)" if not self._is_root() else "")
         self.console.info(f"TCP scanning {ip}  ({method})...")
-        self._tracked_thread("TCP scan", ip, "scanner.png", self._run_tcpscan, ip, method)
+        self._tracked_thread("TCP scan", ip, "service.png", self._run_tcpscan, ip, method)
 
     UDP_PORTS_COMMON = [
         7, 9, 11, 13, 17, 19, 37, 42, 49, 53,
@@ -3625,7 +3625,7 @@ class App(tk.Tk):
                 self._tcpscan_process.kill()
             self.console.info("TCP scan stopped")
         _dbg(f"[udpscan] requested for {ip}")
-        self._tracked_thread("UDP scan", ip, "scanner.png", self._run_udpscan, ip)
+        self._tracked_thread("UDP scan", ip, "service.png", self._run_udpscan, ip)
 
     def _cmd_whatweb(self, args):
         m = self._get_active_machine()

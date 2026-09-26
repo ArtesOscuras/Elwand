@@ -145,6 +145,7 @@ class ProcessView(BaseView):
             self.text.insert(tk.END, center_pad, "bright")
             self.text.insert(tk.END, "No processes running.\n", "muted")
         else:
+            self.text.insert(tk.END, center_pad, "bright")
             first = True
             for p in items:
                 if not first:
