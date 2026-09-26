@@ -1359,12 +1359,23 @@ class App(tk.Tk):
         return []
 
     @staticmethod
-    def _autocomplete_hashcat_hash(prefix):
+    def _hash_choices(include_all=False):
+        """Hash autocomplete entries: truncated label, full value inserted."""
         from src.machines.credential_db import load_hashes
         results = []
+        if include_all:
+            results.append(("all", "all"))
         for h in load_hashes():
-            results.append(h.get("hash", ""))
+            hval = h.get("hash", "") or ""
+            htype = h.get("type", "") or ""
+            short = hval if len(hval) <= 40 else hval[:40] + "\u2026"
+            display = f"{htype}  {short}" if htype else short
+            results.append((display, hval))
         return results
+
+    @staticmethod
+    def _autocomplete_hashcat_hash(prefix):
+        return App._hash_choices()
 
     @staticmethod
     def _autocomplete_hashcat_wordlist(prefix, arg2_value=None):
@@ -1430,11 +1441,7 @@ class App(tk.Tk):
 
     @staticmethod
     def _autocomplete_hash_noall(prefix):
-        from src.machines.credential_db import load_hashes
-        results = []
-        for h in load_hashes():
-            results.append(h.get("hash", ""))
-        return results
+        return App._hash_choices()
 
     @staticmethod
     def _autocomplete_evidence_only(prefix):
@@ -1516,11 +1523,7 @@ class App(tk.Tk):
 
     @staticmethod
     def _autocomplete_hash(prefix):
-        from src.machines.credential_db import load_hashes
-        results = ["all"]
-        for h in load_hashes():
-            results.append(h.get("hash", ""))
-        return results
+        return App._hash_choices(include_all=True)
 
     @staticmethod
     def _autocomplete_evidence(prefix):
