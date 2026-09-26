@@ -114,6 +114,9 @@ class InventoryView(BaseView):
             {"name": "Hashes", "action": "hashes",
              "desc": "Stored hashes for cracking.",
              "icon": "hashes2.png", "enabled": True},
+            {"name": "Handshakes", "action": "handshakes",
+             "desc": "Captured WPA handshakes",
+             "icon": "handshake.png", "enabled": True},
             {"name": "Tickets", "action": "tickets",
              "desc": "Kerberos tickets (not yet implemented).",
              "icon": "ticket.png", "enabled": False},
@@ -132,9 +135,6 @@ class InventoryView(BaseView):
             {"name": "Reports", "action": "reports",
              "desc": "Generated reports",
              "icon": "report.png", "enabled": True},
-            {"name": "Handshakes", "action": "handshakes",
-             "desc": "Captured WPA handshakes",
-             "icon": "handshake.png", "enabled": True},
         ]
 
         self._font18 = fonts.view_font(18)
