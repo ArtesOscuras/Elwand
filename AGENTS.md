@@ -550,7 +550,7 @@ For all other providers (ollama, custom), the behavior is unchanged — no heade
   * Both modes accept the same inline commands: `exit`, `stop`, `reset`, `compact`, `clear`, `menu`, and `debug`.
 * `settings` — opens LLM configuration dialog.
 
-**`set` command (Elwand> prompt):** `set providers` alone prints the active provider and the available ones; `set providers <name>` switches the active provider, ensuring `active_models[<name>]` is set (defaults to the provider's first model) and persisting `llm.json`. The arg-2 popup lists every configured provider, marking the active one with a leading `*` (registered via `console.set_arg2_provider("set", "providers", App._autocomplete_providers)`; handler `App._cmd_set` → `_cmd_set_providers`).
+**`set` command (Elwand> prompt):** `set provider` alone prints the active provider and the available ones; `set provider <name>` switches the active provider, ensuring `active_models[<name>]` is set (defaults to the provider's first model) and persisting `llm.json`. The arg-2 popup lists every configured provider, marking the active one with a leading `*` (registered via `console.set_arg2_provider("set", "provider", App._autocomplete_providers)`; handler `App._cmd_set` → `_cmd_set_providers`).
 
 Both modes display the model output in white, marked with a colored `▣` (blue for agent, orange for consultor); the echoed prompt is `User prompt > ` colored by mode.
 

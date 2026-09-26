@@ -888,8 +888,8 @@ class App(tk.Tk):
         self.console.register_command("init", self._cmd_init, "Re-run initialization checks")
         self.console.register_command("settings", self._cmd_settings, "Open settings dialog")
         self.console.register_command("set", self._cmd_set, "Adjust settings")
-        self.console.set_subcommands("set", ["providers"])
-        self.console.set_arg2_provider("set", "providers", self._autocomplete_providers)
+        self.console.set_subcommands("set", ["provider"])
+        self.console.set_arg2_provider("set", "provider", self._autocomplete_providers)
         self.console.register_command("debug", self._cmd_debug, "Debug utilities")
         self.console.set_subcommands("debug", ["ctx_screenshot", "rotate_opencode_headers"])
         self.console.register_command("exit", self._cmd_exit, "Close the application")
@@ -3981,10 +3981,10 @@ class App(tk.Tk):
 
     def _cmd_set(self, args):
         if not args:
-            self.console.body("Usage: set providers <provider>")
+            self.console.body("Usage: set provider <provider>")
             return
         sub = args[0].lower()
-        if sub == "providers":
+        if sub == "provider":
             self._cmd_set_providers(args[1:])
         else:
             self.console.error(f"Unknown set target: {sub}.")
@@ -3998,7 +3998,7 @@ class App(tk.Tk):
             self.console.info(
                 f"Active provider: {current or '(none)'}\n"
                 f"Available: {', '.join(providers) or '(none)'}\n"
-                f"Usage: set providers <provider>")
+                f"Usage: set provider <provider>")
             return
         target = args[0].lower()
         match = next((p for p in providers if p.lower() == target), None)
