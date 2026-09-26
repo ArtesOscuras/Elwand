@@ -4050,6 +4050,21 @@ class App(tk.Tk):
                       "clear": "Clear the console", "menu": "Show help"})
         self._update_mode_prompt()
 
+    def _maybe_debug_command(self, text):
+        """Handle `debug [subcommand]` while in agent/consultor mode.
+
+        Only known debug subcommands are intercepted; anything else falls
+        through to the model as a normal prompt.
+        """
+        parts = text.split()
+        if not parts or parts[0].lower() != "debug":
+            return False
+        subs = [s.lower() for s in self.console._subcommands.get("debug", [])]
+        if len(parts) > 1 and parts[1].lower() not in subs:
+            return False
+        self._cmd_debug(parts[1:])
+        return True
+
     def _consultor_handler(self, text):
         text = text.strip()
         if text.lower() == "exit" or not text:
@@ -4063,7 +4078,8 @@ class App(tk.Tk):
                 "  reset   - Clear conversation history, clear cache, start fresh\n"
                 "  compact - Manually compact the conversation context\n"
                 "  clear   - Clear the console display\n"
-                "  menu    - Show this help\n\n"
+                "  menu    - Show this help\n"
+                "  debug   - Debug utilities (rotate_opencode_headers)\n\n"
                 "Press Tab with empty input to cycle modes."
             )
             return
@@ -4096,6 +4112,8 @@ class App(tk.Tk):
                 self._save_session()
                 self.console.stop_thinking()
             threading.Thread(target=_compact, daemon=True).start()
+            return
+        if self._maybe_debug_command(text):
             return
         self._consultor_ask(text)
 
@@ -4414,7 +4432,8 @@ class App(tk.Tk):
                 "  reset   - Clear conversation history, clear cache, start fresh\n"
                 "  compact - Manually compact the conversation context\n"
                 "  clear   - Clear the console display\n"
-                "  menu    - Show this help"
+                "  menu    - Show this help\n"
+                "  debug   - Debug utilities (rotate_opencode_headers)"
             )
             return
         if text.lower() == "compact":
@@ -4425,6 +4444,8 @@ class App(tk.Tk):
                 self._save_session()
                 self.console.stop_thinking()
             threading.Thread(target=_compact, daemon=True).start()
+            return
+        if self._maybe_debug_command(text):
             return
         self._agent_ask(text)
 
