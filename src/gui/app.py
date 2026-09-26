@@ -4042,12 +4042,13 @@ class App(tk.Tk):
         self._consultor_mode = True
         if not self._silent_mode_cycle:
             self.console.info(
-                "Consultor mode. Commands: exit, stop, reset, compact, clear, menu."
+                "Consultor mode. Commands: exit, stop, reset, compact, clear, menu, debug."
             )
         self.console.set_mode_handler(self._consultor_handler, "Consultor", "#e6b422",
             commands={"exit": "Quit Elwand", "stop": "Interrupt execution",
                       "reset": "Clear conversation and cache", "compact": "Compact context",
-                      "clear": "Clear the console", "menu": "Show help"})
+                      "clear": "Clear the console", "menu": "Show help",
+                      "debug": "Debug utilities"})
         self._update_mode_prompt()
 
     def _maybe_debug_command(self, text):
@@ -4390,12 +4391,13 @@ class App(tk.Tk):
         self._last_token_pct = None
         if not self._silent_mode_cycle:
             self.console.info(
-                "Agent mode. Commands: exit, stop, reset, compact, clear, menu."
+                "Agent mode. Commands: exit, stop, reset, compact, clear, menu, debug."
             )
         self.console.set_mode_handler(self._agent_handler, "Agent", "#5ba3ec",
             commands={"exit": "Quit Elwand", "stop": "Interrupt execution",
                       "reset": "Clear conversation and cache", "compact": "Compact context",
-                      "clear": "Clear the console", "menu": "Show help"})
+                      "clear": "Clear the console", "menu": "Show help",
+                      "debug": "Debug utilities"})
         self._update_mode_prompt()
 
     def _agent_handler(self, text):
