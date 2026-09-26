@@ -215,6 +215,7 @@ class Console(tk.Frame):
         self.input_text.delete("1.0", "end")
         self.input_text.insert("1.0", text)
         self.input_text.mark_set("insert", "end-1c")
+        self.after(1, self._sync_input_height)
 
     def _input_focus(self):
         self.input_text.focus()
