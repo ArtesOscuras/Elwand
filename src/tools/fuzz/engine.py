@@ -4,6 +4,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .wordlist import load_wordlist
+from src import process_registry
 
 TIMEOUT = 5
 MAX_WORKERS = 20
@@ -36,7 +37,16 @@ class FuzzEngine:
 
     def start(self):
         self._stop_flag.clear()
-        threading.Thread(target=self._run, daemon=True).start()
+        pid = process_registry.register(
+            "Fuzzer", detail=f"{self._method}  {self._target}", icon="fuzzer.png")
+
+        def _wrap():
+            try:
+                self._run()
+            finally:
+                process_registry.finish(pid)
+
+        threading.Thread(target=_wrap, daemon=True).start()
 
     def stop(self):
         self._stop_flag.set()

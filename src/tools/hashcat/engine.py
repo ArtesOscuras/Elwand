@@ -8,6 +8,7 @@ import threading
 import time
 
 from src.resolve_binary import resolve
+from src import process_registry
 
 
 _PROGRESS_RE = re.compile(r"Progress\.+:\s+(\d+)/(\d+)")
@@ -90,7 +91,17 @@ class HashcatEngine:
         self._saw_status_json = False
 
     def start(self):
-        threading.Thread(target=self._run, daemon=True).start()
+        target = os.path.basename(self._wordlist) if self._wordlist else (self._mask or "hash")
+        pid = process_registry.register(
+            "Hashcat", detail=f"mode {self._mode}  {target}", icon="hashcat.png")
+
+        def _wrap():
+            try:
+                self._run()
+            finally:
+                process_registry.finish(pid)
+
+        threading.Thread(target=_wrap, daemon=True).start()
 
     def stop(self):
         self._stop_flag.set()

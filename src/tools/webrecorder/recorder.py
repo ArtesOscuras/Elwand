@@ -18,6 +18,7 @@ from .cdp import CDPClient
 from .evidence import save_session_meta, update_session_count, save_request, target_dir
 
 from src.elwand_paths import chrome_profile_dir as _chrome_profile_dir
+from src import process_registry
 
 DEBUG_PORT = 9222
 USER_DATA_DIR = str(_chrome_profile_dir())
@@ -39,7 +40,16 @@ class Recorder:
         self._thread = None
 
     def start(self):
-        self._thread = threading.Thread(target=self._run, daemon=True)
+        pid = process_registry.register(
+            "Webrecorder", detail=self._target, icon="webrecorder.png")
+
+        def _wrap():
+            try:
+                self._run()
+            finally:
+                process_registry.finish(pid)
+
+        self._thread = threading.Thread(target=_wrap, daemon=True)
         self._thread.start()
 
     def stop(self):

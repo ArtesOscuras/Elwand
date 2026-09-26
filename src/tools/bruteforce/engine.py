@@ -1,6 +1,7 @@
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from src import process_registry
 
 MAX_WORKERS = 10
 
@@ -26,7 +27,18 @@ class BruteForceEngine:
 
     def start(self):
         self._stop_flag.clear()
-        threading.Thread(target=self._run, daemon=True).start()
+        pid = process_registry.register(
+            "Bruteforce",
+            detail=f"{self._protocol}  {self._target}:{self._port}",
+            icon="bruteforce.png")
+
+        def _wrap():
+            try:
+                self._run()
+            finally:
+                process_registry.finish(pid)
+
+        threading.Thread(target=_wrap, daemon=True).start()
 
     def stop(self):
         self._stop_flag.set()

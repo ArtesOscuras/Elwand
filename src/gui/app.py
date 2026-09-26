@@ -13,7 +13,7 @@ from . import fonts
 from . import windowing
 from .console import Console
 from .visualizer import Visualizer
-from .views import WifiView, NetworkView, DomainListView, EvidenceListView, CredentialListView, UsersView, PasswordsView, HashListView, ShellListView, ToolsView, InventoryView, PeopleView, ServicesView, DictionarysView, RulesView, PocsView, ReportsView, ReportView, HandshakesView
+from .views import WifiView, NetworkView, DomainListView, EvidenceListView, CredentialListView, UsersView, PasswordsView, HashListView, ShellListView, ToolsView, InventoryView, PeopleView, ProcessView, ServicesView, DictionarysView, RulesView, PocsView, ReportsView, ReportView, HandshakesView
 from .dialogs import ScanDialog
 from src import settings as elwand_settings
 from src.machines import store, start_autosave as start_machines_autosave, stop_autosave as stop_machines_autosave
@@ -25,6 +25,7 @@ from src.tools.scanner.mdns_cache import load as load_mdns_cache, save as save_m
 from src.tools.scanner.identifier import identify_device, get_gateway_ip, extract_model_for_ip, _probe_smb_info, _probe_ssh_banner, _probe_ttl, _run_whatweb, _probe_web_internal, _identify_linux_distro, _extract_domains_from_whatweb, _dbg
 from src.shells import ShellListener, shell_db
 from src import event_bus
+from src import process_registry
 
 import datetime as _datetime
 
@@ -849,6 +850,9 @@ class App(tk.Tk):
         services_view._check_state = self._services_state
         self.visualizer.register_view("services", services_view)
 
+        process_view = ProcessView(self.visualizer)
+        self.visualizer.register_view("process", process_view)
+
         dictionarys_view = DictionarysView(self.visualizer)
         dictionarys_view._on_item_click = self._open_dictionary_view
         self.visualizer.register_view("dictionarys", dictionarys_view)
@@ -872,7 +876,7 @@ class App(tk.Tk):
     def _register_commands(self):
         self.console.set_mode_cycle_callback(self._cycle_mode)
         self.console.register_command("view", self._cmd_view, "Switch or list views")
-        self.console.set_subcommands("view", ["list", "wifi", "tools", "inventory", "machine", "domain", "shell", "credential", "hash", "user", "passwords", "people", "evidence", "services", "dictionary", "rule", "poc", "report", "handshake"])
+        self.console.set_subcommands("view", ["list", "wifi", "tools", "inventory", "machine", "domain", "shell", "credential", "hash", "user", "passwords", "people", "evidence", "process", "services", "dictionary", "rule", "poc", "report", "handshake"])
         self.console.register_command("use", self._cmd_use, "Use a tool")
         self.console.set_subcommands("use", ["scanner", "port-inspector", "fuzzer", "webrecorder", "nslookup", "ping", "tcpscan", "udpscan", "bannergrab", "whatweb", "bruteforce", "hashcat", "dicma", "wifioperator"])
         self.console.register_command("connect", self._cmd_connect, "Connect via FTP/SFTP/SSH/WinRM")
@@ -1661,7 +1665,7 @@ class App(tk.Tk):
                 self._cmd_view_evidence_name(rest)
             else:
                 self.visualizer.activate_view("evidences")
-        elif sub in ("wifi", "tools", "passwords", "inventory", "services"):
+        elif sub in ("wifi", "tools", "passwords", "inventory", "process", "services"):
             self.visualizer.activate_view(sub)
         elif sub == "dictionary":
             if rest:
@@ -1881,7 +1885,8 @@ class App(tk.Tk):
             self.console.warning(f"No machine found for: {target}")
             return
         ip = machine.ip
-        threading.Thread(target=self._run_bannergrab, args=(ip, port), daemon=True).start()
+        self._tracked_thread("Banner grab", f"{ip}:{port}", "service.png",
+                             self._run_bannergrab, ip, port)
 
     def _run_bannergrab(self, ip, port):
         self.console.after(0, lambda: self.console.info(f"Bannergrab {ip}:{port}..."))
@@ -2367,7 +2372,7 @@ class App(tk.Tk):
     def _run_dicma_users(self, names, out_file, light=False):
         from src.elwand_paths import lst_dir
         out_path = os.path.join(str(lst_dir()), out_file)
-        self._run_dicma_async(lambda: self._dicma_users_thread(names, out_path, light))
+        self._run_dicma_async(lambda: self._dicma_users_thread(names, out_path, light), "users")
 
     def _dicma_users_thread(self, names, out_path, light):
         from src.tools.dicma import engine as dicma
@@ -2382,7 +2387,7 @@ class App(tk.Tk):
     def _run_dicma_related(self, words, out_file, n1, n2, n3):
         from src.elwand_paths import lst_dir
         out_path = os.path.join(str(lst_dir()), out_file)
-        self._run_dicma_async(lambda: self._dicma_related_thread(words, out_path, n1, n2, n3))
+        self._run_dicma_async(lambda: self._dicma_related_thread(words, out_path, n1, n2, n3), "related words")
 
     def _dicma_related_thread(self, words, out_path, n1, n2, n3):
         from src.llm.config import load, get_provider, get_active_model
@@ -2407,7 +2412,7 @@ class App(tk.Tk):
     def _run_dicma_passwords(self, words, out_file, light=False, full=False):
         from src.elwand_paths import lst_dir
         out_path = os.path.join(str(lst_dir()), out_file)
-        self._run_dicma_async(lambda: self._dicma_passwords_thread(words, out_path, light, full))
+        self._run_dicma_async(lambda: self._dicma_passwords_thread(words, out_path, light, full), "passwords")
 
     def _dicma_passwords_thread(self, words, out_path, light, full):
         from src.tools.dicma import engine as dicma
@@ -2423,7 +2428,7 @@ class App(tk.Tk):
     def _run_dicma_rules(self, dict_file, out_file, light=False, full=False):
         from src.elwand_paths import lst_dir, rules_dir
         out_path = os.path.join(str(rules_dir()), out_file)
-        self._run_dicma_async(lambda: self._dicma_rules_thread(dict_file, out_path, light, full))
+        self._run_dicma_async(lambda: self._dicma_rules_thread(dict_file, out_path, light, full), "rules")
 
     def _dicma_rules_thread(self, dict_file, out_path, light, full):
         from src.tools.dicma import engine as dicma
@@ -2442,9 +2447,8 @@ class App(tk.Tk):
         self.console.after(0, lambda: self.console.success(
             f"{len(rules)} rules saved to: {out_path}"))
 
-    def _run_dicma_async(self, fn):
-        t = threading.Thread(target=fn, daemon=True)
-        t.start()
+    def _run_dicma_async(self, fn, detail="wordlist"):
+        self._tracked_thread("DICMA", detail, "dicma.png", fn)
 
     def _cmd_connect(self, args):
         if not args:
@@ -3252,7 +3256,7 @@ class App(tk.Tk):
 
     def _scan_ip(self, ip):
         self.console.info(f"Checking {ip}...")
-        threading.Thread(target=self._run_scan_ip, args=(ip,), daemon=True).start()
+        self._tracked_thread("Host identify", ip, "scanner.png", self._run_scan_ip, ip)
 
     def _run_scan_ip(self, ip):
         info = _do_scan_ip(ip)
@@ -3446,7 +3450,7 @@ class App(tk.Tk):
         else:
             method = "connect" + (" (no root)" if not self._is_root() else "")
         self.console.info(f"TCP scanning {ip}  ({method})...")
-        threading.Thread(target=self._run_tcpscan, args=(ip, method), daemon=True).start()
+        self._tracked_thread("TCP scan", ip, "scanner.png", self._run_tcpscan, ip, method)
 
     UDP_PORTS_COMMON = [
         7, 9, 11, 13, 17, 19, 37, 42, 49, 53,
@@ -3621,7 +3625,7 @@ class App(tk.Tk):
                 self._tcpscan_process.kill()
             self.console.info("TCP scan stopped")
         _dbg(f"[udpscan] requested for {ip}")
-        threading.Thread(target=self._run_udpscan, args=(ip,), daemon=True).start()
+        self._tracked_thread("UDP scan", ip, "scanner.png", self._run_udpscan, ip)
 
     def _cmd_whatweb(self, args):
         m = self._get_active_machine()
@@ -3676,7 +3680,8 @@ class App(tk.Tk):
             self.console.warning(f"No machine found for: {target}")
             return
         ip = machine.ip
-        threading.Thread(target=self._run_webscan, args=(ip, port, machine, domain_name), daemon=True).start()
+        self._tracked_thread("WhatWeb", f"{ip}:{port}", "service.png",
+                             self._run_webscan, ip, port, machine, domain_name)
 
     @staticmethod
     def _has_whatweb():
@@ -3817,7 +3822,8 @@ class App(tk.Tk):
             self.console.warning("A port inspector is already running.")
             return
         self._port_inspector_running = True
-        threading.Thread(target=self._run_port_inspector, args=(ip, port, machine), daemon=True).start()
+        self._tracked_thread("Port inspector", f"{ip}:{port}", "scanner.png",
+                             self._run_port_inspector, ip, port, machine)
 
     def _run_port_inspector(self, ip, port, machine):
         self.console.after(0, lambda: self.console.info(f"Port inspector {ip}:{port} starting..."))
@@ -4797,7 +4803,8 @@ class App(tk.Tk):
         self._on_close()
 
     def _run_system(self, cmd):
-        threading.Thread(target=self._run_system_thread, args=(cmd,), daemon=True).start()
+        self._tracked_thread("System command", cmd[:60], "service.png",
+                             self._run_system_thread, cmd)
 
     def _run_system_thread(self, cmd):
         _dbg(f"[system] started: {cmd}")
@@ -4870,7 +4877,7 @@ class App(tk.Tk):
                 self.console.warning(f"No machine with ID #{mid}")
                 return
         self.console.body(f"Pinging {ip}...")
-        threading.Thread(target=self._run_ping, args=(ip,), daemon=True).start()
+        self._tracked_thread("Ping", ip, "service.png", self._run_ping, ip)
 
     def _run_ping(self, ip):
         result = _do_ping(ip)
@@ -4895,7 +4902,7 @@ class App(tk.Tk):
             else:
                 self.console.warning(f"No machine with ID #{mid}")
                 return
-        threading.Thread(target=self._run_nslookup, args=(target,), daemon=True).start()
+        self._tracked_thread("Nslookup", target, "service.png", self._run_nslookup, target)
 
     def _run_nslookup(self, target):
         self.console.after(0, lambda: self.console.info(f"nslookup {target}..."))
@@ -6035,6 +6042,20 @@ class App(tk.Tk):
                 self.after(0, callback)
         except RuntimeError:
             pass
+
+    def _tracked_thread(self, name, detail, icon, target, *args):
+        """Run `target(*args)` in a daemon thread registered in Process."""
+        pid = process_registry.register(name, detail=detail, icon=icon)
+
+        def _wrap():
+            try:
+                target(*args)
+            finally:
+                process_registry.finish(pid)
+
+        t = threading.Thread(target=_wrap, daemon=True)
+        t.start()
+        return t
 
     def _on_close(self):
         self._closing = True

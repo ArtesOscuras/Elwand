@@ -486,6 +486,34 @@ The dialog has two tabs (Deauther / CSA Spoof), each with an interface selector,
 
 ---
 
+## Process View & Process Registry (`src/gui/views/process.py`, `src/process_registry.py`)
+
+The **Process** view (`ProcessView`, nav name `process`) lists the tools Elwand is running in background threads. It sits in the nav bar between **Shells** and **Services** and is display-only (no stop action; use the `stop <tool>` console commands). It is reachable via the nav bar or `view process`. Listeners (mDNS/revershell) and the WiFi monitor stay in **Services** and are intentionally NOT shown here.
+
+**Registry (`src/process_registry.py`)** — pure-Python, thread-safe (`threading.Lock`), no tkinter (safe to import from `src/tools/**`):
+
+* `register(name, detail="", icon="service.png") -> pid` — add a running process; `detail` is a short target/status string; `icon` is an icon filename.
+* `finish(pid)` — remove it (idempotent; `None` is a no-op).
+* `list_active()` — snapshot of active processes, oldest first, each with an `elapsed` (seconds) computed from `started` (`time.time()`).
+* `clear()` — drop everything.
+
+**How tasks register:**
+
+* Engines self-register in `start()` by wrapping the worker thread so `finish()` runs in a `finally`:
+  * `ActiveScanner` (`src/tools/scanner/active.py`) — registers in `start()`, finishes in `stop()` (name "Active scan", detail `<iface> <cidr>`).
+  * `HashcatEngine`, `FuzzEngine`, `BruteForceEngine`, `Recorder` — wrap `_run` in `start()`.
+
+  This covers console-, dialog- and agent-started engines automatically.
+* Inline threads in `App` use `App._tracked_thread(name, detail, icon, target, *args)`, which registers, runs `target(*args)` in a daemon thread, and finishes it in a `finally`. Used for: TCP scan, UDP scan, WhatWeb, Port inspector, Banner grab, Host identify, Ping, Nslookup, DICMA and the System command.
+
+**The view** polls `process_registry.list_active()` every **1 s** (faster than Services, to catch short tasks), rendering columns icon · name · detail · `RUNNING` (green) + elapsed (`Ns` / `Nm Ss` / `Nh Mm`). Empty state: "No processes running.". Like other views it uses named fonts (`view_font`) and `icons.scaled(ICON_BASE)`.
+
+**Rules:**
+
+* Register every new long-running tool: either self-register in the engine's `start()` with the wrap/finally pattern, or use `App._tracked_thread`.
+* Keep names/details short; `detail` is a single column.
+* Do not add listeners/WiFi monitor here — they belong to Services.
+
 ## Evidence Collection
 
 Elwand includes mechanisms for recording and preserving evidence generated during assessments.

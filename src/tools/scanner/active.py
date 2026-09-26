@@ -6,6 +6,7 @@ import shutil
 import ipaddress
 from concurrent.futures import ThreadPoolExecutor
 from src.network_iface import interfaces, ifaddresses, AF_INET
+from src import process_registry
 from scapy.all import ARP, Ether, srp
 from scapy.config import conf
 from zeroconf import Zeroconf, ServiceBrowser, BadTypeInNameException
@@ -72,6 +73,7 @@ class ActiveScanner:
         self._interface = None
         self._network = None
         self._preferred_iface = interface_name
+        self._process_id = None
 
     def start(self):
         if self._running:
@@ -86,6 +88,8 @@ class ActiveScanner:
         iface_name, ip, netmask = iface
         cidr_len = sum(bin(int(o)).count("1") for o in netmask.split("."))
         self._network = ipaddress.ip_network(f"{ip}/{cidr_len}", strict=False)
+        self._process_id = process_registry.register(
+            "Active scan", detail=f"{iface_name}  {self._network}", icon="scanner.png")
 
         try:
             from src import event_bus
@@ -224,6 +228,8 @@ class ActiveScanner:
         self._running = False
         if self._zc:
             self._zc.close()
+        process_registry.finish(self._process_id)
+        self._process_id = None
 
     @property
     def is_running(self):
