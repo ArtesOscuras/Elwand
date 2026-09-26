@@ -132,12 +132,12 @@ class InventoryView(BaseView):
             {"name": "Pocs", "action": "pocs",
              "desc": "Proof of Concept scripts",
              "icon": "poc.png", "enabled": True},
-            {"name": "Reports", "action": "reports",
-             "desc": "Generated reports",
-             "icon": "report.png", "enabled": True},
             {"name": "Evidences", "action": "evidences",
              "desc": "Collected evidence",
              "icon": "evidence.png", "enabled": True},
+            {"name": "Reports", "action": "reports",
+             "desc": "Generated reports",
+             "icon": "report.png", "enabled": True},
         ]
 
         self._font18 = fonts.view_font(18)
