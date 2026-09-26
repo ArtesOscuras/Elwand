@@ -14,15 +14,14 @@ _ORDER = [
 
 _frame = None
 _btns = []
-_zoom_label = None
+_zoom_labels = []
 _settings_callback = None
 
 
 def build(parent, active_view, navigator):
-    global _frame, _btns, _zoom_label
+    global _frame
     _frame = tk.Frame(parent, bg="#000000")
     _frame.pack(pady=(0, 10), fill=tk.X)
-    _btns = []
 
     zoom_frame = tk.Frame(_frame, bg="#000000")
     zoom_frame.pack(side=tk.RIGHT, padx=(0, 5))
@@ -37,12 +36,14 @@ def build(parent, active_view, navigator):
     minus_btn.bind("<Enter>", lambda e: minus_btn.config(bg="#333333"))
     minus_btn.bind("<Leave>", lambda e: minus_btn.config(bg="#222222"))
 
-    _zoom_label = tk.Label(
-        zoom_frame, text="100%", bg="#000000", fg="#888888",
+    zoom_label = tk.Label(
+        zoom_frame, text=f"{int(fonts.view_scale() * 100)}%", bg="#000000",
+        fg="#888888",
         font=fonts.view_font(10),
         padx=6,
     )
-    _zoom_label.pack(side=tk.LEFT)
+    zoom_label.pack(side=tk.LEFT)
+    _zoom_labels.append(zoom_label)
 
     plus_btn = tk.Label(
         zoom_frame, text="+", bg="#222222", fg="#ffffff",
@@ -111,9 +112,12 @@ def set_initial_zoom(scale):
 
 
 def _update_label():
-    global _zoom_label
-    if _zoom_label:
-        _zoom_label.config(text=f"{int(fonts.view_scale() * 100)}%")
+    text = f"{int(fonts.view_scale() * 100)}%"
+    for label in _zoom_labels:
+        try:
+            label.config(text=text)
+        except tk.TclError:
+            pass
 
 
 def refresh():
