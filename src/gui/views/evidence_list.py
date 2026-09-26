@@ -58,13 +58,25 @@ class EvidenceListView(BaseView):
 
         build_nav(header, "evidences", self.master)
 
-        tk.Label(
+        self._title_label = tk.Label(
             header,
             text="Evidence",
             font=fonts.view_font_bold(22),
-            fg="#ffffff",
+            fg=BRIGHT,
             bg="#000000",
-        ).pack(anchor="center")
+        )
+        self._title_label.pack(anchor="center")
+        self._title_label.bind(
+            "<Button-1>",
+            lambda e: self.master.activate_view("inventory"))
+        self._title_label.bind(
+            "<Enter>",
+            lambda e: self._title_label.config(
+                font=fonts.view_font_bold_under(22)))
+        self._title_label.bind(
+            "<Leave>",
+            lambda e: self._title_label.config(
+                font=fonts.view_font_bold(22)))
 
         text_frame = tk.Frame(self, bg="#000000")
         text_frame.grid(row=1, column=0, sticky="nsew")
