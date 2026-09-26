@@ -887,6 +887,9 @@ class App(tk.Tk):
         self.console.set_subcommands("add", ["machine", "domain", "credential", "user", "password", "hash", "people", "dictionary", "rule"])
         self.console.register_command("init", self._cmd_init, "Re-run initialization checks")
         self.console.register_command("settings", self._cmd_settings, "Open settings dialog")
+        self.console.register_command("set", self._cmd_set, "Adjust settings")
+        self.console.set_subcommands("set", ["providers"])
+        self.console.set_arg2_provider("set", "providers", self._autocomplete_providers)
         self.console.register_command("debug", self._cmd_debug, "Debug utilities")
         self.console.set_subcommands("debug", ["ctx_screenshot", "rotate_opencode_headers"])
         self.console.register_command("exit", self._cmd_exit, "Close the application")
@@ -1561,6 +1564,17 @@ class App(tk.Tk):
     @staticmethod
     def _autocomplete_hash(prefix):
         return App._hash_choices(include_all=True)
+
+    @staticmethod
+    def _autocomplete_providers(prefix):
+        from src.llm import config as llm_config
+        cfg = llm_config.load()
+        active = cfg.get("active_provider", "")
+        results = []
+        for pid in cfg.get("providers", {}):
+            display = f"* {pid}" if pid == active else f"  {pid}"
+            results.append((display, pid))
+        return results
 
     @staticmethod
     def _autocomplete_handshakes(prefix):
@@ -3964,6 +3978,47 @@ class App(tk.Tk):
     def _cmd_settings(self, args):
         from .dialogs.settings import SettingsDialog
         SettingsDialog(self)
+
+    def _cmd_set(self, args):
+        if not args:
+            self.console.body("Usage: set providers <provider>")
+            return
+        sub = args[0].lower()
+        if sub == "providers":
+            self._cmd_set_providers(args[1:])
+        else:
+            self.console.error(f"Unknown set target: {sub}.")
+
+    def _cmd_set_providers(self, args):
+        from src.llm import config as llm_config
+        cfg = llm_config.load()
+        providers = list(cfg.get("providers", {}).keys())
+        current = cfg.get("active_provider", "")
+        if not args:
+            self.console.info(
+                f"Active provider: {current or '(none)'}\n"
+                f"Available: {', '.join(providers) or '(none)'}\n"
+                f"Usage: set providers <provider>")
+            return
+        target = args[0].lower()
+        match = next((p for p in providers if p.lower() == target), None)
+        if not match:
+            self.console.error(
+                f"Unknown provider: {args[0]}. Available: {', '.join(providers)}")
+            return
+        if match == current:
+            self.console.info(f"Provider is already '{match}'.")
+            return
+        cfg["active_provider"] = match
+        am = cfg.setdefault("active_models", {})
+        if not am.get(match):
+            models = cfg.get("providers", {}).get(match, {}).get("models", [])
+            if models:
+                am[match] = models[0]
+        llm_config.save(cfg)
+        self.console.success(
+            f"Active provider set to '{match}' "
+            f"(model: {llm_config.get_active_model(cfg)}).")
 
     def _cmd_debug(self, args):
         if not args:
