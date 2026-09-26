@@ -40,6 +40,7 @@ class WifiOperatorDialog(tk.Toplevel):
         self._iface_labels = {}
         self._csa_iface_labels = {}
         self._csa_params = {}
+        self._deauth_params = {}
         self._csa_all_essid = False
         self._csa_running = False
         self._csa_stop = None
@@ -90,7 +91,7 @@ class WifiOperatorDialog(tk.Toplevel):
         tab.columnconfigure(0, weight=1)
         tab.columnconfigure(1, weight=1)
         tab.rowconfigure(1, weight=1)
-        tab.rowconfigure(2, weight=1)
+        tab.rowconfigure(3, weight=1)
 
         iface_row = tk.Frame(tab, bg=BG)
         iface_row.grid(row=0, column=0, columnspan=2, sticky="ew",
@@ -136,8 +137,30 @@ class WifiOperatorDialog(tk.Toplevel):
         self._client_list.bind("<<ListboxSelect>>",
                                lambda e: self._on_client_select())
 
+        from src.tools.scanner.wifi_monitor import DEAUTH_DEFAULTS
+        params = tk.Frame(tab, bg=BG)
+        params.grid(row=2, column=0, columnspan=2, sticky="ew",
+                    padx=12, pady=(6, 2))
+        fields = [
+            ("count", "Count", DEAUTH_DEFAULTS["count"]),
+            ("reason", "Reason", DEAUTH_DEFAULTS["reason"]),
+            ("interval", "Interval s", DEAUTH_DEFAULTS["interval"]),
+            ("rate", "TX rate", DEAUTH_DEFAULTS["rate"]),
+        ]
+        for i, (key, label, val) in enumerate(fields):
+            tk.Label(params, text=label, fg=MUTED, bg="#111111",
+                     font=fonts.view_font(10)).grid(
+                row=0, column=i * 2, padx=(0 if i == 0 else 8, 2))
+            ent = tk.Entry(params, width=6, bg=PANEL, fg=FG,
+                           insertbackground=FG, font=fonts.view_font(10),
+                           relief=tk.FLAT, highlightthickness=0,
+                           justify=tk.CENTER)
+            ent.insert(0, str(val))
+            ent.grid(row=0, column=i * 2 + 1)
+            self._deauth_params[key] = ent
+
         out_frame = tk.Frame(tab, bg=BG)
-        out_frame.grid(row=2, column=0, columnspan=2, sticky="nsew",
+        out_frame.grid(row=3, column=0, columnspan=2, sticky="nsew",
                        padx=12, pady=(6, 4))
         out_frame.columnconfigure(0, weight=1)
         out_frame.rowconfigure(0, weight=1)
@@ -155,7 +178,7 @@ class WifiOperatorDialog(tk.Toplevel):
             row=0, column=1, sticky="ns")
 
         btns = tk.Frame(tab, bg=BG)
-        btns.grid(row=3, column=0, columnspan=2, sticky="ew",
+        btns.grid(row=4, column=0, columnspan=2, sticky="ew",
                   padx=12, pady=(4, 12))
         btns.columnconfigure(0, weight=1)
         self._deauth_btn = self._make_button(btns, "Deauth")
@@ -557,19 +580,27 @@ class WifiOperatorDialog(tk.Toplevel):
         self._deauth_btn.config(text="Deauthing...")
         bssid = net["bssid"]
         iface = self._iface
+        opts = {
+            "count": self._deauth_param("count", int),
+            "reason": self._deauth_param("reason", int),
+            "interval": self._deauth_param("interval", float),
+            "rate": self._deauth_param("rate", int),
+        }
         threading.Thread(target=self._run_deauth,
-                         args=(bssid, client, iface), daemon=True).start()
+                         args=(bssid, client, iface, opts), daemon=True).start()
 
-    def _run_deauth(self, bssid, client, iface):
+    def _run_deauth(self, bssid, client, iface, opts):
         from src.tools.scanner import wifi_monitor as wm
         target = client if client else "all clients (broadcast)"
-        self._log_async(f"[*] Sending deauth frames to {target} ...")
+        self._log_async(
+            f"[*] Sending {opts['count']} deauth frames (reason "
+            f"{opts['reason']}) to {target} ...")
         if iface:
             wm.reserve_iface(iface)
             wm.wait_iface_released(iface, timeout=6.0)
         ok, msg = False, "Deauth failed."
         try:
-            ok, msg = wm.deauth(bssid, client=client, iface=iface)
+            ok, msg = wm.deauth(bssid, client=client, iface=iface, **opts)
         except Exception as e:
             msg = f"Deauth error: {e}"
         finally:
@@ -622,6 +653,14 @@ class WifiOperatorDialog(tk.Toplevel):
             return cast(ent.get().strip())
         except Exception:
             return DEFAULTS[key]
+
+    def _deauth_param(self, key, cast):
+        from src.tools.scanner.wifi_monitor import DEAUTH_DEFAULTS
+        ent = self._deauth_params.get(key)
+        try:
+            return cast(ent.get().strip())
+        except Exception:
+            return DEAUTH_DEFAULTS[key]
 
     def _on_csa_start(self):
         if self._csa_running:

