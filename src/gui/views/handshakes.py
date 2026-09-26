@@ -104,8 +104,8 @@ class HandshakesView(BaseView):
         self._poll_id = None
         self._resize_id = None
 
-    def _open_extract(self):
-        ExtractHashDialog(self.winfo_toplevel())
+    def _open_extract(self, pcap_path=None):
+        ExtractHashDialog(self.winfo_toplevel(), preselect=pcap_path)
 
     def _on_resize(self, event):
         if self._resize_id:
@@ -194,7 +194,20 @@ class HandshakesView(BaseView):
                     self.text.insert(tk.END, "?")
 
                 self.text.insert(tk.END, "\t", "bright")
-                self.text.insert(tk.END, f, "bright")
+                name_tag = f"hsname_{f}"
+                self.text.tag_configure(name_tag, underline=False)
+                self.text.insert(tk.END, f, ("bright", name_tag))
+                self.text.tag_bind(
+                    name_tag, "<Button-1>",
+                    lambda e, p=path: self._open_extract(p))
+                self.text.tag_bind(
+                    name_tag, "<Enter>",
+                    lambda e, t=name_tag: self.text.tag_configure(
+                        t, underline=True))
+                self.text.tag_bind(
+                    name_tag, "<Leave>",
+                    lambda e, t=name_tag: self.text.tag_configure(
+                        t, underline=False))
                 self.text.insert(tk.END, "\t", "bright")
                 self.text.insert(tk.END, size_str, "muted")
 
@@ -217,13 +230,14 @@ class HandshakesView(BaseView):
 
 
 class ExtractHashDialog(tk.Toplevel):
-    def __init__(self, parent):
+    def __init__(self, parent, preselect=None):
         super().__init__(parent)
         self.title("Extract hash")
         windowing.size_dialog(self, 860, 560, min_w=720, min_h=460)
         self.configure(bg="#111111")
         self.transient(parent)
 
+        self._preselect = preselect
         self._pcaps = []
         self._handshakes = []
         self._parse_token = 0
@@ -356,7 +370,15 @@ class ExtractHashDialog(tk.Toplevel):
         for f in files:
             self._pcap_list.insert(tk.END, f)
         if self._pcaps:
-            self._pcap_list.selection_set(0)
+            idx = 0
+            if self._preselect:
+                target = os.path.basename(self._preselect)
+                for i, f in enumerate(files):
+                    if f == target:
+                        idx = i
+                        break
+            self._pcap_list.selection_set(idx)
+            self._pcap_list.see(idx)
             self._on_pcap_select()
         else:
             self._status.config(text="No .pcap files in the handshakes folder.")
