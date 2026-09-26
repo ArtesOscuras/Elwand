@@ -1360,16 +1360,16 @@ class App(tk.Tk):
 
     @staticmethod
     def _hash_choices(include_all=False):
-        """Hash autocomplete entries: truncated label, full value inserted."""
+        """Hash autocomplete entries: '#id  truncated hash', full value inserted."""
         from src.machines.credential_db import load_hashes
         results = []
         if include_all:
             results.append(("all", "all"))
         for h in load_hashes():
             hval = h.get("hash", "") or ""
-            htype = h.get("type", "") or ""
+            hid = h.get("id", "")
             short = hval if len(hval) <= 40 else hval[:40] + "\u2026"
-            display = f"{htype}  {short}" if htype else short
+            display = f"#{hid}  {short}" if hid != "" else short
             results.append((display, hval))
         return results
 
