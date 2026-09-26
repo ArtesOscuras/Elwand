@@ -89,7 +89,7 @@ class ActiveScanner:
         cidr_len = sum(bin(int(o)).count("1") for o in netmask.split("."))
         self._network = ipaddress.ip_network(f"{ip}/{cidr_len}", strict=False)
         self._process_id = process_registry.register(
-            "Active scan", detail=f"{iface_name}  {self._network}", icon="scanner.png")
+            "Active scan", detail=f"{iface_name}  {self._network}")
 
         try:
             from src import event_bus

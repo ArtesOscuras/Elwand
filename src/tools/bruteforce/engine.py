@@ -29,8 +29,7 @@ class BruteForceEngine:
         self._stop_flag.clear()
         pid = process_registry.register(
             "Bruteforce",
-            detail=f"{self._protocol}  {self._target}:{self._port}",
-            icon="bruteforce.png")
+            detail=f"{self._protocol}  {self._target}:{self._port}")
 
         def _wrap():
             try:

@@ -1957,6 +1957,7 @@ def _do_tcp_scan(ip, ctx):
     if machine and open_ports:
         for p in open_ports:
             machine_db.save_tcp_port(machine.id, p)
+    ctx._tcpscan_running = True
     threading.Thread(target=ctx._run_tcpscan, args=(ip, "connect", True), daemon=True).start()
     if not open_ports:
         return f"No common TCP ports open on {ip} (scanned {len(_TCP_SCAN_PORTS)} ports). Full scan running in background."
@@ -1973,6 +1974,7 @@ def _do_udp_scan(ip, ctx):
     if machine and open_ports:
         for p in open_ports:
             machine_db.save_udp_port(machine.id, p)
+    ctx._udpscan_running = True
     threading.Thread(target=ctx._run_udpscan, args=(ip, True), daemon=True).start()
     if not open_ports:
         return f"No common UDP ports open on {ip} (scanned {len(_UDP_SCAN_PORTS)} ports). Full scan running in background."

@@ -38,7 +38,7 @@ class FuzzEngine:
     def start(self):
         self._stop_flag.clear()
         pid = process_registry.register(
-            "Fuzzer", detail=f"{self._method}  {self._target}", icon="fuzzer.png")
+            "Fuzzer", detail=f"{self._method}  {self._target}")
 
         def _wrap():
             try:

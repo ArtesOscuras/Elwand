@@ -93,7 +93,7 @@ class HashcatEngine:
     def start(self):
         target = os.path.basename(self._wordlist) if self._wordlist else (self._mask or "hash")
         pid = process_registry.register(
-            "Hashcat", detail=f"mode {self._mode}  {target}", icon="hashcat.png")
+            "Hashcat", detail=f"mode {self._mode}  {target}")
 
         def _wrap():
             try:

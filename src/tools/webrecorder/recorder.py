@@ -41,7 +41,7 @@ class Recorder:
 
     def start(self):
         pid = process_registry.register(
-            "Webrecorder", detail=self._target, icon="webrecorder.png")
+            "Webrecorder", detail=self._target)
 
         def _wrap():
             try:

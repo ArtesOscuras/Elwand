@@ -506,7 +506,9 @@ The **Process** view (`ProcessView`, nav name `process`) lists the tools Elwand 
   This covers console-, dialog- and agent-started engines automatically.
 * Inline threads in `App` use `App._tracked_thread(name, detail, icon, target, *args)`, which registers, runs `target(*args)` in a daemon thread, and finishes it in a `finally`. Used for: TCP scan, UDP scan, WhatWeb, Port inspector, Banner grab, Host identify, Ping, Nslookup, DICMA and the System command.
 
-**The view** polls `process_registry.list_active()` every **1 s** (faster than Services, to catch short tasks), rendering columns icon · name · detail · `RUNNING` (green) + elapsed (`Ns` / `Nm Ss` / `Nh Mm`). Empty state: "No processes running.". Like other views it uses named fonts (`view_font`) and `icons.scaled(ICON_BASE)`.
+**The view** polls `process_registry.list_active()` every **1 s** (faster than Services, to catch short tasks), rendering columns icon · name · detail · `RUNNING` (green) + elapsed (`Ns` / `Nm Ss` / `Nh Mm`). Empty state: "No processes running.". Like other views it uses named fonts (`view_font`) and `icons.scaled(ICON_BASE)`. All entries currently use `service.png` (the `icon` field is reserved for future per-tool icons).
+
+**TCP/UDP port scans:** `_tcp_scan_connect` / `_udp_scan_connect` submit ports to a `ThreadPoolExecutor` but **must not** use `with ThreadPoolExecutor(...)` — on stop, `__exit__` calls `shutdown(wait=True)` and drains the whole ~65 000-task backlog. They keep the executor on `self._tcpscan_executor` / `self._udpscan_executor`, break on the stop flag, and `shutdown(wait=False, cancel_futures=True)` in a `finally`. `_check` also early-returns if the scan is no longer running. Without this, the scan thread lingers ~16 min and the non-daemon executor threads block interpreter exit (app never closes). `_on_close` and every `stop` path cancel the executors (and kill a running nmap subprocess).
 
 **Rules:**
 

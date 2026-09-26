@@ -641,7 +641,9 @@ class App(tk.Tk):
         self._fuzz_dlg = None
         self._tcpscan_running = False
         self._tcpscan_process = None
+        self._tcpscan_executor = None
         self._udpscan_running = False
+        self._udpscan_executor = None
         self._port_inspector_running = False
         self._shell_listener = None
 
@@ -1885,7 +1887,7 @@ class App(tk.Tk):
             self.console.warning(f"No machine found for: {target}")
             return
         ip = machine.ip
-        self._tracked_thread("Banner grab", f"{ip}:{port}", "service.png",
+        self._tracked_thread("Banner grab", f"{ip}:{port}",
                              self._run_bannergrab, ip, port)
 
     def _run_bannergrab(self, ip, port):
@@ -2448,7 +2450,7 @@ class App(tk.Tk):
             f"{len(rules)} rules saved to: {out_path}"))
 
     def _run_dicma_async(self, fn, detail="wordlist"):
-        self._tracked_thread("DICMA", detail, "dicma.png", fn)
+        self._tracked_thread("DICMA", detail, fn)
 
     def _cmd_connect(self, args):
         if not args:
@@ -3065,12 +3067,16 @@ class App(tk.Tk):
                 self._tcpscan_running = False
                 if self._tcpscan_process:
                     self._tcpscan_process.kill()
+                if self._tcpscan_executor:
+                    self._tcpscan_executor.shutdown(wait=False, cancel_futures=True)
                 self.console.info("TCP scan stopped")
             else:
                 self.console.warning("No tcp scan is running")
         elif sub == "udpscan":
             if self._udpscan_running:
                 self._udpscan_running = False
+                if self._udpscan_executor:
+                    self._udpscan_executor.shutdown(wait=False, cancel_futures=True)
                 self.console.info("UDP scan stopped")
             else:
                 self.console.warning("No udp scan is running")
@@ -3256,7 +3262,7 @@ class App(tk.Tk):
 
     def _scan_ip(self, ip):
         self.console.info(f"Checking {ip}...")
-        self._tracked_thread("Host identify", ip, "scanner.png", self._run_scan_ip, ip)
+        self._tracked_thread("Host identify", ip, self._run_scan_ip, ip)
 
     def _run_scan_ip(self, ip):
         info = _do_scan_ip(ip)
@@ -3297,11 +3303,16 @@ class App(tk.Tk):
                         port_callback(p)
             finally:
                 sock.close()
-        with ThreadPoolExecutor(max_workers=100) as exe:
+        exe = ThreadPoolExecutor(max_workers=100)
+        self._tcpscan_executor = exe
+        try:
             futures = [exe.submit(_check, p) for p in ports]
             for f in as_completed(futures):
                 if not self._tcpscan_running:
                     break
+        finally:
+            exe.shutdown(wait=False, cancel_futures=True)
+            self._tcpscan_executor = None
         return sorted(open_ports)
 
     def _tcp_scan_syn_nmap(self, ip, ports):
@@ -3341,8 +3352,9 @@ class App(tk.Tk):
         return self._tcp_scan_connect(ip, ports, port_callback=port_callback)
 
     def _run_tcpscan(self, ip, method, skip_phase1=False):
+        if not self._tcpscan_running:
+            return
         machine = store.get(ip)
-        self._tcpscan_running = True
         all_ports = list(machine_db.load_tcp_ports(machine.id)) if skip_phase1 and machine else []
         try:
             def _save_ports():
@@ -3419,6 +3431,8 @@ class App(tk.Tk):
             self._tcpscan_running = False
             if self._tcpscan_process:
                 self._tcpscan_process.kill()
+            if self._tcpscan_executor:
+                self._tcpscan_executor.shutdown(wait=False, cancel_futures=True)
             self.console.info("TCP scan stop requested")
             return
         ip = sub
@@ -3439,6 +3453,8 @@ class App(tk.Tk):
             return
         if self._udpscan_running:
             self._udpscan_running = False
+            if self._udpscan_executor:
+                self._udpscan_executor.shutdown(wait=False, cancel_futures=True)
             self.console.info("UDP scan stopped")
         _dbg(f"[tcpscan] requested for {ip}")
         if self._active_scanner and self._active_scanner.is_running:
@@ -3450,7 +3466,8 @@ class App(tk.Tk):
         else:
             method = "connect" + (" (no root)" if not self._is_root() else "")
         self.console.info(f"TCP scanning {ip}  ({method})...")
-        self._tracked_thread("TCP scan", ip, "service.png", self._run_tcpscan, ip, method)
+        self._tcpscan_running = True
+        self._tracked_thread("TCP scan", ip, self._run_tcpscan, ip, method)
 
     UDP_PORTS_COMMON = [
         7, 9, 11, 13, 17, 19, 37, 42, 49, 53,
@@ -3488,6 +3505,8 @@ class App(tk.Tk):
     def _udp_scan_connect(self, ip, ports, port_callback=None):
         open_ports = []
         def _check(p):
+            if not self._udpscan_running:
+                return
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             sock.settimeout(1.5)
             try:
@@ -3502,11 +3521,16 @@ class App(tk.Tk):
                 pass
             finally:
                 sock.close()
-        with ThreadPoolExecutor(max_workers=100) as exe:
+        exe = ThreadPoolExecutor(max_workers=100)
+        self._udpscan_executor = exe
+        try:
             futures = [exe.submit(_check, p) for p in ports]
             for f in as_completed(futures):
                 if not self._udpscan_running:
                     break
+        finally:
+            exe.shutdown(wait=False, cancel_futures=True)
+            self._udpscan_executor = None
         return sorted(open_ports)
 
     def _udp_scapy_probe(self, ip, ports):
@@ -3534,8 +3558,9 @@ class App(tk.Tk):
         return self._udp_scan_connect(ip, ports, port_callback=port_callback)
 
     def _run_udpscan(self, ip, skip_phase1=False):
+        if not self._udpscan_running:
+            return
         machine = store.get(ip)
-        self._udpscan_running = True
         all_ports = list(machine_db.load_udp_ports(machine.id)) if skip_phase1 and machine else []
         try:
             def _save_ports():
@@ -3601,6 +3626,8 @@ class App(tk.Tk):
                 self.console.warning("No UDP scan is running.")
                 return
             self._udpscan_running = False
+            if self._udpscan_executor:
+                self._udpscan_executor.shutdown(wait=False, cancel_futures=True)
             self.console.info("UDP scan stop requested")
             return
         ip = sub
@@ -3623,9 +3650,12 @@ class App(tk.Tk):
             self._tcpscan_running = False
             if self._tcpscan_process:
                 self._tcpscan_process.kill()
+            if self._tcpscan_executor:
+                self._tcpscan_executor.shutdown(wait=False, cancel_futures=True)
             self.console.info("TCP scan stopped")
         _dbg(f"[udpscan] requested for {ip}")
-        self._tracked_thread("UDP scan", ip, "service.png", self._run_udpscan, ip)
+        self._udpscan_running = True
+        self._tracked_thread("UDP scan", ip, self._run_udpscan, ip)
 
     def _cmd_whatweb(self, args):
         m = self._get_active_machine()
@@ -3680,7 +3710,7 @@ class App(tk.Tk):
             self.console.warning(f"No machine found for: {target}")
             return
         ip = machine.ip
-        self._tracked_thread("WhatWeb", f"{ip}:{port}", "service.png",
+        self._tracked_thread("WhatWeb", f"{ip}:{port}",
                              self._run_webscan, ip, port, machine, domain_name)
 
     @staticmethod
@@ -3822,7 +3852,7 @@ class App(tk.Tk):
             self.console.warning("A port inspector is already running.")
             return
         self._port_inspector_running = True
-        self._tracked_thread("Port inspector", f"{ip}:{port}", "scanner.png",
+        self._tracked_thread("Port inspector", f"{ip}:{port}",
                              self._run_port_inspector, ip, port, machine)
 
     def _run_port_inspector(self, ip, port, machine):
@@ -4803,7 +4833,7 @@ class App(tk.Tk):
         self._on_close()
 
     def _run_system(self, cmd):
-        self._tracked_thread("System command", cmd[:60], "service.png",
+        self._tracked_thread("System command", cmd[:60],
                              self._run_system_thread, cmd)
 
     def _run_system_thread(self, cmd):
@@ -4877,7 +4907,7 @@ class App(tk.Tk):
                 self.console.warning(f"No machine with ID #{mid}")
                 return
         self.console.body(f"Pinging {ip}...")
-        self._tracked_thread("Ping", ip, "service.png", self._run_ping, ip)
+        self._tracked_thread("Ping", ip, self._run_ping, ip)
 
     def _run_ping(self, ip):
         result = _do_ping(ip)
@@ -4902,7 +4932,7 @@ class App(tk.Tk):
             else:
                 self.console.warning(f"No machine with ID #{mid}")
                 return
-        self._tracked_thread("Nslookup", target, "service.png", self._run_nslookup, target)
+        self._tracked_thread("Nslookup", target, self._run_nslookup, target)
 
     def _run_nslookup(self, target):
         self.console.after(0, lambda: self.console.info(f"nslookup {target}..."))
@@ -6043,9 +6073,9 @@ class App(tk.Tk):
         except RuntimeError:
             pass
 
-    def _tracked_thread(self, name, detail, icon, target, *args):
+    def _tracked_thread(self, name, detail, target, *args):
         """Run `target(*args)` in a daemon thread registered in Process."""
-        pid = process_registry.register(name, detail=detail, icon=icon)
+        pid = process_registry.register(name, detail=detail)
 
         def _wrap():
             try:
@@ -6072,6 +6102,17 @@ class App(tk.Tk):
             self._shell_listener.stop()
         self._udpscan_running = False
         self._tcpscan_running = False
+        if self._tcpscan_process:
+            try:
+                self._tcpscan_process.kill()
+            except Exception:
+                pass
+        for _exe in (self._tcpscan_executor, self._udpscan_executor):
+            if _exe:
+                try:
+                    _exe.shutdown(wait=False, cancel_futures=True)
+                except Exception:
+                    pass
         stop_machines_autosave()
         store.save()
         save_mdns_cache()
