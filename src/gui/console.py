@@ -108,6 +108,7 @@ class Console(tk.Frame):
         self._arg5_contains = set()
 
         self._segments = []
+        self._live_active = False
 
         self.grid_propagate(False)
         self.config(bg=BG)
@@ -316,6 +317,8 @@ class Console(tk.Frame):
     def write(self, text, color=None):
         if not self.winfo_exists():
             return
+        if self._live_active:
+            self.clear_live_status()
         self.output_area.config(state=tk.NORMAL)
         is_at_bottom = self.output_area.yview()[1] >= 1.0
         tag = None
@@ -329,6 +332,48 @@ class Console(tk.Frame):
         if is_at_bottom:
             self.output_area.see(tk.END)
         self.output_area.config(state=tk.DISABLED)
+
+    def live_status(self, text, color=None):
+        """Write/replace a single transient status line at the end.
+
+        The line is not added to the persisted segments, so it does not
+        survive a session restart (it only exists while an operation runs).
+        Any normal write() drops it first, and the next live_status()
+        re-creates it.
+        """
+        if not self.winfo_exists():
+            return
+        self.output_area.config(state=tk.NORMAL)
+        is_at_bottom = self.output_area.yview()[1] >= 1.0
+        ranges = self.output_area.tag_ranges("live_status_tag")
+        if ranges:
+            try:
+                self.output_area.delete(ranges[0], ranges[1])
+            except tk.TclError:
+                pass
+        tags = ["live_status_tag"]
+        if color:
+            tag = f"color_{id(color)}"
+            self.output_area.tag_configure(tag, foreground=color)
+            tags.append(tag)
+        self.output_area.insert("end", text + "\n", tuple(tags))
+        self._live_active = True
+        if is_at_bottom:
+            self.output_area.see("end")
+        self.output_area.config(state=tk.DISABLED)
+
+    def clear_live_status(self):
+        if not self._live_active:
+            return
+        self._live_active = False
+        try:
+            ranges = self.output_area.tag_ranges("live_status_tag")
+            if ranges:
+                self.output_area.config(state=tk.NORMAL)
+                self.output_area.delete(ranges[0], ranges[1])
+                self.output_area.config(state=tk.DISABLED)
+        except tk.TclError:
+            pass
 
     def writeln(self, text="", color=None):
         self.write(text + "\n", color)
@@ -405,6 +450,7 @@ class Console(tk.Frame):
     def restore_segments(self, segments):
         self.output_area.config(state=tk.NORMAL)
         self.output_area.delete("1.0", tk.END)
+        self._live_active = False
         self.reset_markdown_state()
         for text, color in segments:
             if color == "__md__":
@@ -578,6 +624,7 @@ class Console(tk.Frame):
         self.output_area.config(state=tk.NORMAL)
         self.output_area.delete("1.0", tk.END)
         self._segments = []
+        self._live_active = False
         self.reset_markdown_state()
         self.output_area.config(state=tk.DISABLED)
 

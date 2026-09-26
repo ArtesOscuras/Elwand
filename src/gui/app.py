@@ -2075,33 +2075,57 @@ class App(tk.Tk):
 
         self._hashcat_console_cracked = []
 
+        from .dialogs.hashcat import _fmt_int, _fmt_hms, _fmt_speed
+
+        def status_text(st):
+            parts = [f"hashcat: {st['state'].capitalize()}"]
+            cur, end = st["progress"]
+            if end > 0:
+                pct = int(cur * 100 / end)
+                parts.append(f"{_fmt_int(cur)}/{_fmt_int(end)} ({pct}%)")
+            if st["speed"]:
+                parts.append(_fmt_speed(st["speed"]))
+            if st["eta"]:
+                parts.append(f"ETA ~{_fmt_hms(st['eta'])}")
+            elif st["state"] == "running":
+                parts.append("ETA computing\u2026")
+            if st["recovered"][1]:
+                parts.append(f"Recovered {st['recovered'][0]}/{st['recovered'][1]}")
+            return "   ".join(parts)
+
         def on_output(text, color=None):
             stripped = text.strip()
             if not stripped:
                 return
-            c = {"success": "success", "error": "error",
-                 "info": "info"}.get(color)
-            if c:
-                getattr(self.console, c)(stripped)
-            else:
-                self.console.body(stripped)
+            low = stripped.lower()
+            if color == "error" or any(
+                    k in low for k in ("error", "warning", "failed",
+                                       "denied", "not found", "no devices")):
+                self._safe_after(self.console.warning, stripped)
 
-        def on_progress(done, total, recovered):
-            pass
+        def on_phase(label):
+            self._safe_after(self.console.info, f"hashcat: {label}")
+
+        def on_status(st):
+            self._safe_after(self.console.live_status, status_text(st))
 
         def on_cracked(hash_val, plain):
             self._hashcat_console_cracked.append(plain)
             from src.machines.credential_db import save_password
             save_password(plain)
-            self.console.success(f"Cracked: {plain}  (saved to inventory)")
+            self._safe_after(self.console.success,
+                             f"Cracked: {plain}  (saved to inventory)")
 
         def on_done(cracked):
             self._hashcat_engine = None
+            self._safe_after(self.console.clear_live_status)
             if cracked:
-                self.console.success(
-                    f"Done. {len(cracked)} password(s) cracked.")
+                self._safe_after(
+                    self.console.success,
+                    f"Hashcat done. {len(cracked)} password(s) cracked.")
             else:
-                self.console.info("Done. No passwords found.")
+                self._safe_after(self.console.info,
+                                 "Hashcat done. No passwords found.")
 
         from src.tools.hashcat import HashcatEngine
         self.console.info(
@@ -2114,9 +2138,10 @@ class App(tk.Tk):
             hash_value=hash_val,
             wordlist=wl_path,
             on_output=on_output,
+            on_phase=on_phase,
+            on_status=on_status,
             on_cracked=on_cracked,
             on_done=on_done,
-            on_progress=on_progress,
         )
         self._hashcat_engine = engine
         engine.start()
