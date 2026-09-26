@@ -1,7 +1,7 @@
 import re as _re
 import secrets as _secrets
 import time as _time
-from openai import OpenAI, RateLimitError
+from openai import OpenAI, RateLimitError, Omit
 
 _XML_TOOL_PATTERN = _re.compile(r'<[^>]*DSML', _re.IGNORECASE)
 
@@ -11,6 +11,9 @@ _RATE_LIMIT_MAX_DELAY = 60
 
 _OPENCODE_ID_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 _OPENCODE_UA = "opencode/latest/1.2.3/cli"
+# Real opencode sends the project id (sha1 of the git remote, or the root
+# commit). Elwand has no project concept, so a fixed plausible value is used.
+_OPENCODE_PROJECT = "6c78d5ddfa295e8275259c14454357df7bbf6a4b"
 
 _STAINLESS_HEADER_KEYS = (
     "x-stainless-lang",
@@ -19,6 +22,9 @@ _STAINLESS_HEADER_KEYS = (
     "x-stainless-arch",
     "x-stainless-runtime",
     "x-stainless-runtime-version",
+    "x-stainless-async",
+    "x-stainless-read-timeout",
+    "x-stainless-retry-count",
 )
 
 
@@ -39,7 +45,8 @@ def _generate_opencode_id(prefix, descending=True):
 
 
 class LLMClient:
-    def __init__(self, config=None, purpose="consultor", request_id=None):
+    def __init__(self, config=None, purpose="consultor", request_id=None,
+                 session_id=None):
         import src.llm.config as _cfg
         if config is None:
             config = _cfg.load()
@@ -70,7 +77,10 @@ class LLMClient:
         if pid == "opencode":
             if not self._api_key:
                 self._api_key = "public"
-            self._session_id = _generate_opencode_id("ses_", descending=True)
+            # Session id is stable for the whole session (it is persisted by
+            # the caller and only rotated on reset); request id identifies the
+            # user turn and is shared by all tool-call round-trips within it.
+            self._session_id = session_id or _generate_opencode_id("ses_", descending=True)
             self._request_id = request_id or _generate_opencode_id("msg_", descending=False)
         else:
             self._session_id = None
@@ -79,16 +89,13 @@ class LLMClient:
     def _ensure_client(self):
         if self._client is None:
             if self._provider_id == "opencode":
-                default_headers = {
-                    "User-Agent": _OPENCODE_UA,
-                }
-                for k in _STAINLESS_HEADER_KEYS:
-                    default_headers[k] = ""
+                # Mimic the official OpenCode client: override the UA; the
+                # x-stainless-* headers are removed per request (Omit).
                 self._client = OpenAI(
                     base_url=self._base_url,
                     api_key=self._api_key,
                     timeout=300,
-                    default_headers=default_headers,
+                    default_headers={"User-Agent": _OPENCODE_UA},
                 )
             else:
                 kwargs = {"base_url": self._base_url, "timeout": 300}
@@ -102,11 +109,15 @@ class LLMClient:
     def _opencode_headers(self):
         if self._provider_id != "opencode":
             return None
-        return {
+        headers = {
+            "x-opencode-project": _OPENCODE_PROJECT,
             "x-opencode-session": self._session_id,
             "x-opencode-request": self._request_id,
             "x-opencode-client": "cli",
         }
+        for k in _STAINLESS_HEADER_KEYS:
+            headers[k] = Omit()
+        return headers
 
     def _rate_limit_retry(self, fn, stop_event=None, on_warning=None):
         last = None

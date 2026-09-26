@@ -630,6 +630,7 @@ class App(tk.Tk):
         self._agent_stop_event = None
         self._llm_messages = []
         self._llm_request_id = None
+        self._llm_session_id = None
         self._silent_mode_cycle = False
         self._last_ctx_hash = None
         self._context_injected = False
@@ -4054,6 +4055,7 @@ class App(tk.Tk):
         if text.lower() == "reset":
             self._llm_messages = []
             self._llm_request_id = None
+            self._llm_session_id = None
             self._last_ctx_hash = None
             self._last_token_pct = None
             self._total_api_tokens = 0
@@ -4182,6 +4184,19 @@ class App(tk.Tk):
         except Exception as e:
             _ctx_log(f"cache clear ERROR: {e}")
 
+    def _llm_session(self):
+        """Stable opencode session id, persisted across restarts."""
+        if not self._llm_session_id:
+            from src.llm.client import _generate_opencode_id
+            self._llm_session_id = _generate_opencode_id("ses_", descending=True)
+        return self._llm_session_id
+
+    def _new_llm_request_id(self):
+        """Per user-turn opencode request id (shared by tool round-trips)."""
+        from src.llm.client import _generate_opencode_id
+        self._llm_request_id = _generate_opencode_id("msg_", descending=False)
+        return self._llm_request_id
+
     def _save_session(self):
         if getattr(self, '_closing', False):
             return
@@ -4194,7 +4209,8 @@ class App(tk.Tk):
                 snapshot, mode=mode,
                 context_injected=self._context_injected,
                 total_api_tokens=getattr(self, '_total_api_tokens', 0),
-                console_segments=segments)
+                console_segments=segments,
+                session_id=getattr(self, '_llm_session_id', None))
         except Exception as e:
             _ctx_log(f"session save ERROR: {e}")
 
@@ -4208,6 +4224,7 @@ class App(tk.Tk):
         self._llm_messages = msgs
         self._context_injected = False
         self._total_api_tokens = data.get("total_api_tokens", 0)
+        self._llm_session_id = data.get("llm_session_id")
         segments = data.get("console_segments")
         if segments:
             try:
@@ -4294,7 +4311,8 @@ class App(tk.Tk):
         self.console.after(0, lambda: self.console._set_spinner_color("#ce9178"))
         try:
             from src.llm import LLMClient
-            client = LLMClient(purpose="agent", request_id=self._llm_request_id)
+            client = LLMClient(purpose="agent", request_id=self._llm_request_id,
+                               session_id=self._llm_session())
             self.console.after(0, lambda: self.console.warning("Compacting context..."))
             ok = compaction.compact_messages(self._llm_messages, client, limit)
             elapsed = (_datetime.datetime.now() - t0).total_seconds()
@@ -4352,6 +4370,7 @@ class App(tk.Tk):
         if text.lower() == "reset":
             self._llm_messages = []
             self._llm_request_id = None
+            self._llm_session_id = None
             self._last_ctx_hash = None
             self._last_token_pct = None
             self._total_api_tokens = 0
@@ -4471,6 +4490,8 @@ class App(tk.Tk):
             return _tool_xml_re.sub('', text)
         self._inject_context()
         self._llm_messages.append({"role": "user", "content": prompt})
+        self._new_llm_request_id()
+        self._llm_session()
         self._save_session()
         def _run():
             self.console.start_thinking()
@@ -4482,7 +4503,8 @@ class App(tk.Tk):
             _emit, _flush = self._make_stream_emitter("#5ba3ec", self.console.agent, clean_fn=_clean)
             try:
                 from src.llm import LLMClient
-                client = LLMClient(purpose="agent", request_id=self._llm_request_id)
+                client = LLMClient(purpose="agent", request_id=self._llm_request_id,
+                                   session_id=self._llm_session_id)
                 _on_tool = self._make_tool_logger(stop)
                 content = client.chat_with_tools(
                     self._llm_messages, on_tool=_on_tool, tool_context=self,
@@ -4549,6 +4571,8 @@ class App(tk.Tk):
         self._agent_stop_event = threading.Event()
         self._inject_context()
         self._llm_messages.append({"role": "user", "content": prompt})
+        self._new_llm_request_id()
+        self._llm_session()
         self._save_session()
         def _run():
             self.console.start_thinking()
@@ -4559,7 +4583,8 @@ class App(tk.Tk):
             try:
                 from src.llm import LLMClient
                 from src.llm.tools import CONSULTOR_TOOLS
-                client = LLMClient(request_id=self._llm_request_id)
+                client = LLMClient(request_id=self._llm_request_id,
+                                   session_id=self._llm_session_id)
                 _on_tool = self._make_tool_logger(stop)
                 content = client.chat_with_tools(
                     self._llm_messages, tool_context=self, allowed_tools=CONSULTOR_TOOLS,
