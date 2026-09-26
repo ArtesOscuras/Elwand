@@ -212,6 +212,18 @@ self.grab_set()
 
 **Important:** Build all widgets **before** `wait_visibility()` so the dialog sizes to its natural content height. Avoid fixed `geometry("WxH")` — prefer `minsize(width, 1)` for minimum width and let the grid/pack layout determine the height. This prevents empty wasted space at the bottom of the dialog.
 
+**DPI-aware sizing (`src/gui/windowing.py`):** never hardcode a dialog's pixel size. Use the central helper so dialogs scale with the display DPI (Linux X11/Wayland is not HiDPI-aware in Tk, so raw pixel sizes look tiny on high-DPI screens):
+
+```python
+from src.gui import windowing
+
+windowing.size_dialog(self, 800, 700)                        # reference size at 96 DPI
+windowing.size_dialog(self, 900, 640, min_w=760, min_h=520)  # + scaled minimum size
+windowing.min_size(dialog, 620, 1)                           # for content-sized dialogs
+```
+
+`windowing.init(root)` is called once in `App.__init__` (right after `elwand_settings.load()`). On Linux it sets `tk scaling` from the display DPI and multiplies reference sizes by `dpi/96` (clamped to 95% of the screen); on macOS it is a no-op, preserving the tuned look. Override with the `ELWAND_UI_SCALE`/`ELWAND_DPI` env vars or the `ui_scale` key in `settings.json`.
+
 This pattern is already used in `HashcatDialog`, `InitDialog`, `_CredentialGenerator`, `SettingsDialog`, `_AddUserDialog`, `_AddPersonDialog`, `_UserEditDialog`, `_PersonEditDialog`, and others. New dialogs must follow it.
 
 ---

@@ -1,6 +1,6 @@
 import tkinter as tk
 import tkinter.font as tkfont
-from src.gui import fonts
+from src.gui import fonts, windowing
 from src.gui import icons
 from src.machines import people_db
 from .base import BaseView
@@ -237,7 +237,7 @@ class _AddPersonDialog(tk.Toplevel):
     def __init__(self, parent):
         super().__init__(parent)
         self.title("Add Person")
-        self.geometry("500x500")
+        windowing.size_dialog(self, 500, 500)
         self.configure(bg="#111111")
         self.transient(parent)
         self.wait_visibility()

@@ -3,7 +3,7 @@ import re
 import subprocess
 import threading
 import tkinter as tk
-from src.gui import fonts
+from src.gui import fonts, windowing
 
 MUTED = "#888888"
 BRIGHT = "#ffffff"
@@ -35,8 +35,7 @@ class PocDialog(tk.Toplevel):
         self._last_regex = False
 
         self.title(title)
-        self.geometry("1100x800")
-        self.minsize(800, 600)
+        windowing.size_dialog(self, 1100, 800, min_w=800, min_h=600)
         self.configure(bg=BG)
 
         self.transient(parent)
@@ -518,8 +517,7 @@ class _SearchDialog(tk.Toplevel):
         self._shown_start = 0
         self._shown_end = 0
         self.title(title or "Search")
-        self.geometry("950x700")
-        self.minsize(700, 500)
+        windowing.size_dialog(self, 950, 700, min_w=700, min_h=500)
         self.configure(bg=BG)
 
         self.transient(parent)

@@ -10,6 +10,7 @@ import tkinter as tk
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from src.network_iface import interfaces, ifaddresses, AF_INET
 from . import fonts
+from . import windowing
 from .console import Console
 from .visualizer import Visualizer
 from .views import WifiView, NetworkView, DomainListView, EvidenceListView, CredentialListView, UsersView, PasswordsView, HashListView, ShellListView, ToolsView, InventoryView, PeopleView, ServicesView, DictionarysView, RulesView, PocsView, ReportsView, ReportView, HandshakesView
@@ -125,7 +126,7 @@ class _ReviewDialogManager:
     def _build_dialog(self):
         self._dlg = tk.Toplevel(self._parent)
         self._dlg.title("Review Request")
-        self._dlg.geometry("800x750")
+        windowing.size_dialog(self._dlg, 800, 750)
         self._dlg.configure(bg="#111111")
         self._dlg.protocol("WM_DELETE_WINDOW", self._send_and_close)
         self._dlg.columnconfigure(0, weight=1)
@@ -606,6 +607,7 @@ class App(tk.Tk):
         self._pane.add(self.visualizer, stretch="always")
 
         elwand_settings.load()
+        windowing.init(self)
         console_font = elwand_settings.get("console_font_size", 11)
         self.console = Console(self._pane, initial_font_size=console_font)
         self.console._focus_callback = self._toggle_focus

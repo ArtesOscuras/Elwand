@@ -1,4 +1,4 @@
-from src.gui import fonts
+from src.gui import fonts, windowing
 import tkinter as tk
 from .base import BaseView
 from src.machines import credential_db
@@ -16,7 +16,7 @@ class _EditDialog(tk.Toplevel):
         self._cred = cred
 
         self.title(f"Edit Credential #{cred['id']}")
-        self.geometry("500x440")
+        windowing.size_dialog(self, 500, 440)
         self.configure(bg="#111111")
 
         self.transient(parent)

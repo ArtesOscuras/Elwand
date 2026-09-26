@@ -1,7 +1,7 @@
 import os
 import tkinter as tk
 from tkinter import ttk
-from src.gui import fonts
+from src.gui import fonts, windowing
 from src.machines import store
 from src.tools.bruteforce import BruteForceEngine
 from src.elwand_paths import lst_dir as _lst_dir
@@ -19,7 +19,7 @@ class BruteforceDialog(tk.Toplevel):
     def __init__(self, parent):
         super().__init__(parent)
         self.title("Bruteforce")
-        self.geometry("820x670")
+        windowing.size_dialog(self, 820, 670)
         self.configure(bg=BG)
 
         self.transient(parent)

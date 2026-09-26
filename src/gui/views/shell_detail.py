@@ -1,5 +1,5 @@
 import re
-from src.gui import fonts
+from src.gui import fonts, windowing
 import json
 import os
 import tkinter as tk
@@ -33,7 +33,7 @@ class _RecordDialog(tk.Toplevel):
         self.result = None
 
         self.title("Record Shell Evidence")
-        self.geometry("420x160")
+        windowing.size_dialog(self, 420, 160)
         self.configure(bg="#111111")
 
         self.transient(parent)

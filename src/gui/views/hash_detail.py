@@ -1,4 +1,4 @@
-from src.gui import fonts
+from src.gui import fonts, windowing
 import os
 import sqlite3
 import tkinter as tk
@@ -18,7 +18,7 @@ class _HashEditDialog(tk.Toplevel):
         self.result = None
 
         self.title(f"Edit Hash #{h['id']}")
-        self.geometry("780x560")
+        windowing.size_dialog(self, 780, 560)
         self.configure(bg="#111111")
 
         self.transient(parent)

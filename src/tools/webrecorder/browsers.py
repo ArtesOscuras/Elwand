@@ -1,5 +1,5 @@
 import tkinter as tk
-from src.gui import fonts
+from src.gui import fonts, windowing
 from .browser_finder import find_browsers
 
 
@@ -9,7 +9,7 @@ class BrowserSelector(tk.Toplevel):
         self.result = None
 
         self.title("Select Browser")
-        self.geometry("450x280")
+        windowing.size_dialog(self, 450, 280)
         self.configure(bg="#111111")
 
         self.transient(parent)

@@ -1,7 +1,7 @@
 import json
 import tkinter as tk
 from tkinter import ttk
-from src.gui import fonts
+from src.gui import fonts, windowing
 from src import llm
 from src import settings as _app_settings
 
@@ -25,7 +25,7 @@ class SettingsDialog(tk.Toplevel):
         x = (self.winfo_screenwidth() - w) // 2
         y = max(0, (sh - h) // 2 - 20)
         self.geometry(f"{w}x{h}+{x}+{y}")
-        self.minsize(800, 660)
+        windowing.min_size(self, 800, 660)
         self.configure(bg=BG)
         self.transient(parent)
         self.wait_visibility()
@@ -818,7 +818,7 @@ class SettingsDialog(tk.Toplevel):
 
         save_btn.bind("<Button-1>", lambda e: _save())
 
-        dialog.minsize(540, 1)
+        windowing.min_size(dialog, 540, 1)
         dialog.update_idletasks()
         dialog.wait_visibility()
         dialog.grab_set()

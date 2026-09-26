@@ -1,4 +1,4 @@
-from src.gui import fonts
+from src.gui import fonts, windowing
 import tkinter as tk
 from src.network_iface import interfaces, ifaddresses, AF_INET
 
@@ -9,7 +9,7 @@ class InterfaceSelector(tk.Toplevel):
         self.result = None
 
         self.title("Select Interface")
-        self.geometry("500x350")
+        windowing.size_dialog(self, 500, 350)
         self.configure(bg="#111111")
 
         self.transient(parent)

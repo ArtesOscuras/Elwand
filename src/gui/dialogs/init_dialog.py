@@ -1,4 +1,4 @@
-from src.gui import fonts
+from src.gui import fonts, windowing
 import os
 import platform
 import sys
@@ -147,7 +147,7 @@ class InitDialog(tk.Toplevel):
     def __init__(self, parent):
         super().__init__(parent)
         self.title("Elwand — Initialization Check")
-        self.geometry("780x620")
+        windowing.size_dialog(self, 780, 620)
         self.configure(bg="#111111")
         self.resizable(False, False)
 

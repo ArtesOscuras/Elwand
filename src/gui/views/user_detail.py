@@ -1,5 +1,5 @@
 import tkinter as tk
-from src.gui import fonts
+from src.gui import fonts, windowing
 from src.machines import credential_db
 from .base import BaseView
 
@@ -14,7 +14,7 @@ class _UserEditDialog(tk.Toplevel):
         super().__init__(parent)
         self._username = u["username"]
         self.title(f"Edit User \u2014 {self._username}")
-        self.geometry("450x340")
+        windowing.size_dialog(self, 450, 340)
         self.configure(bg="#111111")
         self.transient(parent)
         self.wait_visibility()

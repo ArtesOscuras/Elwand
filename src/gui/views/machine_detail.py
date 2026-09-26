@@ -1,4 +1,4 @@
-from src.gui import fonts
+from src.gui import fonts, windowing
 import tkinter as tk
 from .base import BaseView
 from src.machines import store
@@ -220,7 +220,7 @@ class MachineDetailView(BaseView):
 
         dlg = tk.Toplevel(self)
         dlg.title(f"Port-inspector — Port {port}")
-        dlg.geometry("750x550")
+        windowing.size_dialog(dlg, 750, 550)
         dlg.configure(bg="#111111")
         dlg.transient(self)
 

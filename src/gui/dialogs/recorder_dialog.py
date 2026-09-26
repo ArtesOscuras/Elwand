@@ -1,4 +1,4 @@
-from src.gui import fonts
+from src.gui import fonts, windowing
 import tkinter as tk
 from tkinter import ttk
 
@@ -105,7 +105,7 @@ class WebRecorderDialog(tk.Toplevel):
         self.result = None
 
         self.title("Web Recorder")
-        self.geometry("580x660")
+        windowing.size_dialog(self, 580, 660)
         self.configure(bg=BG)
 
         self.transient(parent)

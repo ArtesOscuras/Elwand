@@ -5,7 +5,7 @@ import threading
 import tkinter as tk
 from collections import defaultdict
 from tkinter import ttk
-from src.gui import fonts
+from src.gui import fonts, windowing
 from src.machines import credential_db
 from src.tools.hashcat import HashcatEngine
 from src.elwand_paths import hashcat_db as _hashcat_db
@@ -33,12 +33,12 @@ class HashcatDialog(tk.Toplevel):
 
         self.title("Hashcat")
         sh = self.winfo_screenheight()
-        h = min(680, sh - 60)
-        w = 800
+        h = min(windowing.px(680), sh - windowing.px(60))
+        w = windowing.px(800)
         x = (self.winfo_screenwidth() - w) // 2
         y = max(0, (sh - h) // 2 - 20)
         self.geometry(f"{w}x{h}+{x}+{y}")
-        self.minsize(700, 500)
+        windowing.min_size(self, 700, 500)
         self.configure(bg=BG)
 
         self.transient(parent)

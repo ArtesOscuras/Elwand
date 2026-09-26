@@ -2,6 +2,7 @@ import tkinter as tk
 import tkinter.font as tkfont
 from src.gui import fonts
 from src.gui import icons
+from src.gui import windowing
 from src.machines import credential_db
 from .base import BaseView
 from .nav import build as build_nav
@@ -297,7 +298,7 @@ class _AddUserDialog(tk.Toplevel):
     def __init__(self, parent):
         super().__init__(parent)
         self.title("Add User")
-        self.geometry("450x340")
+        windowing.size_dialog(self, 450, 340)
         self.configure(bg="#111111")
         self.transient(parent)
         self.wait_visibility()

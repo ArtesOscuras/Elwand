@@ -2,7 +2,7 @@ import threading
 import tkinter as tk
 from tkinter import ttk
 
-from src.gui import fonts
+from src.gui import fonts, windowing
 
 BG = "#111111"
 FG = "#ffffff"
@@ -21,8 +21,7 @@ class WifiOperatorDialog(tk.Toplevel):
     def __init__(self, parent):
         super().__init__(parent)
         self.title("Wifi operator")
-        self.geometry("900x640")
-        self.minsize(760, 520)
+        windowing.size_dialog(self, 900, 640, min_w=760, min_h=520)
         self.configure(bg=BG)
         self.transient(parent)
 

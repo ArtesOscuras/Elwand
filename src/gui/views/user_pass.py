@@ -1,4 +1,4 @@
-from src.gui import fonts
+from src.gui import fonts, windowing
 import struct
 import tkinter as tk
 from .base import BaseView
@@ -232,7 +232,7 @@ class _CredentialGenerator(tk.Toplevel):
         self._on_created = on_created
 
         self.title("Generate Credentials")
-        self.geometry("600x500")
+        windowing.size_dialog(self, 600, 500)
         self.configure(bg="#111111")
 
         self.transient(parent)

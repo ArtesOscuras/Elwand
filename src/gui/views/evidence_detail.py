@@ -1,4 +1,4 @@
-from src.gui import fonts
+from src.gui import fonts, windowing
 import json
 import os
 import tkinter as tk
@@ -60,7 +60,7 @@ class _RequestDetailDialog(tk.Toplevel):
     def __init__(self, parent, req, resp, body):
         super().__init__(parent)
         self.title("Request Detail")
-        self.geometry("900x650")
+        windowing.size_dialog(self, 900, 650)
         self.configure(bg="#111111")
 
         self.transient(parent)

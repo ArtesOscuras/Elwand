@@ -6,7 +6,7 @@ import threading
 import time
 import tkinter as tk
 from tkinter import ttk
-from src.gui import fonts
+from src.gui import fonts, windowing
 from src.shells import shell_db
 from src.shells.ftp_shell import FTPConnectionThread
 from src.shells.ssh_shell import SSHConnectionThread
@@ -40,7 +40,7 @@ class RemoteAccessDialog(tk.Toplevel):
     def __init__(self, parent):
         super().__init__(parent)
         self.title("Remote Access Call")
-        self.geometry("620x520")
+        windowing.size_dialog(self, 620, 520)
         self.configure(bg=BG)
 
         self.transient(parent)

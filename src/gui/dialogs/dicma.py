@@ -1,7 +1,7 @@
 import os
 import tkinter as tk
 from tkinter import ttk, filedialog
-from src.gui import fonts
+from src.gui import fonts, windowing
 from src.elwand_paths import lst_dir as _lst_dir, rules_dir as _rules_dir
 
 MUTED = "#888888"
@@ -16,8 +16,7 @@ class DicmaDialog(tk.Toplevel):
     def __init__(self, parent, active_tab=None):
         super().__init__(parent)
         self.title("DICMA — Dictionary Maker")
-        self.geometry("760x720")
-        self.minsize(650, 650)
+        windowing.size_dialog(self, 760, 720, min_w=650, min_h=650)
         self.configure(bg=BG)
 
         self.transient(parent)

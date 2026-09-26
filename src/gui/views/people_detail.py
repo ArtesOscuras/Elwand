@@ -1,6 +1,6 @@
 import tkinter as tk
 import threading
-from src.gui import fonts
+from src.gui import fonts, windowing
 from src.machines import people_db
 from .base import BaseView
 
@@ -15,7 +15,7 @@ class _PersonEditDialog(tk.Toplevel):
         super().__init__(parent)
         self._person_id = p["id"]
         self.title(f"Edit Person \u2014 {p.get('first_name','')} {p.get('last_name','')}".strip())
-        self.geometry("500x500")
+        windowing.size_dialog(self, 500, 500)
         self.configure(bg="#111111")
         self.transient(parent)
         self.wait_visibility()
@@ -124,8 +124,7 @@ class _InvestigateInterestsDialog(tk.Toplevel):
         self._person = person
         name = f"{person.get('first_name','')} {person.get('last_name','')}".strip()
         self.title(f"Investigate Interests — {name}")
-        self.geometry("900x750")
-        self.minsize(600, 500)
+        windowing.size_dialog(self, 900, 750, min_w=600, min_h=500)
         self.configure(bg="#111111")
         self.transient(parent)
         self.wait_visibility()

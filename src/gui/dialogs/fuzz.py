@@ -1,4 +1,4 @@
-from src.gui import fonts
+from src.gui import fonts, windowing
 import os
 import random
 import re
@@ -170,7 +170,7 @@ class FuzzDialog(tk.Toplevel):
         self._dns_results = []
 
         self.title("Fuzz")
-        self.geometry("800x700")
+        windowing.size_dialog(self, 800, 700)
         self.configure(bg=BG)
 
         self.transient(parent)

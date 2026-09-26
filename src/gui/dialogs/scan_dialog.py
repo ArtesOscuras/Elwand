@@ -1,4 +1,4 @@
-from src.gui import fonts
+from src.gui import fonts, windowing
 import tkinter as tk
 from tkinter import ttk
 from src.network_iface import interfaces, ifaddresses, AF_INET
@@ -11,7 +11,7 @@ class ScanDialog(tk.Toplevel):
         self.result = None
 
         self.title("Scanner")
-        self.geometry("580x460")
+        windowing.size_dialog(self, 580, 460)
         self.configure(bg="#111111")
 
         self.transient(parent)

@@ -1,6 +1,6 @@
 import os
 import tkinter as tk
-from src.gui import fonts
+from src.gui import fonts, windowing
 from src.elwand_paths import reports_dir
 
 BG = "#111111"
@@ -98,7 +98,7 @@ class ReportDialog(tk.Toplevel):
         save_btn.bind("<Enter>", lambda e: save_btn.config(bg="#333333"))
         save_btn.bind("<Leave>", lambda e: save_btn.config(bg="#222222"))
 
-        self.minsize(620, 1)
+        windowing.min_size(self, 620, 1)
         self.update_idletasks()
         self.wait_visibility()
         self.grab_set()
