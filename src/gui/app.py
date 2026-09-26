@@ -2103,10 +2103,16 @@ class App(tk.Tk):
                                        "denied", "not found", "no devices")):
                 self._safe_after(self.console.warning, stripped)
 
-        def on_phase(label):
-            self._safe_after(self.console.info, f"hashcat: {label}")
+        running_announced = {"v": False}
 
         def on_status(st):
+            if st["state"] == "running" and not running_announced["v"]:
+                running_announced["v"] = True
+                if st["eta"]:
+                    line = f"Running hashcat    ETA ~{_fmt_hms(st['eta'])}"
+                else:
+                    line = "Running hashcat    ETA computing\u2026"
+                self._safe_after(self.console.info, line)
             self._safe_after(self.console.live_status, status_text(st))
 
         def on_cracked(hash_val, plain):
@@ -2132,13 +2138,13 @@ class App(tk.Tk):
             f"hashcat -m {mode} "
             f"'{hash_val[:40]}...' {wordlist_name}"
         )
+        self.console.info("Preparing hashcat\u2026")
 
         engine = HashcatEngine(
             mode=mode,
             hash_value=hash_val,
             wordlist=wl_path,
             on_output=on_output,
-            on_phase=on_phase,
             on_status=on_status,
             on_cracked=on_cracked,
             on_done=on_done,
