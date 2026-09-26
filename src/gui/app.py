@@ -880,7 +880,7 @@ class App(tk.Tk):
         self.console.register_command("stop", self._cmd_stop, "Stop listeners")
         self.console.set_subcommands("stop", ["shells-listener", "mdns-listener", "scanner", "bruteforce", "fuzzer", "webrecorder", "tcpscan", "udpscan", "whatweb", "port-inspector", "bannergrab", "hashcat"])
         self.console.register_command("delete", self._cmd_delete, "Delete stored data")
-        self.console.set_subcommands("delete", ["all", "dbs", "credential", "evidence", "hash", "machine", "domain", "user", "password", "shell", "people", "dictionary", "rule", "poc", "report", "inventory", "cache", "wifi"])
+        self.console.set_subcommands("delete", ["all", "dbs", "credential", "evidence", "hash", "handshake", "machine", "domain", "user", "password", "shell", "people", "dictionary", "rule", "poc", "report", "inventory", "cache", "wifi"])
         self.console.register_command("add", self._cmd_add, "Add to inventory")
         self.console.set_subcommands("add", ["machine", "domain", "credential", "user", "password", "hash", "people", "dictionary", "rule"])
         self.console.register_command("init", self._cmd_init, "Re-run initialization checks")
@@ -897,6 +897,7 @@ class App(tk.Tk):
         self.console.set_arg2_provider("delete", "credential", self._autocomplete_credential_user)
         self.console.set_arg2_provider("delete", "evidence", self._autocomplete_evidence)
         self.console.set_arg2_provider("delete", "hash", self._autocomplete_hash)
+        self.console.set_arg2_provider("delete", "handshake", self._autocomplete_handshakes)
         self.console.set_arg2_provider("delete", "machine", self._autocomplete_store_ip)
         self.console.set_arg2_provider("delete", "domain", self._autocomplete_domain)
         self.console.set_arg2_provider("delete", "user", self._autocomplete_user)
@@ -1560,6 +1561,20 @@ class App(tk.Tk):
     @staticmethod
     def _autocomplete_hash(prefix):
         return App._hash_choices(include_all=True)
+
+    @staticmethod
+    def _autocomplete_handshakes(prefix):
+        from src.elwand_paths import handshakes_dir
+        results = [("all", "all")]
+        base = str(handshakes_dir())
+        try:
+            for f in sorted(os.listdir(base)):
+                if f.lower().endswith(".pcap") and os.path.isfile(
+                        os.path.join(base, f)):
+                    results.append((f, f))
+        except OSError:
+            pass
+        return results
 
     @staticmethod
     def _autocomplete_evidence(prefix):
@@ -5302,7 +5317,7 @@ class App(tk.Tk):
 
     def _cmd_delete(self, args):
         if not args:
-            self.console.body("Usage: delete <all|dbs|inventory|machine|domain|user|credential|password|hash|people|shell|evidence|poc|report|dictionary|rule|cache|wifi>")
+            self.console.body("Usage: delete <all|dbs|inventory|machine|domain|user|credential|password|hash|handshake|people|shell|evidence|poc|report|dictionary|rule|cache|wifi>")
             return
         sub = args[0].lower()
         if sub == "all":
@@ -5315,6 +5330,8 @@ class App(tk.Tk):
             self._cmd_delete_evidence_single(args[1:])
         elif sub == "hash":
             self._cmd_delete_hash(args[1:])
+        elif sub == "handshake":
+            self._cmd_delete_handshake(args[1:])
         elif sub == "machine":
             self._cmd_delete_machine(args[1:])
         elif sub == "domain":
@@ -5414,6 +5431,47 @@ class App(tk.Tk):
             self.console.success(f"Hash deleted (id={h['id']})")
             return
         self.console.warning(f"No hash found matching: {target}")
+
+    def _cmd_delete_handshake(self, args):
+        if not args:
+            self.console.body("Usage: delete handshake <file|all>")
+            return
+        from src.elwand_paths import handshakes_dir
+        base = str(handshakes_dir())
+        target = args[0]
+
+        def _remove(path):
+            if os.path.isfile(path):
+                try:
+                    os.remove(path)
+                    return True
+                except OSError:
+                    return False
+            return False
+
+        if target == "all":
+            count = 0
+            try:
+                names = os.listdir(base)
+            except OSError:
+                names = []
+            for f in names:
+                if f.lower().endswith((".pcap", ".hc22000")):
+                    if _remove(os.path.join(base, f)):
+                        count += 1
+            self.console.success(f"{count} handshake file(s) deleted")
+            return
+
+        fname = os.path.basename(target)
+        if not fname.lower().endswith(".pcap"):
+            fname += ".pcap"
+        path = os.path.join(base, fname)
+        if not os.path.isfile(path):
+            self.console.warning(f"No handshake found: {target}")
+            return
+        _remove(path)
+        _remove(os.path.splitext(path)[0] + ".hc22000")
+        self.console.success(f"Handshake '{fname}' deleted")
 
     def _cmd_delete_machine(self, args):
         if not args:
