@@ -486,6 +486,16 @@ The dialog has two tabs (Deauther / CSA Spoof), each with an interface selector,
 
 ---
 
+## DICMA (`src/tools/dicma/`)
+
+DICMA is Elwand's wordlist/rule generator, **owned by ArtesOscuras and fully integrated in the repo** (`src/tools/dicma/engine.py` + `__init__.py`). It must stay tracked: it was previously listed in `.gitignore` under "Third-party tools", which excluded it from the repo/wheel and broke `use dicma` on any fresh install (`ModuleNotFoundError: No module named 'src.tools.dicma'`). Never gitignore it again.
+
+* Pure Python (stdlib only; `openai` imported lazily). Four modes: `users`, `related`, `passwords`, `rules`.
+* Console: `use dicma <users|related|passwords|rules> ...`; GUI: `DicmaDialog` (`src/gui/dialogs/dicma.py`); agent tools: `dicma_generate_users`, `dicma_find_related`, `dicma_generate_passwords`, `dicma_generate_rules` (`src/llm/tools.py`).
+* Output wordlists go to `lst_dir()`; rules go to `rules_dir()`.
+* The GUI paths always set `engine._NO_MULTIPROC = True`, so the `massive_mode` multiprocessing branch (RAM-aware `multiprocessing.Pool`) is **not** used from Elwand.
+* `related` is the only LLM-backed mode and must follow the active provider like the rest of Elwand. The agent handler (`_dicma_find_related`) already special-cases the `opencode` provider (forces `api_key="public"` + opencode headers); the console (`App._dicma_related_thread`) and the dialog currently build a raw `OpenAI(...)` instead, so they can misbehave on a fresh install whose default provider is opencode.
+
 ## Process View & Process Registry (`src/gui/views/process.py`, `src/process_registry.py`)
 
 The **Process** view (`ProcessView`, nav name `process`) lists the tools Elwand is running in background threads. It sits in the nav bar between **Shells** and **Services** and is display-only (no stop action; use the `stop <tool>` console commands). It is reachable via the nav bar or `view process`. Listeners (mDNS/revershell) and the WiFi monitor stay in **Services** and are intentionally NOT shown here.
