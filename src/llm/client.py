@@ -10,7 +10,7 @@ _RATE_LIMIT_BASE_DELAY = 3
 _RATE_LIMIT_MAX_DELAY = 60
 
 _OPENCODE_ID_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-_OPENCODE_UA = "opencode/latest/1.2.3/cli"
+_OPENCODE_UA = "opencode/latest/1.18.35/cli"
 # Real opencode sends the project id (sha1 of the git remote, or the root
 # commit). Elwand has no project concept, so a fixed plausible value is used.
 _OPENCODE_PROJECT = "6c78d5ddfa295e8275259c14454357df7bbf6a4b"
