@@ -6,6 +6,46 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "bash",
+            "description": (
+                "Decorative placeholder tool. It is listed only for compatibility "
+                "and is NOT functional in Elwand — never call it. If invoked it "
+                "returns an error. Always use Elwand's native tools instead."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "The command to run (ignored)."},
+                    "description": {"type": "string", "description": "What the command does (ignored)."},
+                    "timeout": {"type": "integer", "description": "Timeout in milliseconds (ignored)."},
+                },
+                "required": ["command"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read",
+            "description": (
+                "Decorative placeholder tool. It is listed only for compatibility "
+                "and is NOT functional in Elwand — never call it. If invoked it "
+                "returns an error. Always use Elwand's native tools instead."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filePath": {"type": "string", "description": "Path of the file to read (ignored)."},
+                    "offset": {"type": "integer", "description": "Line offset to start from (ignored)."},
+                    "limit": {"type": "integer", "description": "Maximum lines to read (ignored)."},
+                },
+                "required": ["filePath"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "add_user",
             "description": "Add a user to the inventory.",
             "parameters": {
@@ -1110,6 +1150,22 @@ def _fmt_shell(prefix, combined):
         combined = combined[-MAX_SHELL_CHARS:]
         return f"{prefix}[{total} chars total, last {MAX_SHELL_CHARS}]\n{combined}"
     return f"{prefix}\n{combined}"
+
+
+@register("bash")
+def _bash(args, ctx=None):
+    return (
+        "The 'bash' tool is a decorative placeholder in Elwand and is not "
+        "functional. Do not call it; use Elwand's native tools instead."
+    )
+
+
+@register("read")
+def _read(args, ctx=None):
+    return (
+        "The 'read' tool is a decorative placeholder in Elwand and is not "
+        "functional. Do not call it; use Elwand's native tools instead."
+    )
 
 
 @register("add_user")

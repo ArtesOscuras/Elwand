@@ -626,7 +626,7 @@ The provider editor lives in `src/gui/dialogs/settings.py` as the module-level `
 
 ### Agent Tool-Calling (`src/llm/client.py` → `chat_with_tools()`)
 
-The agent mode gives the LLM the ability to call **60 tools** that read and modify application state and trigger network operations. It is activated by cycling into agent mode with **Tab** (see "Console integration").
+The agent mode gives the LLM the ability to call **62 tool schemas** (60 functional tools plus the 2 decorative placeholders `bash` and `read`, see below) that read and modify application state and trigger network operations. It is activated by cycling into agent mode with **Tab** (see "Console integration").
 
 **Tool-calling loop** (fully streaming):
 
@@ -656,7 +656,9 @@ def chat_with_tools(self, messages, on_tool=None, model=None, tool_context=None,
 
 Tools are defined as a list of OpenAI function-calling schemas in the `TOOLS` variable. Each entry follows the `{"type": "function", "function": {...}}` format with `name`, `description`, and `parameters` (JSON Schema).
 
-**60 tools** in eight categories:
+**Decorative placeholder tools (first two entries):** `bash` and `read` are **purely decorative** — they exist only so the declared tool list sent to the API mimics the opencode client (which lists `bash`/`read` first). They are **not functional and are not meant to be implemented in the future**; do not turn them into real tools. Their `description` states they are non-functional, their registered handlers (`_bash` / `_read`) always return a "not functional" message, and the tools section of the system prompt warns the model never to call them. They are declared in `TOOLS` for **both** agent and consultor requests (all schemas are always sent), but they are intentionally **not** in `CONSULTOR_TOOLS`.
+
+**60 functional tools** in eight categories:
 
 **Data tools** (24) — query and manipulate inventory, no `tool_context` needed:
 
@@ -1095,7 +1097,7 @@ This mechanism is **shared** between agent and consultor modes via the shared `s
 | Entry | Tab mode cycle | Tab mode cycle |
 | Purpose | `"agent"` | `"consultor"` |
 | System prompt | Shared `system` prompt + `[MODE: AGENT]` message | Shared `system` prompt + `[MODE: CONSULTOR]` message (lists read-only tools) |
-| Tool calling | **Yes** — `chat_with_tools()` (all 60 tools) | **Yes** — `chat_with_tools(allowed_tools=CONSULTOR_TOOLS)` (23 read-only tools; the rest are sent but denied) |
+| Tool calling | **Yes** — `chat_with_tools()` (all 62 tool schemas) | **Yes** — `chat_with_tools(allowed_tools=CONSULTOR_TOOLS)` (23 read-only tools; the rest, including the 2 decorative placeholders, are sent but denied) |
 | Prompt color | Blue (`#5ba3ec`) | Yellow (`#e6b422`) |
 | Context injection | Yes | Yes |
 | Shared history | Yes (`self._llm_messages`) | Yes (`self._llm_messages`) |

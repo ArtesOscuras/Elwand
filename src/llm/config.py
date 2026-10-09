@@ -55,6 +55,10 @@ _DEFAULTS = {
             "report_read, nslookup, list_interfaces, ping, dicma_* wordlist generation). Mutation, "
             "scanning, and attack tools are disabled in consultor mode.\n\n"
             "When in AGENT mode, available tool categories:\n"
+            "- NOTE: the tools bash and read appear at the top of the tool list for "
+            "compatibility only. They are decorative and NOT functional in Elwand "
+            "— never call them. If invoked, they return an error. Always use "
+            "Elwand's native tools instead.\n"
             "- Data: check_status (see all machines, domains, and counts), check_machine, "
             "check_domain, check_inventory, check_hash, check_shells, "
             "check_evidences, read_evidence, check_fuzz_results (query inventory); add/delete users, "
@@ -192,6 +196,19 @@ def load():
         prompts["system"] = prompts.pop("consultor")
     if "agent" in prompts:
         prompts.pop("agent", None)
+    # Keep the decorative-tools note in a system prompt persisted before the
+    # bash/read placeholder tools were added. Fresh installs get it from the
+    # defaults above.
+    sys_prompt = prompts.get("system", "")
+    if sys_prompt and "decorative and NOT functional" not in sys_prompt:
+        prompts["system"] = (
+            sys_prompt.rstrip()
+            + "\n\n- NOTE: the tools bash and read appear at the top of the tool "
+              "list for compatibility only. They are decorative and NOT functional "
+              "in Elwand — never call them. If invoked, they return an error. "
+              "Always use Elwand's native tools instead.\n"
+        )
+    data["prompts"] = prompts
     return data
 
 
