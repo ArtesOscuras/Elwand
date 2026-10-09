@@ -55,6 +55,7 @@ class Console(tk.Frame):
         self._mode_fg = FG
         self._mode_commands = None
         self._mode_cycle_cb = None
+        self._escape_stop_cb = None
         self._prompt_hovered = False
         self._focus_callback = None
         self._is_system = False
@@ -267,6 +268,9 @@ class Console(tk.Frame):
 
     def set_mode_cycle_callback(self, callback):
         self._mode_cycle_cb = callback
+
+    def set_escape_stop_callback(self, callback):
+        self._escape_stop_cb = callback
 
     _SPINNER_CHARS = ["\u280b", "\u2819", "\u2839", "\u2838", "\u283c", "\u2834", "\u2826", "\u2827", "\u2807", "\u280f"]
 
@@ -885,6 +889,9 @@ class Console(tk.Frame):
     def _on_escape(self, event):
         if self._autocomplete_popup:
             self._close_autocomplete()
+            return "break"
+        if self._escape_stop_cb is not None:
+            self._escape_stop_cb()
             return "break"
 
     def _popup_height(self, lb, n):

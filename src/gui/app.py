@@ -862,6 +862,7 @@ class App(tk.Tk):
 
     def _register_commands(self):
         self.console.set_mode_cycle_callback(self._cycle_mode)
+        self.console.set_escape_stop_callback(self._escape_stop_llm)
         self.console.register_command("view", self._cmd_view, "Switch or list views")
         self.console.set_subcommands("view", ["list", "wifi", "tools", "inventory", "machine", "domain", "shell", "credential", "hash", "user", "passwords", "people", "evidence", "process", "services", "dictionary", "rule", "poc", "report", "handshake"])
         self.console.register_command("use", self._cmd_use, "Use a tool")
@@ -4142,6 +4143,17 @@ class App(tk.Tk):
             return False
         self._cmd_debug(parts[1:])
         return True
+
+    def _escape_stop_llm(self):
+        """Esc with no autocomplete popup interrupts a running LLM exchange."""
+        if not getattr(self, "_llm_running", False):
+            return
+        if self._agent_stop_event:
+            self._agent_stop_event.set()
+        if self._agent_mode:
+            self.console.warning("Interrupting agent execution...")
+        elif self._consultor_mode:
+            self.console.warning("Interrupting consultor execution...")
 
     def _consultor_handler(self, text):
         text = text.strip()
