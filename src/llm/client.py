@@ -46,18 +46,18 @@ def _generate_opencode_id(prefix, descending=True):
 
 class LLMClient:
     def __init__(self, config=None, purpose="consultor", request_id=None,
-                 session_id=None, project_id=None):
+                 session_id=None, project_id=None, provider_id=None):
         import src.llm.config as _cfg
         if config is None:
             config = _cfg.load()
         self._config = config
 
-        pid = config.get("active_provider", "")
+        pid = provider_id or config.get("active_provider", "")
         provider = _cfg.get_provider(config, pid)
         self._base_url = provider.get("base_url", "")
         self._api_key = provider.get("api_key", "")
         self._provider_id = pid
-        self._model = _cfg.get_active_model(config)
+        self._model = _cfg.get_active_model(config, pid)
         self._purpose = purpose
         self._system_prompt = config.get("prompts", {}).get("system", "")
         self._client = None
@@ -210,6 +210,26 @@ class LLMClient:
                 messages=self._messages(messages),
                 stream=True,
                 extra_headers=self._opencode_headers(),
+            )
+
+        return self._rate_limit_retry(_call)
+
+    def raw_chat(self, messages, model=None, **kwargs):
+        """Like chat(), but sends `messages` verbatim (no system/mode prefix).
+
+        Used by helpers (e.g. DICMA related-word expansion) that supply their
+        own self-contained prompt. Keeps the opencode headers + rate-limit
+        retry so it behaves identically to the rest of Elwand.
+        """
+        self._ensure_client()
+        m = model or self._model
+
+        def _call():
+            return self._client.chat.completions.create(
+                model=m,
+                messages=messages,
+                extra_headers=self._opencode_headers(),
+                **kwargs,
             )
 
         return self._rate_limit_retry(_call)

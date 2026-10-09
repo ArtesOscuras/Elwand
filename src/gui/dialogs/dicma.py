@@ -100,6 +100,56 @@ class DicmaDialog(tk.Toplevel):
         return tk.Label(parent, text=text, fg=MUTED, bg=BG,
                         font=fonts.view_font_bold(10), anchor="w")
 
+    def _make_llm_selector(self, parent):
+        """Provider + model selectors fed from the configured providers.
+
+        Returns (provider_var, model_var). The model list follows the selected
+        provider and defaults to that provider's active model.
+        """
+        from src.llm.config import load as _llm_load
+        cfg = _llm_load()
+        providers = list(cfg.get("providers", {}).keys())
+        active = cfg.get("active_provider", "")
+
+        provider_var = tk.StringVar(
+            value=active or (providers[0] if providers else ""))
+
+        prow = tk.Frame(parent, bg=BG)
+        prow.pack(fill=tk.X, pady=(0, 4))
+        tk.Label(prow, text="Provider", fg=MUTED, bg=BG,
+                 font=fonts.view_font(10), width=9, anchor="w").pack(side=tk.LEFT)
+        first = provider_var.get()
+        menu = tk.OptionMenu(
+            prow, provider_var, first,
+            *[p for p in providers if p != first])
+        menu.config(bg="#000000", fg=FG, font=fonts.view_font(10),
+                    borderwidth=0, highlightthickness=1,
+                    highlightcolor="#333333", highlightbackground="#333333",
+                    activebackground="#333333", activeforeground=FG)
+        menu["menu"].config(bg="#000000", fg=FG, font=fonts.view_font(10))
+        menu.pack(side=tk.LEFT, padx=(4, 0), fill=tk.X, expand=True)
+
+        mrow = tk.Frame(parent, bg=BG)
+        mrow.pack(fill=tk.X)
+        tk.Label(mrow, text="Model", fg=MUTED, bg=BG,
+                 font=fonts.view_font(10), width=9, anchor="w").pack(side=tk.LEFT)
+        model_var = tk.StringVar()
+        combo = ttk.Combobox(mrow, textvariable=model_var,
+                             font=fonts.view_font(10))
+        combo.pack(side=tk.LEFT, padx=(4, 0), fill=tk.X, expand=True)
+
+        def _refresh_models(*_):
+            pid = provider_var.get()
+            pcfg = _llm_load()
+            models = pcfg.get("providers", {}).get(pid, {}).get("models", [])
+            combo["values"] = models
+            am = pcfg.get("active_models", {}).get(pid, "")
+            model_var.set(am or (models[0] if models else ""))
+
+        provider_var.trace_add("write", lambda *a: _refresh_models())
+        _refresh_models()
+        return provider_var, model_var
+
     def _log(self, text, color="info"):
         if not self.winfo_exists():
             return
@@ -446,50 +496,14 @@ class DicmaDialog(tk.Toplevel):
         llm_label.grid(row=4, column=0, columnspan=2, sticky="ew",
                        padx=15, pady=(12, 0))
         tk.Label(
-            llm_label, text="LLM config", fg=MUTED, bg=BG,
+            llm_label, text="LLM provider", fg=MUTED, bg=BG,
             font=fonts.view_font_bold(10),
         ).pack(anchor="w")
 
         llm_frame = tk.Frame(tab, bg=BG)
         llm_frame.grid(row=5, column=0, columnspan=2, sticky="ew",
                        padx=15, pady=(4, 0))
-
-        row = tk.Frame(llm_frame, bg=BG)
-        row.pack(fill=tk.X, pady=(0, 4))
-        tk.Label(row, text="Model", fg=MUTED, bg=BG,
-                 font=fonts.view_font(10), width=9, anchor="w").pack(side=tk.LEFT)
-        self._neigh_model_var = tk.StringVar()
-        self._make_entry(row, self._neigh_model_var).pack(side=tk.LEFT, padx=(4, 0), fill=tk.X, expand=True)
-
-        row2 = tk.Frame(llm_frame, bg=BG)
-        row2.pack(fill=tk.X, pady=(0, 4))
-        tk.Label(row2, text="Base URL", fg=MUTED, bg=BG,
-                 font=fonts.view_font(10), width=9, anchor="w").pack(side=tk.LEFT)
-        self._neigh_base_var = tk.StringVar()
-        self._make_entry(row2, self._neigh_base_var).pack(side=tk.LEFT, padx=(4, 0), fill=tk.X, expand=True)
-
-        row3 = tk.Frame(llm_frame, bg=BG)
-        row3.pack(fill=tk.X)
-        tk.Label(row3, text="API Key", fg=MUTED, bg=BG,
-                 font=fonts.view_font(10), width=9, anchor="w").pack(side=tk.LEFT)
-
-        self._neigh_apikey_real = ""
-        self._neigh_apikey_visible = False
-        self._neigh_apikey_var = tk.StringVar(value="")
-        self._neigh_apikey_entry = self._make_entry(row3, self._neigh_apikey_var)
-        self._neigh_apikey_entry.pack(side=tk.LEFT, padx=(4, 6), fill=tk.X, expand=True)
-
-        self._neigh_apikey_toggle = tk.Label(
-            row3, text="show", fg=SUCCESS, bg=BG,
-            font=fonts.view_font(10), cursor="",
-        )
-        self._neigh_apikey_toggle.pack(side=tk.LEFT)
-        self._neigh_apikey_toggle.bind("<Enter>", lambda e: self._neigh_apikey_toggle.config(fg=self.ALPHA))
-        self._neigh_apikey_toggle.bind("<Leave>", lambda e: self._neigh_apikey_toggle.config(
-            fg=SUCCESS if self._neigh_apikey_visible else FG))
-        self._neigh_apikey_toggle.bind("<Button-1>", lambda e: self._neigh_toggle_apikey())
-
-        self._autofill_llm_config()
+        self._neigh_provider_var, self._neigh_model_var = self._make_llm_selector(llm_frame)
 
         self._make_label(tab, "Output").grid(
             row=8, column=0, sticky="w", padx=(15, 0), pady=(8, 0))
@@ -502,33 +516,6 @@ class DicmaDialog(tk.Toplevel):
                   padx=15, pady=(4, 0))
         prog_label.grid(row=11, column=0, columnspan=2, sticky="ew",
                         padx=15, pady=(2, 15))
-
-    def _neigh_toggle_apikey(self):
-        if self._neigh_apikey_visible:
-            self._neigh_apikey_var.set("*" * min(len(self._neigh_apikey_real), 24))
-            self._neigh_apikey_toggle.config(text="show", fg=FG)
-            self._neigh_apikey_visible = False
-        else:
-            self._neigh_apikey_var.set(self._neigh_apikey_real)
-            self._neigh_apikey_toggle.config(text="hide", fg=SUCCESS)
-            self._neigh_apikey_visible = True
-
-    def _autofill_llm_config(self):
-        try:
-            from src.llm.config import load, get_provider, get_active_model
-            config = load()
-            provider = get_provider(config)
-            model = get_active_model(config)
-            if provider.get("base_url"):
-                self._neigh_base_var.set(provider["base_url"])
-            if provider.get("api_key"):
-                self._neigh_apikey_real = provider["api_key"]
-                self._neigh_apikey_var.set("*" * min(len(self._neigh_apikey_real), 24))
-                self._neigh_apikey_visible = False
-            if model:
-                self._neigh_model_var.set(model)
-        except Exception:
-            pass
 
     def _update_total_label(self):
         try:
@@ -743,38 +730,7 @@ class DicmaDialog(tk.Toplevel):
         self._make_entry(levels_inner, self._pass_n3_var, width=6).pack(
             side=tk.LEFT, padx=(4, 0))
 
-        row = tk.Frame(llm_inner, bg=BG)
-        row.pack(fill=tk.X, pady=(0, 4))
-        tk.Label(row, text="Model", fg=MUTED, bg=BG,
-                 font=fonts.view_font(10), width=9, anchor="w").pack(side=tk.LEFT)
-        self._pass_model_var = tk.StringVar()
-        self._make_entry(row, self._pass_model_var).pack(side=tk.LEFT, padx=(4, 0), fill=tk.X, expand=True)
-
-        row2 = tk.Frame(llm_inner, bg=BG)
-        row2.pack(fill=tk.X, pady=(0, 4))
-        tk.Label(row2, text="Base URL", fg=MUTED, bg=BG,
-                 font=fonts.view_font(10), width=9, anchor="w").pack(side=tk.LEFT)
-        self._pass_base_var = tk.StringVar()
-        self._make_entry(row2, self._pass_base_var).pack(side=tk.LEFT, padx=(4, 0), fill=tk.X, expand=True)
-
-        row3 = tk.Frame(llm_inner, bg=BG)
-        row3.pack(fill=tk.X)
-        tk.Label(row3, text="API Key", fg=MUTED, bg=BG,
-                 font=fonts.view_font(10), width=9, anchor="w").pack(side=tk.LEFT)
-        self._pass_apikey_real = ""
-        self._pass_apikey_visible = False
-        self._pass_apikey_var = tk.StringVar()
-        self._pass_apikey_entry = self._make_entry(row3, self._pass_apikey_var)
-        self._pass_apikey_entry.pack(side=tk.LEFT, padx=(4, 6), fill=tk.X, expand=True)
-        self._pass_apikey_toggle = tk.Label(
-            row3, text="show", fg=SUCCESS, bg=BG,
-            font=fonts.view_font(10), cursor="",
-        )
-        self._pass_apikey_toggle.pack(side=tk.LEFT)
-        self._pass_apikey_toggle.bind("<Enter>", lambda e: self._pass_apikey_toggle.config(fg=self.ALPHA))
-        self._pass_apikey_toggle.bind("<Leave>", lambda e: self._pass_apikey_toggle.config(
-            fg=SUCCESS if self._pass_apikey_visible else FG))
-        self._pass_apikey_toggle.bind("<Button-1>", lambda e: self._pass_toggle_apikey())
+        self._pass_provider_var, self._pass_model_var = self._make_llm_selector(llm_inner)
 
         opts_frame = tk.Frame(tab, bg=BG)
         opts_frame.grid(row=7, column=0, columnspan=2, sticky="w",
@@ -808,39 +764,11 @@ class DicmaDialog(tk.Toplevel):
         prog_label.grid(row=11, column=0, columnspan=2, sticky="ew",
                         padx=15, pady=(2, 15))
 
-        self._autofill_pass_llm()
-
-    def _autofill_pass_llm(self):
-        try:
-            from src.llm.config import load, get_provider, get_active_model
-            config = load()
-            provider = get_provider(config)
-            model = get_active_model(config)
-            if provider.get("base_url"):
-                self._pass_base_var.set(provider["base_url"])
-            if provider.get("api_key"):
-                self._pass_apikey_real = provider["api_key"]
-                self._pass_apikey_var.set("*" * min(len(self._pass_apikey_real), 24))
-            if model:
-                self._pass_model_var.set(model)
-        except Exception:
-            pass
-
     def _pass_toggle_llm(self):
         if self._pass_llm_var.get():
             self._pass_llm_frame.grid()
         else:
             self._pass_llm_frame.grid_remove()
-
-    def _pass_toggle_apikey(self):
-        if self._pass_apikey_visible:
-            self._pass_apikey_var.set("*" * min(len(self._pass_apikey_real), 24))
-            self._pass_apikey_toggle.config(text="show", fg=FG)
-            self._pass_apikey_visible = False
-        else:
-            self._pass_apikey_var.set(self._pass_apikey_real)
-            self._pass_apikey_toggle.config(text="hide", fg=SUCCESS)
-            self._pass_apikey_visible = True
 
     def _pass_add_pw(self):
         pw = self._pass_pw_combo.get().strip()
@@ -1075,15 +1003,14 @@ class DicmaDialog(tk.Toplevel):
 
         self._update_total_label()
 
-        api_key = self._neigh_apikey_real.strip()
-        base_url = self._neigh_base_var.get().strip()
+        provider_id = self._neigh_provider_var.get().strip()
         model = self._neigh_model_var.get().strip()
-        if not api_key or not base_url or not model:
-            self._log("Please fill in all LLM config fields.", "error")
+        if not provider_id or not model:
+            self._log("Select a provider and model.", "error")
             return
 
         self._log(f"Finding related words for {len(words)} word(s)...", "info")
-        self._log(f"  n1={n1} n2={n2} n3={n3}  model={model}", "info")
+        self._log(f"  n1={n1} n2={n2} n3={n3}  provider={provider_id} model={model}", "info")
         self._log(f"  Output: {out_path}", "info")
         self._running = True
         self._start_btn.config(text="Generating...", fg=MUTED)
@@ -1181,13 +1108,16 @@ class DicmaDialog(tk.Toplevel):
         def _run():
             import sys
             try:
-                from openai import OpenAI
-                client = OpenAI(api_key=api_key, base_url=base_url)
+                from src.llm.client import LLMClient
+                from src.llm.config import load as _llm_load
                 from src.tools.dicma import engine as dicma
+                client = LLMClient(config=_llm_load(), provider_id=provider_id)
+                complete = lambda m, **kw: client.raw_chat(
+                    m, model=model, **kw).choices[0].message.content
                 old_stdout = sys.stdout
                 sys.stdout = log_writer
                 try:
-                    expanded = dicma.ml_expand_words(client, model, words, n1, n2, n3)
+                    expanded = dicma.ml_expand_words(complete, words, n1, n2, n3)
                 finally:
                     sys.stdout = old_stdout
                 result = [w for w in expanded if w not in set(words)]
@@ -1269,11 +1199,10 @@ class DicmaDialog(tk.Toplevel):
         n1, n2, n3 = self._parse_pass_n()
         if n1 is None:
             return
-        api_key = self._pass_apikey_real.strip()
-        base_url = self._pass_base_var.get().strip()
+        provider_id = self._pass_provider_var.get().strip()
         model = self._pass_model_var.get().strip()
-        if not api_key or not base_url or not model:
-            self._log("Please fill in all LLM config fields.", "error")
+        if not provider_id or not model:
+            self._log("Select a provider and model.", "error")
             self._on_done("passwords")
             return
 
@@ -1362,13 +1291,16 @@ class DicmaDialog(tk.Toplevel):
         def _run():
             import sys
             try:
-                from openai import OpenAI
+                from src.llm.client import LLMClient
+                from src.llm.config import load as _llm_load
                 from src.tools.dicma import engine as dicma
-                client = OpenAI(api_key=api_key, base_url=base_url)
+                client = LLMClient(config=_llm_load(), provider_id=provider_id)
+                complete = lambda m, **kw: client.raw_chat(
+                    m, model=model, **kw).choices[0].message.content
                 old_stdout = sys.stdout
                 sys.stdout = log_writer
                 try:
-                    expanded = dicma.ml_expand_words(client, model, words, n1, n2, n3)
+                    expanded = dicma.ml_expand_words(complete, words, n1, n2, n3)
                 finally:
                     sys.stdout = old_stdout
                 all_words = list(expanded)

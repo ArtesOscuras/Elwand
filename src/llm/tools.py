@@ -2367,28 +2367,15 @@ def _dicma_find_related(args, ctx=None):
     out_name = args.get("output_name", "dicma_related.txt")
     out_path = os.path.join(str(lst_dir()), out_name)
     config = llm_load()
-    pid = config.get("active_provider", "")
     provider = get_provider(config)
     model = get_active_model(config)
-    api_key = provider.get("api_key", "")
-    base_url = provider.get("base_url", "")
-    if not base_url or not model:
+    if not provider or not model:
         return "No active LLM config. Configure in Settings → Models."
-    if not api_key and pid == "opencode":
-        api_key = "public"
-    if not api_key:
-        return "No active LLM config. Configure in Settings → Models."
-    from openai import OpenAI
-    if pid == "opencode":
-        from src.llm.client import _OPENCODE_UA, _STAINLESS_HEADER_KEYS
-        default_headers = {"User-Agent": _OPENCODE_UA}
-        for k in _STAINLESS_HEADER_KEYS:
-            default_headers[k] = ""
-        client = OpenAI(api_key=api_key, base_url=base_url,
-                        default_headers=default_headers)
-    else:
-        client = OpenAI(api_key=api_key, base_url=base_url)
-    expanded = dicma.ml_expand_words(client, model, words, n1, n2, n3)
+    from src.llm.client import LLMClient
+    client = LLMClient(config=config)
+    complete = lambda messages, **kw: client.raw_chat(
+        messages, model=model, **kw).choices[0].message.content
+    expanded = dicma.ml_expand_words(complete, words, n1, n2, n3)
     result = [w for w in expanded if w not in set(words)]
     dicma.save_list_to_file(result, out_path)
     return (f"Found {len(result)} related words from {len(words)} seed(s). "

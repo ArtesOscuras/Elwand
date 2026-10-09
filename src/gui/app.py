@@ -2393,19 +2393,19 @@ class App(tk.Tk):
 
     def _dicma_related_thread(self, words, out_path, n1, n2, n3):
         from src.llm.config import load, get_provider, get_active_model
+        from src.llm.client import LLMClient
         from src.tools.dicma import engine as dicma
         config = load()
         provider = get_provider(config)
         model = get_active_model(config)
-        api_key = provider.get("api_key", "")
-        base_url = provider.get("base_url", "")
-        if not api_key or not base_url or not model:
+        if not provider or not model:
             self.console.after(0, lambda: self.console.error(
                 "No LLM config found. Configure in Settings → Models."))
             return
-        from openai import OpenAI
-        client = OpenAI(api_key=api_key, base_url=base_url)
-        expanded = dicma.ml_expand_words(client, model, words, n1, n2, n3)
+        client = LLMClient(config=config)
+        complete = lambda messages, **kw: client.raw_chat(
+            messages, model=model, **kw).choices[0].message.content
+        expanded = dicma.ml_expand_words(complete, words, n1, n2, n3)
         result = [w for w in expanded if w not in set(words)]
         dicma.save_list_to_file(result, out_path)
         self.console.after(0, lambda: self.console.success(

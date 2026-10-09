@@ -594,58 +594,73 @@ def _handle_api_error(e):
     raise
 
 
-def _call_api(client, model, word, n):
+def _json_format_unsupported(e):
+    msg = str(e).lower()
+    return "response_format" in msg or "json_object" in msg
+
+
+def _call_api(complete, word, n):
+    """Call the LLM through `complete(messages, **kwargs) -> str`.
+
+    `complete` is supplied by the caller (usually Elwand's LLMClient.raw_chat)
+    so the request uses the active/selected provider with the same client
+    identity and retries as the rest of Elwand.
+    """
+    messages = [{
+        "role": "user",
+        "content": (
+            f'List exactly {n} terms (lowercase, no spaces) with the '
+            f'strongest semantic relationship to "{word}". Prioritize '
+            f'synonyms, conceptually-related words, and terms from '
+            f'the same domain or universe. Do NOT add numbers, '
+            f'symbols, or character substitutions — just plain words. '
+            f'Return ONLY a JSON object {{"words": [...]}}. '
+            f'No markdown or explanation.'
+        ),
+    }]
     try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[{
-                "role": "user",
-                "content": (
-                    f'List exactly {n} terms (lowercase, no spaces) with the '
-                    f'strongest semantic relationship to "{word}". Prioritize '
-                    f'synonyms, conceptually-related words, and terms from '
-                    f'the same domain or universe. Do NOT add numbers, '
-                    f'symbols, or character substitutions — just plain words. '
-                    f'Return ONLY a JSON object {{"words": [...]}}. '
-                    f'No markdown or explanation.'
-                ),
-            }],
-            response_format={"type": "json_object"},
-            temperature=0.8,
-            max_tokens=8192,
-        )
-        return _parse_words(response.choices[0].message.content)
+        content = complete(messages, response_format={"type": "json_object"},
+                           temperature=0.8, max_tokens=8192)
     except Exception as e:
-        _handle_api_error(e)
-        raise
+        if _json_format_unsupported(e):
+            try:
+                content = complete(messages, temperature=0.8, max_tokens=8192)
+            except Exception as e2:
+                _handle_api_error(e2)
+                raise
+        else:
+            _handle_api_error(e)
+            raise
+    return _parse_words(content)
 
 
-def _call_api_batch(client, model, words, n):
+def _call_api_batch(complete, words, n):
     quoted = ", ".join(f'"{w}"' for w in words)
+    messages = [{
+        "role": "user",
+        "content": (
+            f'For each of these words: [{quoted}], list exactly {n} '
+            f'terms (lowercase, no spaces) with the strongest semantic '
+            f'relationship. Do NOT add numbers, symbols, or character '
+            f'substitutions — just plain words. Return ONLY a JSON '
+            f'object: {{"words": {{"word1": [...], "word2": [...], ...}}}}. '
+            f'No markdown or explanation.'
+        ),
+    }]
     try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[{
-                "role": "user",
-                "content": (
-                    f'For each of these words: [{quoted}], list exactly {n} '
-                    f'terms (lowercase, no spaces) with the strongest semantic '
-                    f'relationship. Do NOT add numbers, symbols, or character '
-                    f'substitutions — just plain words. Return ONLY a JSON '
-                    f'object: {{"words": {{"word1": [...], "word2": [...], ...}}}}. '
-                    f'No markdown or explanation.'
-                ),
-            }],
-            response_format={"type": "json_object"},
-            temperature=0.8,
-            max_tokens=8192,
-        )
-        return _parse_words_batch(
-            response.choices[0].message.content, words
-        )
+        content = complete(messages, response_format={"type": "json_object"},
+                           temperature=0.8, max_tokens=8192)
     except Exception as e:
-        _handle_api_error(e)
-        raise
+        if _json_format_unsupported(e):
+            try:
+                content = complete(messages, temperature=0.8, max_tokens=8192)
+            except Exception as e2:
+                _handle_api_error(e2)
+                raise
+        else:
+            _handle_api_error(e)
+            raise
+    return _parse_words_batch(content, words)
 
 
 def _chunks(lst, size):
@@ -653,7 +668,7 @@ def _chunks(lst, size):
         yield lst[i:i + size]
 
 
-def _llm_neighbours(client, model, word, n):
+def _llm_neighbours(complete, word, n):
     import time
     all_words = []
     stale = 0
@@ -669,14 +684,14 @@ def _llm_neighbours(client, model, word, n):
             batch_n = min(max(int(needed * 2), 50), CHUNK_SIZE)
         before = len(all_words)
         call_num += 1
-        batch = _call_api(client, model, word, batch_n)
+        batch = _call_api(complete, word, batch_n)
         if not batch:
             for attempt in range(1, 3):
                 verbose_print(
                     f"[!] L1 '{word}': call {call_num} "
                     f"returned 0 words, retry {attempt}/2"
                 )
-                batch = _call_api(client, model, word, batch_n)
+                batch = _call_api(complete, word, batch_n)
                 if batch:
                     break
         for w in batch:
@@ -709,14 +724,14 @@ def _llm_neighbours(client, model, word, n):
     return all_words[:n]
 
 
-def ml_expand_words(client, model, input_words, n1, n2, n3):
+def ml_expand_words(complete, input_words, n1, n2, n3):
     seen = set(input_words)
 
     # ---------- level 1 ----------
     level1 = []
     for word in input_words:
         try:
-            neighbours = _llm_neighbours(client, model, word, n1)
+            neighbours = _llm_neighbours(complete, word, n1)
             level1.append((word, neighbours))
             for nb in neighbours:
                 cleaned = nb.strip().lower()
@@ -741,7 +756,7 @@ def ml_expand_words(client, model, input_words, n1, n2, n3):
     l2_new = 0
     for group in _chunks(all_l1_words, BATCH_GROUP_SIZE):
         try:
-            batch_result = _call_api_batch(client, model, group, n2)
+            batch_result = _call_api_batch(complete, group, n2)
         except Exception as exc:
             print(f"Error L2 batch: {exc}", file=sys.stderr)
             continue
@@ -772,7 +787,7 @@ def ml_expand_words(client, model, input_words, n1, n2, n3):
     l3_new = 0
     for group in _chunks(all_l2_words, BATCH_GROUP_SIZE):
         try:
-            batch_result = _call_api_batch(client, model, group, n3)
+            batch_result = _call_api_batch(complete, group, n3)
         except Exception as exc:
             print(f"Error L3 batch: {exc}", file=sys.stderr)
             continue

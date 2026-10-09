@@ -210,8 +210,8 @@ def get_provider(config, provider_id=None):
     return providers.get(pid, {})
 
 
-def get_active_model(config):
-    pid = config.get("active_provider", "")
+def get_active_model(config, provider_id=None):
+    pid = provider_id or config.get("active_provider", "")
     am = config.get("active_models", {}).get(pid, "")
     if am:
         return am
