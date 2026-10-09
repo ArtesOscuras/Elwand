@@ -1,6 +1,6 @@
 import tkinter as tk
 import threading
-from src.gui import fonts, windowing
+from src.gui import fonts, windowing, theme
 from src.machines import people_db
 from .base import BaseView
 
@@ -54,14 +54,9 @@ class _PersonEditDialog(tk.Toplevel):
                 fg=BRIGHT, bg="#111111",
             ).grid(row=row, column=0, sticky="w", padx=15,
                     pady=(10 if row == 0 else 3, 0))
-            tk.Entry(
-                self, textvariable=var, bg="#000000", fg=BRIGHT,
-                insertbackground=BRIGHT, font=fonts.view_font(11),
-                borderwidth=1, relief=tk.FLAT,
-                highlightthickness=1, highlightcolor="#333333",
-                highlightbackground="#333333",
-            ).grid(row=row, column=1, sticky="ew", padx=15,
-                    pady=(10 if row == 0 else 3, 0))
+            theme.entry(self, textvariable=var).grid(
+                row=row, column=1, sticky="ew", padx=15,
+                pady=(10 if row == 0 else 3, 0))
             row += 1
 
         self._feedback = tk.Label(
@@ -75,25 +70,9 @@ class _PersonEditDialog(tk.Toplevel):
         btn_frame.grid(row=row, column=0, columnspan=2, sticky="ew",
                        padx=15, pady=(15, 15))
 
-        close_btn = tk.Label(
-            btn_frame, text="  Close  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6,
-        )
-        close_btn.pack(side=tk.RIGHT, padx=(5, 0))
-        close_btn.bind("<Button-1>", lambda e: self.destroy())
-        close_btn.bind("<Enter>", lambda e: close_btn.config(bg="#333333"))
-        close_btn.bind("<Leave>", lambda e: close_btn.config(bg="#222222"))
-
-        update_btn = tk.Label(
-            btn_frame, text="  Update  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6,
-        )
-        update_btn.pack(side=tk.RIGHT)
-        update_btn.bind("<Button-1>", lambda e: self._save())
-        update_btn.bind("<Enter>", lambda e: update_btn.config(bg="#333333"))
-        update_btn.bind("<Leave>", lambda e: update_btn.config(bg="#222222"))
+        theme.button(btn_frame, "  Close  ", command=self.destroy).pack(
+            side=tk.RIGHT, padx=(5, 0))
+        theme.button(btn_frame, "  Update  ", command=self._save).pack(side=tk.RIGHT)
 
         self.protocol("WM_DELETE_WINDOW", self.destroy)
 
@@ -179,39 +158,18 @@ class _InvestigateInterestsDialog(tk.Toplevel):
         )
         self._output_text.grid(row=0, column=0, sticky="nsew")
 
-        scrollbar = tk.Scrollbar(output_frame, orient=tk.VERTICAL,
-                                  command=self._output_text.yview)
-        scrollbar.configure(bg="#333333", troughcolor="#1a1a1a",
-                            activebackground="#555555",
-                            width=10, borderwidth=0, highlightthickness=0,
-                            elementborderwidth=0)
+        scrollbar = theme.scrollbar(output_frame, self._output_text)
         scrollbar.grid(row=0, column=1, sticky="ns")
-        self._output_text.configure(yscrollcommand=scrollbar.set)
         self._output_text.tag_configure("tool", foreground=INFO)
         self._output_text.tag_configure("muted", foreground=MUTED)
 
         btn_frame = tk.Frame(self, bg="#111111")
         btn_frame.grid(row=4, column=0, sticky="ew", padx=15, pady=(8, 15))
 
-        close_btn = tk.Label(
-            btn_frame, text="  Close  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6,
-        )
-        close_btn.pack(side=tk.RIGHT, padx=(5, 0))
-        close_btn.bind("<Button-1>", lambda e: self.destroy())
-        close_btn.bind("<Enter>", lambda e: close_btn.config(bg="#333333"))
-        close_btn.bind("<Leave>", lambda e: close_btn.config(bg="#222222"))
-
-        investigate_btn = tk.Label(
-            btn_frame, text="  Investigate  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6,
-        )
-        investigate_btn.pack(side=tk.RIGHT)
-        investigate_btn.bind("<Button-1>", lambda e: self._start())
-        investigate_btn.bind("<Enter>", lambda e: investigate_btn.config(bg="#333333"))
-        investigate_btn.bind("<Leave>", lambda e: investigate_btn.config(bg="#222222"))
+        theme.button(btn_frame, "  Close  ", command=self.destroy).pack(
+            side=tk.RIGHT, padx=(5, 0))
+        theme.button(btn_frame, "  Investigate  ",
+                     command=self._start).pack(side=tk.RIGHT)
 
         self.protocol("WM_DELETE_WINDOW", self.destroy)
 
@@ -399,7 +357,7 @@ class PeopleDetailView(BaseView):
 
         edit_btn = tk.Label(
             inner, text="  Edit  ", bg="#222222", fg="#ffffff",
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         edit_btn.pack(side=tk.LEFT, padx=(0, 10))
@@ -409,7 +367,7 @@ class PeopleDetailView(BaseView):
 
         investigate_btn = tk.Label(
             inner, text="  Investigate interests  ", bg="#222222", fg=INFO,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         investigate_btn.pack(side=tk.LEFT, padx=(0, 10))
@@ -419,7 +377,7 @@ class PeopleDetailView(BaseView):
 
         back_btn = tk.Label(
             inner, text="  \u2190 Back  ", bg="#222222", fg="#ffffff",
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         back_btn.pack(side=tk.LEFT)

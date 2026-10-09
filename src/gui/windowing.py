@@ -155,3 +155,42 @@ def min_size(win, w=0, h=0):
     W = min(px(w), int(sw * 0.95)) if w else 1
     H = min(max(1, px(h)), int(sh * 0.95)) if h and h > 1 else 1
     win.minsize(max(1, W), max(1, H))
+
+
+def _chooser_parent(parent):
+    try:
+        return parent.winfo_toplevel()
+    except Exception:
+        return parent
+
+
+def ask_open_file(parent, **options):
+    """Show the open-file chooser, always parented to `parent`.
+
+    On Linux Tk's classic chooser has a light background inconsistent with
+    Elwand, so a themed in-app chooser is used instead. macOS/Windows keep the
+    native chooser. Passing the parent is what keeps it above the active dialog.
+    """
+    parent = _chooser_parent(parent)
+    if sys.platform.startswith("linux"):
+        from src.gui import file_dialog
+        return file_dialog.choose(parent, mode="open", **options)
+    from tkinter import filedialog
+    if parent is not None:
+        options["parent"] = parent
+    return filedialog.askopenfilename(**options)
+
+
+def ask_save_file(parent, **options):
+    """Show the save-file chooser, always parented to `parent`.
+
+    Uses the themed in-app chooser on Linux; the native one elsewhere.
+    """
+    parent = _chooser_parent(parent)
+    if sys.platform.startswith("linux"):
+        from src.gui import file_dialog
+        return file_dialog.choose(parent, mode="save", **options)
+    from tkinter import filedialog
+    if parent is not None:
+        options["parent"] = parent
+    return filedialog.asksaveasfilename(**options)

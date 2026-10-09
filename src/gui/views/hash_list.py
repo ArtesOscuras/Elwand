@@ -74,7 +74,7 @@ class HashListView(BaseView):
 
         back_btn = tk.Label(
             btn_frame, text="  \u2190 Back  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         back_btn.pack(side=tk.RIGHT, padx=(10, 0))
@@ -84,7 +84,7 @@ class HashListView(BaseView):
 
         add_btn = tk.Label(
             btn_frame, text="  Add hash  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         add_btn.pack(side=tk.LEFT)

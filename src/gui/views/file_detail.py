@@ -3,7 +3,7 @@ import re
 import subprocess
 import threading
 import tkinter as tk
-from src.gui import fonts, windowing
+from src.gui import fonts, windowing, theme
 
 MUTED = "#888888"
 BRIGHT = "#ffffff"
@@ -81,13 +81,8 @@ class PocDialog(tk.Toplevel):
 
         self._regex_var = tk.BooleanVar(value=False)
         self._regex_var.trace_add("write", lambda *a: self._on_query_changed())
-        regex_cb = tk.Checkbutton(
-            search_frame, text="Regex", variable=self._regex_var,
-            bg=BG, fg=MUTED, selectcolor="#333333",
-            font=fonts.view_font(11), activebackground=BG,
-            activeforeground=FG,
-        )
-        regex_cb.grid(row=0, column=1, padx=(10, 4))
+        theme.Toggle(search_frame, "Regex", variable=self._regex_var).grid(
+            row=0, column=1, padx=(10, 4))
 
         clear_q = tk.Label(search_frame, text="\u00d7", fg=MUTED, bg=BG,
                            font=fonts.view_font_bold(16), cursor="")
@@ -238,7 +233,7 @@ class PocDialog(tk.Toplevel):
 
     def _make_btn(self, parent, text):
         btn = tk.Label(parent, text=text, bg="#222222", fg=FG,
-                       relief=tk.RAISED, bd=1, padx=14, pady=6,
+                       relief=tk.FLAT, bd=0, padx=14, pady=6,
                        font=fonts.view_font(10), cursor="")
         btn.bind("<Enter>", lambda e: btn.config(bg="#333333"))
         btn.bind("<Leave>", lambda e: btn.config(bg="#222222"))
@@ -552,13 +547,8 @@ class _SearchDialog(tk.Toplevel):
 
         self._regex_var = tk.BooleanVar(value=False)
         self._regex_var.trace_add("write", lambda *a: self._on_query_changed())
-        regex_cb = tk.Checkbutton(
-            search_frame, text="Regex", variable=self._regex_var,
-            bg=BG, fg=MUTED, selectcolor="#333333",
-            font=fonts.view_font(11), activebackground=BG,
-            activeforeground=FG,
-        )
-        regex_cb.grid(row=0, column=1, padx=(10, 4))
+        theme.Toggle(search_frame, "Regex", variable=self._regex_var).grid(
+            row=0, column=1, padx=(10, 4))
 
         clear_q = tk.Label(search_frame, text="\u00d7", fg=MUTED, bg=BG,
                            font=fonts.view_font_bold(16), cursor="")
@@ -653,7 +643,7 @@ class _SearchDialog(tk.Toplevel):
 
     def _make_button(self, parent, text):
         btn = tk.Label(parent, text=text, bg="#222222", fg=FG,
-                       relief=tk.RAISED, bd=1, padx=14, pady=6,
+                       relief=tk.FLAT, bd=0, padx=14, pady=6,
                        font=fonts.view_font(10), cursor="")
         btn.bind("<Enter>", lambda e: btn.config(bg="#333333"))
         btn.bind("<Leave>", lambda e: btn.config(bg="#222222"))

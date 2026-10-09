@@ -3,6 +3,7 @@ import tkinter.font as tkfont
 from src.gui import fonts
 from src.gui import icons
 from src.gui import windowing
+from src.gui import theme
 from src.machines import credential_db
 from .base import BaseView
 from .nav import build as build_nav
@@ -144,7 +145,7 @@ class UsersView(BaseView):
 
         back_btn = tk.Label(
             btn_frame, text="  \u2190 Back  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         back_btn.pack(side=tk.RIGHT, padx=(10, 0))
@@ -155,7 +156,7 @@ class UsersView(BaseView):
 
         add_btn = tk.Label(
             btn_frame, text="  Add user  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         add_btn.pack(side=tk.LEFT)
@@ -337,37 +338,11 @@ class _AddUserDialog(tk.Toplevel):
         type_frame = tk.Frame(self, bg="#111111")
         type_frame.grid(row=row, column=1, sticky="w", padx=15, pady=(5, 3))
 
-        local_rb = tk.Radiobutton(
-            type_frame, text="  Local  ", variable=self._utype_var,
-            value="local", bg="#222222", fg=MUTED, selectcolor="#111111",
-            font=fonts.view_font(11), indicatoron=False, relief=tk.FLAT,
-            padx=10, pady=4,
-            activebackground="#333333", activeforeground=BRIGHT,
-            command=self._on_type_changed,
-        )
-        local_rb.pack(side=tk.LEFT)
-        local_rb.bind("<Enter>", lambda e, b=local_rb: b.config(
-            bg="#444444" if self._utype_var.get() == "local" else "#333333"))
-        local_rb.bind("<Leave>", lambda e, b=local_rb: b.config(
-            bg="#333333" if self._utype_var.get() == "local" else "#222222"))
-
-        domain_rb = tk.Radiobutton(
-            type_frame, text="  Domain  ", variable=self._utype_var,
-            value="domain", bg="#222222", fg=MUTED, selectcolor="#111111",
-            font=fonts.view_font(11), indicatoron=False, relief=tk.FLAT,
-            padx=10, pady=4,
-            activebackground="#333333", activeforeground=BRIGHT,
-            command=self._on_type_changed,
-        )
-        domain_rb.pack(side=tk.LEFT, padx=(8, 0))
-        domain_rb.bind("<Enter>", lambda e, b=domain_rb: b.config(
-            bg="#444444" if self._utype_var.get() == "domain" else "#333333"))
-        domain_rb.bind("<Leave>", lambda e, b=domain_rb: b.config(
-            bg="#333333" if self._utype_var.get() == "domain" else "#222222"))
-
-        self._local_rb = local_rb
-        self._domain_rb = domain_rb
-        self._update_rb_styles()
+        self._type_seg = theme.Segmented(
+            type_frame,
+            [("local", "  Local  "), ("domain", "  Domain  ")],
+            self._utype_var, command=self._on_type_changed)
+        self._type_seg.pack(side=tk.LEFT)
         row += 1
 
         tk.Label(
@@ -439,7 +414,7 @@ class _AddUserDialog(tk.Toplevel):
 
         close_btn = tk.Label(
             btn_frame, text="  Close  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         close_btn.pack(side=tk.RIGHT, padx=(5, 0))
@@ -449,7 +424,7 @@ class _AddUserDialog(tk.Toplevel):
 
         add_btn = tk.Label(
             btn_frame, text="  Add  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         add_btn.pack(side=tk.RIGHT)
@@ -486,13 +461,8 @@ class _AddUserDialog(tk.Toplevel):
         self._update_rb_styles()
 
     def _update_rb_styles(self):
-        utype = self._utype_var.get()
-        self._local_rb.config(
-            fg=BRIGHT if utype == "local" else MUTED,
-            bg="#333333" if utype == "local" else "#222222")
-        self._domain_rb.config(
-            fg=BRIGHT if utype == "domain" else MUTED,
-            bg="#333333" if utype == "domain" else "#222222")
+        if hasattr(self, "_type_seg"):
+            self._type_seg.refresh()
 
     def _save(self):
         name = self._name_var.get().strip()

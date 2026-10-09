@@ -1,4 +1,4 @@
-from src.gui import fonts, windowing
+from src.gui import fonts, windowing, theme
 import tkinter as tk
 from .base import BaseView
 from src.machines import store
@@ -232,11 +232,8 @@ class MachineDetailView(BaseView):
                        wrap=tk.WORD, padx=15, pady=15)
         text.grid(row=0, column=0, sticky="nsew")
 
-        scrollbar = tk.Scrollbar(dlg, orient=tk.VERTICAL, command=text.yview)
-        scrollbar.configure(bg="#333333", troughcolor="#1a1a1a", activebackground="#555555",
-                            width=10, borderwidth=0, highlightthickness=0, elementborderwidth=0)
+        scrollbar = theme.scrollbar(dlg, text)
         scrollbar.grid(row=0, column=1, sticky="ns")
-        text.configure(yscrollcommand=scrollbar.set)
 
         text.tag_configure("muted", foreground=MUTED)
         text.tag_configure("bright", foreground=BRIGHT)
@@ -256,13 +253,7 @@ class MachineDetailView(BaseView):
         btn_frame = tk.Frame(dlg, bg="#111111")
         btn_frame.grid(row=1, column=0, columnspan=2, pady=(10, 15))
 
-        close_btn = tk.Label(btn_frame, text="  Close  ", bg="#222222", fg="#ffffff",
-                             font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-                             padx=15, pady=6)
-        close_btn.pack()
-        close_btn.bind("<Button-1>", lambda e: dlg.destroy())
-        close_btn.bind("<Enter>", lambda e: close_btn.config(bg="#333333"))
-        close_btn.bind("<Leave>", lambda e: close_btn.config(bg="#222222"))
+        theme.button(btn_frame, "  Close  ", command=dlg.destroy).pack()
         dlg.focus_set()
 
 

@@ -74,8 +74,8 @@ class WifiView(BaseView):
             font=fonts.view_font(10),
             fg=ACCENT,
             bg="#222222",
-            relief=tk.RAISED,
-            bd=1,
+            relief=tk.FLAT,
+            bd=0,
             padx=12,
             pady=3,
         )

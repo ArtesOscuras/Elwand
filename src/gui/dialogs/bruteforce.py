@@ -1,7 +1,7 @@
 import os
 import tkinter as tk
 from tkinter import ttk
-from src.gui import fonts, windowing
+from src.gui import fonts, windowing, theme
 from src.machines import store
 from src.tools.bruteforce import BruteForceEngine
 from src.elwand_paths import lst_dir as _lst_dir
@@ -32,14 +32,6 @@ class BruteforceDialog(tk.Toplevel):
         self.rowconfigure(0, weight=0)
         self.rowconfigure(1, weight=1)
         self.rowconfigure(2, weight=0)
-
-        style = ttk.Style()
-        style.theme_use("default")
-        style.configure("TNotebook", background=BG, borderwidth=0)
-        style.configure("TNotebook.Tab", background="#222222", foreground=MUTED,
-                        font=fonts.view_font(10), padding=[12, 4])
-        style.map("TNotebook.Tab", background=[("selected", "#111111")],
-                  foreground=[("selected", FG)])
 
         self._notebook_frame = tk.Frame(self, bg=BG)
         self._notebook_frame.grid(row=0, column=0, sticky="ew", padx=0, pady=(5, 0))
@@ -86,53 +78,25 @@ class BruteforceDialog(tk.Toplevel):
         output_frame.columnconfigure(0, weight=1)
         output_frame.rowconfigure(0, weight=1)
 
-        self._output = tk.Text(
-            output_frame, bg="#000000", fg=BRIGHT,
-            font=fonts.view_font(10), borderwidth=0, highlightthickness=0,
-            state=tk.DISABLED, wrap=tk.WORD,
-        )
-        self._output.grid(row=0, column=0, sticky="nsew")
-
-        scrollbar = tk.Scrollbar(output_frame, orient=tk.VERTICAL, command=self._output.yview)
-        scrollbar.configure(bg="#333333", troughcolor="#1a1a1a", activebackground="#555555",
-                            width=10, borderwidth=0, highlightthickness=0, elementborderwidth=0)
-        scrollbar.grid(row=0, column=1, sticky="ns")
-        self._output.configure(yscrollcommand=scrollbar.set)
-        self._output.tag_configure("success", foreground=SUCCESS)
-        self._output.tag_configure("error", foreground=ERR_COLOR)
+        self._output = theme.output(output_frame)
         self._output.tag_configure("info", foreground=INFO)
         self._output.tag_configure("bright", foreground=BRIGHT)
-        self._output.tag_configure("muted", foreground=MUTED)
+        self._output.grid(row=0, column=0, sticky="nsew")
+
+        scrollbar = theme.scrollbar(output_frame, self._output)
+        scrollbar.grid(row=0, column=1, sticky="ns")
 
         footer = tk.Frame(self, bg=BG)
         footer.grid(row=2, column=0, sticky="ew", padx=15, pady=(0, 15))
 
-        close_btn = tk.Label(
-            footer, text="  Close  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1, padx=15, pady=6,
-        )
+        close_btn = theme.button(footer, "  Close  ", command=self._on_close)
         close_btn.pack(side=tk.RIGHT, padx=(10, 0))
-        close_btn.bind("<Button-1>", lambda e: self._on_close())
-        close_btn.bind("<Enter>", lambda e: close_btn.config(bg="#333333"))
-        close_btn.bind("<Leave>", lambda e: close_btn.config(bg="#222222"))
 
-        self._stop_btn = tk.Label(
-            footer, text="  Stop  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1, padx=15, pady=6,
-        )
+        self._stop_btn = theme.button(footer, "  Stop  ", command=self._stop)
         self._stop_btn.pack(side=tk.RIGHT, padx=(10, 0))
-        self._stop_btn.bind("<Button-1>", lambda e: self._stop())
-        self._stop_btn.bind("<Enter>", lambda e: self._stop_btn.config(bg="#333333"))
-        self._stop_btn.bind("<Leave>", lambda e: self._stop_btn.config(bg="#222222"))
 
-        self._start_btn = tk.Label(
-            footer, text="  Start  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1, padx=15, pady=6,
-        )
+        self._start_btn = theme.button(footer, "  Start  ", command=self._start)
         self._start_btn.pack(side=tk.RIGHT, padx=(10, 0))
-        self._start_btn.bind("<Button-1>", lambda e: self._start())
-        self._start_btn.bind("<Enter>", lambda e: self._start_btn.config(bg="#333333"))
-        self._start_btn.bind("<Leave>", lambda e: self._start_btn.config(bg="#222222"))
 
         self._engine = None
         self._vars_by_tab = {"ftp": self._ftp_vars, "ssh": self._ssh_vars, "smb": self._smb_vars,
@@ -166,18 +130,10 @@ class BruteforceDialog(tk.Toplevel):
         mach_frame.columnconfigure(0, weight=1)
         mach_frame.rowconfigure(0, weight=1)
 
-        machine_list = tk.Listbox(
-            mach_frame, bg="#000000", fg=FG,
-            selectbackground="#333333", selectforeground=FG,
-            font=fonts.view_font(11), borderwidth=0, highlightthickness=0,
-            activestyle="none", exportselection=False, height=5,
-        )
+        machine_list = theme.listbox(mach_frame, height=5)
         machine_list.grid(row=0, column=0, sticky="nsew")
-        mach_scroll = tk.Scrollbar(mach_frame, orient=tk.VERTICAL, command=machine_list.yview)
-        mach_scroll.configure(bg="#333333", troughcolor="#1a1a1a", activebackground="#555555",
-                               width=10, borderwidth=0, highlightthickness=0, elementborderwidth=0)
+        mach_scroll = theme.scrollbar(mach_frame, machine_list)
         mach_scroll.grid(row=0, column=1, sticky="ns")
-        machine_list.configure(yscrollcommand=mach_scroll.set)
 
         self._populate_machines(machine_list)
         target_var = tk.StringVar()
@@ -208,19 +164,15 @@ class BruteforceDialog(tk.Toplevel):
 
         user_row = tk.Frame(tab, bg=BG)
         user_row.grid(row=row, column=1, sticky="ew", padx=15, pady=(5, 5))
-        tk.Radiobutton(user_row, text="From inventory", variable=user_src, value="inventory",
-                       bg=BG, fg=MUTED, selectcolor=BG, font=fonts.view_font(10),
-                       activebackground=BG, activeforeground=FG, highlightthickness=0).pack(side=tk.LEFT, padx=(0, 15))
-        tk.Radiobutton(user_row, text="From file", variable=user_src, value="file",
-                       bg=BG, fg=MUTED, selectcolor=BG, font=fonts.view_font(10),
-                       activebackground=BG, activeforeground=FG, highlightthickness=0).pack(side=tk.LEFT)
+        theme.Segmented(
+            user_row,
+            [("inventory", "From inventory"), ("file", "From file")],
+            user_src).pack(side=tk.LEFT)
 
-        user_browse_btn = tk.Label(user_row, text="  Browse...  ", bg="#222222", fg=FG,
-                                   font=fonts.view_font(10), relief=tk.RAISED, bd=1, padx=10, pady=4)
+        user_browse_btn = theme.button(
+            user_row, "  Browse...  ",
+            command=lambda: self._browse_file(user_path), padx=10, pady=4)
         user_browse_btn.pack(side=tk.LEFT, padx=(10, 0))
-        user_browse_btn.bind("<Button-1>", lambda e: self._browse_file(user_path))
-        user_browse_btn.bind("<Enter>", lambda e: user_browse_btn.config(bg="#333333"))
-        user_browse_btn.bind("<Leave>", lambda e: user_browse_btn.config(bg="#222222"))
         row += 1
 
         user_path_label = tk.Label(tab, textvariable=user_path, fg=BRIGHT, bg=BG,
@@ -231,15 +183,9 @@ class BruteforceDialog(tk.Toplevel):
             if user_src.get() == "file":
                 if not user_path.get():
                     self._browse_file(user_path)
-                user_browse_btn.config(fg=FG, bg="#222222")
-                user_browse_btn.bind("<Button-1>", lambda e: self._browse_file(user_path))
-                user_browse_btn.bind("<Enter>", lambda e: user_browse_btn.config(bg="#333333"))
-                user_browse_btn.bind("<Leave>", lambda e: user_browse_btn.config(bg="#222222"))
+                user_browse_btn.enable()
             else:
-                user_browse_btn.config(fg="#555555", bg="#1a1a1a")
-                user_browse_btn.unbind("<Button-1>")
-                user_browse_btn.unbind("<Enter>")
-                user_browse_btn.unbind("<Leave>")
+                user_browse_btn.disable()
                 user_path.set("")
         user_src.trace_add("write", _toggle_user)
         _toggle_user()
@@ -254,19 +200,15 @@ class BruteforceDialog(tk.Toplevel):
 
         pass_row = tk.Frame(tab, bg=BG)
         pass_row.grid(row=row, column=1, sticky="ew", padx=15, pady=(5, 5))
-        tk.Radiobutton(pass_row, text="From inventory", variable=pass_src, value="inventory",
-                       bg=BG, fg=MUTED, selectcolor=BG, font=fonts.view_font(10),
-                       activebackground=BG, activeforeground=FG, highlightthickness=0).pack(side=tk.LEFT, padx=(0, 15))
-        tk.Radiobutton(pass_row, text="From file", variable=pass_src, value="file",
-                       bg=BG, fg=MUTED, selectcolor=BG, font=fonts.view_font(10),
-                       activebackground=BG, activeforeground=FG, highlightthickness=0).pack(side=tk.LEFT)
+        theme.Segmented(
+            pass_row,
+            [("inventory", "From inventory"), ("file", "From file")],
+            pass_src).pack(side=tk.LEFT)
 
-        pass_browse_btn = tk.Label(pass_row, text="  Browse...  ", bg="#222222", fg=FG,
-                                   font=fonts.view_font(10), relief=tk.RAISED, bd=1, padx=10, pady=4)
+        pass_browse_btn = theme.button(
+            pass_row, "  Browse...  ",
+            command=lambda: self._browse_file(pass_path), padx=10, pady=4)
         pass_browse_btn.pack(side=tk.LEFT, padx=(10, 0))
-        pass_browse_btn.bind("<Button-1>", lambda e: self._browse_file(pass_path))
-        pass_browse_btn.bind("<Enter>", lambda e: pass_browse_btn.config(bg="#333333"))
-        pass_browse_btn.bind("<Leave>", lambda e: pass_browse_btn.config(bg="#222222"))
         row += 1
 
         pass_path_label = tk.Label(tab, textvariable=pass_path, fg=BRIGHT, bg=BG,
@@ -277,15 +219,9 @@ class BruteforceDialog(tk.Toplevel):
             if pass_src.get() == "file":
                 if not pass_path.get():
                     self._browse_file(pass_path)
-                pass_browse_btn.config(fg=FG, bg="#222222")
-                pass_browse_btn.bind("<Button-1>", lambda e: self._browse_file(pass_path))
-                pass_browse_btn.bind("<Enter>", lambda e: pass_browse_btn.config(bg="#333333"))
-                pass_browse_btn.bind("<Leave>", lambda e: pass_browse_btn.config(bg="#222222"))
+                pass_browse_btn.enable()
             else:
-                pass_browse_btn.config(fg="#555555", bg="#1a1a1a")
-                pass_browse_btn.unbind("<Button-1>")
-                pass_browse_btn.unbind("<Enter>")
-                pass_browse_btn.unbind("<Leave>")
+                pass_browse_btn.disable()
                 pass_path.set("")
         pass_src.trace_add("write", _toggle_pass)
         _toggle_pass()
@@ -298,10 +234,9 @@ class BruteforceDialog(tk.Toplevel):
         })
 
     def _browse_file(self, path_var):
-        from tkinter import filedialog
         initial = str(_lst_dir())
-        f = filedialog.askopenfilename(
-            parent=self, title="Select wordlist", initialdir=initial,
+        f = windowing.ask_open_file(
+            self, title="Select wordlist", initialdir=initial,
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
         if f:
             path_var.set(f)
@@ -338,15 +273,11 @@ class BruteforceDialog(tk.Toplevel):
         if proto is None:
             return
         if proto == "rdp" and not self._has_xfreerdp:
-            self._start_btn.config(fg="#553333", bg="#1a1a1a", text="  xfreerdp required  ")
-            self._start_btn.unbind("<Button-1>")
-            self._start_btn.unbind("<Enter>")
-            self._start_btn.unbind("<Leave>")
+            self._start_btn.config(text="  xfreerdp required  ")
+            self._start_btn.disable()
         else:
-            self._start_btn.config(fg=FG, bg="#222222", text="  Start  ")
-            self._start_btn.bind("<Button-1>", lambda e: self._start())
-            self._start_btn.bind("<Enter>", lambda e: self._start_btn.config(bg="#333333"))
-            self._start_btn.bind("<Leave>", lambda e: self._start_btn.config(bg="#222222"))
+            self._start_btn.config(text="  Start  ")
+            self._start_btn.enable()
 
     def _get_active_proto(self):
         for proto, idx in self._proto_idx.items():

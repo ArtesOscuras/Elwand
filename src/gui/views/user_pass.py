@@ -1,4 +1,4 @@
-from src.gui import fonts, windowing
+from src.gui import fonts, windowing, theme
 import struct
 import tkinter as tk
 from .base import BaseView
@@ -122,14 +122,14 @@ class UserPassView(BaseView):
             text="  Generate credentials  ",
             bg="#222222", fg=BRIGHT,
             font=fonts.view_font(10),
-            relief=tk.RAISED, bd=1,
+            relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         gen_btn.pack(side=tk.LEFT, padx=(0, 10))
 
         back_btn = tk.Label(
             btn_frame2, text="  \u2190 Back  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         back_btn.pack(side=tk.LEFT)
@@ -308,13 +308,8 @@ class _CredentialGenerator(tk.Toplevel):
             highlightthickness=1, highlightcolor="#333333", highlightbackground="#333333",
         ).pack(fill=tk.X)
         self._auto_hash_var = tk.BooleanVar(value=True)
-        tk.Checkbutton(
-            hash_frame, text="  Auto NTLM",
-            variable=self._auto_hash_var,
-            bg="#111111", fg=MUTED, selectcolor="#111111",
-            font=fonts.view_font(10),
-            activebackground="#111111", activeforeground=MUTED,
-        ).pack(anchor="w", pady=(5, 0))
+        theme.Toggle(hash_frame, "  Auto NTLM",
+                     variable=self._auto_hash_var).pack(anchor="w", pady=(5, 0))
 
         self._feedback_label = tk.Label(
             self,             text="", font=fonts.view_font(11),
@@ -325,25 +320,11 @@ class _CredentialGenerator(tk.Toplevel):
         btn_frame = tk.Frame(self, bg="#111111")
         btn_frame.grid(row=4, column=0, columnspan=2, sticky="ew", padx=15, pady=(15, 15))
 
-        cancel_btn = tk.Label(
-            btn_frame, text="  Close  ", bg="#222222", fg="#ffffff",
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6,
-        )
+        cancel_btn = theme.button(btn_frame, "  Close  ", command=self.destroy)
         cancel_btn.pack(side=tk.RIGHT, padx=(5, 0))
-        cancel_btn.bind("<Button-1>", lambda e: self.destroy())
-        cancel_btn.bind("<Enter>", lambda e: cancel_btn.config(bg="#333333"))
-        cancel_btn.bind("<Leave>", lambda e: cancel_btn.config(bg="#222222"))
 
-        add_btn = tk.Label(
-            btn_frame, text="  Add  ", bg="#222222", fg="#ffffff",
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6,
-        )
+        add_btn = theme.button(btn_frame, "  Add  ", command=self._select)
         add_btn.pack(side=tk.RIGHT)
-        add_btn.bind("<Button-1>", lambda e: self._select())
-        add_btn.bind("<Enter>", lambda e: add_btn.config(bg="#333333"))
-        add_btn.bind("<Leave>", lambda e: add_btn.config(bg="#222222"))
 
         self._user_listbox.bind("<Return>", lambda e: self._select())
         self._pwd_listbox.bind("<Return>", lambda e: self._select())
@@ -357,19 +338,11 @@ class _CredentialGenerator(tk.Toplevel):
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(0, weight=1)
 
-        lb = tk.Listbox(
-            frame, bg="#000000", fg="#ffffff",
-            selectbackground="#333333", selectforeground="#ffffff",
-            font=fonts.view_font(12), borderwidth=0, highlightthickness=0,
-            activestyle="none", exportselection=False,
-        )
+        lb = theme.listbox(frame)
         lb.grid(row=0, column=0, sticky="nsew")
 
-        scrollbar = tk.Scrollbar(frame, orient=tk.VERTICAL, command=lb.yview)
-        scrollbar.configure(bg="#333333", troughcolor="#1a1a1a", activebackground="#555555",
-                            width=10, borderwidth=0, highlightthickness=0, elementborderwidth=0)
+        scrollbar = theme.scrollbar(frame, lb)
         scrollbar.grid(row=0, column=1, sticky="ns")
-        lb.configure(yscrollcommand=scrollbar.set)
 
         return lb
 

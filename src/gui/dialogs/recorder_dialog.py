@@ -1,4 +1,4 @@
-from src.gui import fonts, windowing
+from src.gui import fonts, windowing, theme
 import tkinter as tk
 from tkinter import ttk
 
@@ -23,42 +23,21 @@ class _TargetSection:
 
         self._target_mode = tk.StringVar(value="machine")
 
-        machine_radio = tk.Radiobutton(
-            mode_frame, text="  Machine  ", variable=self._target_mode, value="machine",
-            bg=BG, fg=FG, selectcolor=BG, font=fonts.view_font(10),
-            activebackground=BG, activeforeground=FG,
-            indicatoron=False, relief=tk.FLAT,
-            command=self._populate,
-        )
-        machine_radio.pack(side=tk.LEFT, padx=(0, 5))
-
-        domain_radio = tk.Radiobutton(
-            mode_frame, text="  Domain  ", variable=self._target_mode, value="domain",
-            bg=BG, fg=FG, selectcolor=BG, font=fonts.view_font(10),
-            activebackground=BG, activeforeground=FG,
-            indicatoron=False, relief=tk.FLAT,
-            command=self._populate,
-        )
-        domain_radio.pack(side=tk.LEFT)
+        theme.Segmented(
+            mode_frame,
+            [("machine", "  Machine  "), ("domain", "  Domain  ")],
+            self._target_mode, command=self._populate).pack(side=tk.LEFT)
 
         frame = tk.Frame(parent, bg=BG_WIDGET)
         frame.grid(row=row + 1, column=0, columnspan=2, sticky="nsew", padx=15, pady=(0, 5))
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(0, weight=1)
 
-        self._listbox = tk.Listbox(
-            frame, bg=BG_WIDGET, fg=FG,
-            selectbackground=SEL_BG, selectforeground=FG,
-            font=fonts.view_font(11), borderwidth=0, highlightthickness=0,
-            activestyle="none", exportselection=False, height=3,
-        )
+        self._listbox = theme.listbox(frame, height=3)
         self._listbox.grid(row=0, column=0, sticky="nsew")
 
-        scrollbar = tk.Scrollbar(frame, orient=tk.VERTICAL, command=self._listbox.yview)
-        scrollbar.configure(bg="#333333", troughcolor="#1a1a1a", activebackground="#555555",
-                            width=10, borderwidth=0, highlightthickness=0, elementborderwidth=0)
+        scrollbar = theme.scrollbar(frame, self._listbox)
         scrollbar.grid(row=0, column=1, sticky="ns")
-        self._listbox.configure(yscrollcommand=scrollbar.set)
 
         self._listbox.bind("<<ListboxSelect>>", self._on_list_select)
         self._populate()
@@ -138,12 +117,8 @@ class WebRecorderDialog(tk.Toplevel):
         ).grid(row=2, column=0, sticky="w", padx=15, pady=(0, 5))
 
         self._name_var = tk.StringVar(value=default_name)
-        tk.Entry(
-            self, textvariable=self._name_var,
-            bg=BG_WIDGET, fg=FG, insertbackground=FG,
-            font=fonts.view_font(11), borderwidth=1, relief=tk.FLAT,
-            highlightthickness=1, highlightcolor="#333333", highlightbackground="#333333",
-        ).grid(row=1, column=1, rowspan=2, sticky="ew", padx=15, pady=(5, 5))
+        theme.entry(self, textvariable=self._name_var, width=40).grid(
+            row=1, column=1, rowspan=2, sticky="ew", padx=15, pady=(5, 5))
 
         self._name_feedback = tk.Label(
             self, text="", font=fonts.view_font(9),
@@ -169,12 +144,8 @@ class WebRecorderDialog(tk.Toplevel):
             self, text="URL", font=fonts.view_font_bold(11),
             fg=FG, bg=BG,
         ).grid(row=5, column=0, sticky="w", padx=15, pady=(10, 0))
-        tk.Entry(
-            self, textvariable=self._url_var,
-            bg=BG_WIDGET, fg=FG, insertbackground=FG,
-            font=fonts.view_font(11), borderwidth=1, relief=tk.FLAT,
-            highlightthickness=1, highlightcolor="#333333", highlightbackground="#333333",
-        ).grid(row=5, column=1, sticky="ew", padx=15, pady=(10, 0))
+        theme.entry(self, textvariable=self._url_var, width=40).grid(
+            row=5, column=1, sticky="ew", padx=15, pady=(10, 0))
 
         tk.Label(
             self, text="Browser", font=fonts.view_font_bold(11),
@@ -186,13 +157,11 @@ class WebRecorderDialog(tk.Toplevel):
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(0, weight=1)
 
-        self._browser_listbox = tk.Listbox(
-            frame, bg=BG_WIDGET, fg=FG,
-            selectbackground=SEL_BG, selectforeground=FG,
-            font=fonts.view_font(11), borderwidth=0, highlightthickness=0,
-            activestyle="none", exportselection=False, height=4,
-        )
+        self._browser_listbox = theme.listbox(frame, height=4)
         self._browser_listbox.grid(row=0, column=0, sticky="nsew")
+
+        scrollbar = theme.scrollbar(frame, self._browser_listbox)
+        scrollbar.grid(row=0, column=1, sticky="ns")
 
         self._browser_paths = []
         for path, label in sorted(browsers.items()):
@@ -210,22 +179,14 @@ class WebRecorderDialog(tk.Toplevel):
         scope_frame.grid(row=7, column=1, sticky="ew", padx=15, pady=(15, 0))
 
         self._scope_var = tk.BooleanVar(value=False)
-        self._scope_check = tk.Checkbutton(
-            scope_frame, text="  Only capture matching domain",
-            variable=self._scope_var,
-            bg=BG, fg=FG_DIM, selectcolor=BG,
-            font=fonts.view_font(10),
-            activebackground=BG, activeforeground=FG,
-        )
+        self._scope_check = theme.Toggle(
+            scope_frame, "  Only capture matching domain",
+            variable=self._scope_var)
         self._scope_check.pack(side=tk.LEFT)
 
         self._scope_domain_var = tk.StringVar()
-        self._scope_domain_entry = tk.Entry(
-            scope_frame, textvariable=self._scope_domain_var,
-            bg=BG_WIDGET, fg=FG, insertbackground=FG,
-            font=fonts.view_font(10), width=25, borderwidth=1, relief=tk.FLAT,
-            highlightthickness=1, highlightcolor="#333333", highlightbackground="#333333",
-        )
+        self._scope_domain_entry = theme.entry(
+            scope_frame, textvariable=self._scope_domain_var, width=25)
         self._scope_domain_entry.pack(side=tk.LEFT, padx=(10, 0))
 
         self._scope_domain_var.trace_add("write", lambda *_: self._sync_scope())
@@ -233,36 +194,17 @@ class WebRecorderDialog(tk.Toplevel):
         self._review_var = tk.BooleanVar(value=False)
         review_frame = tk.Frame(self, bg=BG)
         review_frame.grid(row=8, column=0, columnspan=2, sticky="w", padx=15, pady=(10, 0))
-        tk.Checkbutton(
-            review_frame, text="  Review requests",
-            variable=self._review_var,
-            bg=BG, fg=FG_DIM, selectcolor=BG,
-            font=fonts.view_font(10),
-            activebackground=BG, activeforeground=FG,
-        ).pack(side=tk.LEFT)
+        theme.Toggle(review_frame, "  Review requests",
+                     variable=self._review_var).pack(side=tk.LEFT)
 
         btn_frame = tk.Frame(self, bg=BG)
         btn_frame.grid(row=9, column=0, columnspan=2, sticky="ew", padx=15, pady=(15, 15))
 
-        cancel_btn = tk.Label(
-            btn_frame, text="  Cancel  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6, cursor="",
-        )
+        cancel_btn = theme.button(btn_frame, "  Cancel  ", command=self.destroy)
         cancel_btn.pack(side=tk.RIGHT, padx=(5, 0))
-        cancel_btn.bind("<Button-1>", lambda e: self.destroy())
-        cancel_btn.bind("<Enter>", lambda e: cancel_btn.config(bg="#333333"))
-        cancel_btn.bind("<Leave>", lambda e: cancel_btn.config(bg="#222222"))
 
-        start_btn = tk.Label(
-            btn_frame, text="  Start  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6, cursor="",
-        )
+        start_btn = theme.button(btn_frame, "  Start  ", command=self._start)
         start_btn.pack(side=tk.RIGHT)
-        start_btn.bind("<Button-1>", lambda e: self._start())
-        start_btn.bind("<Enter>", lambda e: start_btn.config(bg="#333333"))
-        start_btn.bind("<Leave>", lambda e: start_btn.config(bg="#222222"))
 
         self._browser_listbox.bind("<Return>", lambda e: self._start())
 

@@ -1,5 +1,5 @@
 import tkinter as tk
-from src.gui import fonts, windowing
+from src.gui import fonts, windowing, theme
 from .browser_finder import find_browsers
 
 
@@ -10,10 +10,8 @@ class BrowserSelector(tk.Toplevel):
 
         self.title("Select Browser")
         windowing.size_dialog(self, 450, 280)
-        self.configure(bg="#111111")
-
+        self.configure(bg=theme.BG)
         self.transient(parent)
-        self.wait_visibility(); self.grab_set()
 
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=0)
@@ -22,21 +20,17 @@ class BrowserSelector(tk.Toplevel):
 
         tk.Label(
             self, text="Multiple browsers detected. Select one:",
-            font=(fonts.family(), 11), fg="#ffffff", bg="#111111",
+            font=fonts.view_font(11), fg=theme.FG, bg=theme.BG,
         ).grid(row=0, column=0, sticky="w", padx=15, pady=(15, 5))
 
-        frame = tk.Frame(self, bg="#000000")
+        frame = tk.Frame(self, bg=theme.BG)
         frame.grid(row=1, column=0, sticky="nsew", padx=15, pady=(0, 5))
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(0, weight=1)
 
-        self._listbox = tk.Listbox(
-            frame, bg="#000000", fg="#ffffff",
-            selectbackground="#333333", selectforeground="#ffffff",
-            font=(fonts.family(), 12), borderwidth=0, highlightthickness=0,
-            activestyle="none",
-        )
+        self._listbox = theme.listbox(frame)
         self._listbox.grid(row=0, column=0, sticky="nsew")
+        theme.scrollbar(frame, self._listbox).grid(row=0, column=1, sticky="ns")
 
         self._paths = []
         for path, label in sorted(browsers.items()):
@@ -48,32 +42,21 @@ class BrowserSelector(tk.Toplevel):
 
         self._listbox.bind("<Return>", lambda e: self._select())
         self._listbox.bind("<Double-Button-1>", lambda e: self._select())
-        self._listbox.focus_set()
 
-        btn_frame = tk.Frame(self, bg="#111111")
+        btn_frame = tk.Frame(self, bg=theme.BG)
         btn_frame.grid(row=2, column=0, sticky="ew", padx=15, pady=(5, 15))
 
-        cancel_btn = tk.Label(
-            btn_frame, text="  Cancel  ", bg="#222222", fg="#ffffff",
-            font=(fonts.family(), 10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6, cursor="",
-        )
-        cancel_btn.pack(side=tk.RIGHT, padx=(5, 0))
-        cancel_btn.bind("<Button-1>", lambda e: self.destroy())
-        cancel_btn.bind("<Enter>", lambda e: cancel_btn.config(bg="#333333"))
-        cancel_btn.bind("<Leave>", lambda e: cancel_btn.config(bg="#222222"))
-
-        select_btn = tk.Label(
-            btn_frame, text="  Select  ", bg="#222222", fg="#ffffff",
-            font=(fonts.family(), 10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6, cursor="",
-        )
-        select_btn.pack(side=tk.RIGHT)
-        select_btn.bind("<Button-1>", lambda e: self._select())
-        select_btn.bind("<Enter>", lambda e: select_btn.config(bg="#333333"))
-        select_btn.bind("<Leave>", lambda e: select_btn.config(bg="#222222"))
+        theme.button(btn_frame, "  Cancel  ", command=self.destroy).pack(
+            side=tk.RIGHT, padx=(5, 0))
+        theme.button(btn_frame, "  Select  ", command=self._select).pack(
+            side=tk.RIGHT)
 
         self.protocol("WM_DELETE_WINDOW", self.destroy)
+
+        self.update_idletasks()
+        self.wait_visibility()
+        self.grab_set()
+        self._listbox.focus_set()
         self.wait_window(self)
 
     def _select(self):

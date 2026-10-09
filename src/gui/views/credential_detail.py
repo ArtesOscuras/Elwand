@@ -1,4 +1,4 @@
-from src.gui import fonts, windowing
+from src.gui import fonts, windowing, theme
 import tkinter as tk
 from .base import BaseView
 from src.machines import credential_db
@@ -44,12 +44,8 @@ class _EditDialog(tk.Toplevel):
                 var.trace_add("write", self._on_password_change)
             elif key == "hash_nt":
                 var.trace_add("write", self._on_hash_change)
-            tk.Entry(
-                self, textvariable=var,
-                bg="#000000", fg="#ffffff", insertbackground="#ffffff",
-                font=fonts.view_font(11), borderwidth=1, relief=tk.FLAT,
-                highlightthickness=1, highlightcolor="#333333", highlightbackground="#333333",
-            ).grid(row=row, column=1, sticky="ew", padx=15, pady=(10, 0))
+            theme.entry(self, textvariable=var).grid(
+                row=row, column=1, sticky="ew", padx=15, pady=(10, 0))
             setattr(self, f"_{key}_var", var)
             row += 1
 
@@ -63,25 +59,10 @@ class _EditDialog(tk.Toplevel):
         btn_frame = tk.Frame(self, bg="#111111")
         btn_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=15, pady=(15, 15))
 
-        close_btn = tk.Label(
-            btn_frame, text="  Close  ", bg="#222222", fg="#ffffff",
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6,
-        )
-        close_btn.pack(side=tk.RIGHT, padx=(5, 0))
-        close_btn.bind("<Button-1>", lambda e: self.destroy())
-        close_btn.bind("<Enter>", lambda e: close_btn.config(bg="#333333"))
-        close_btn.bind("<Leave>", lambda e: close_btn.config(bg="#222222"))
-
-        save_btn = tk.Label(
-            btn_frame, text="  Save  ", bg="#222222", fg="#ffffff",
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6,
-        )
-        save_btn.pack(side=tk.RIGHT)
-        save_btn.bind("<Button-1>", lambda e: self._save(cred["id"]))
-        save_btn.bind("<Enter>", lambda e: save_btn.config(bg="#333333"))
-        save_btn.bind("<Leave>", lambda e: save_btn.config(bg="#222222"))
+        theme.button(btn_frame, "  Close  ", command=self.destroy).pack(
+            side=tk.RIGHT, padx=(5, 0))
+        theme.button(btn_frame, "  Save  ",
+                     command=lambda: self._save(cred["id"])).pack(side=tk.RIGHT)
 
         self.protocol("WM_DELETE_WINDOW", self.destroy)
         self.wait_window(self)
@@ -165,7 +146,7 @@ class CredentialDetailView(BaseView):
 
         edit_btn = tk.Label(
             btn_frame, text="  Edit  ", bg="#222222", fg="#ffffff",
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         edit_btn.pack(side=tk.LEFT, padx=(0, 10))
@@ -175,7 +156,7 @@ class CredentialDetailView(BaseView):
 
         back_btn = tk.Label(
             btn_frame, text="  \u2190 Back  ", bg="#222222", fg="#ffffff",
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         back_btn.pack(side=tk.LEFT)

@@ -6,7 +6,7 @@ import threading
 import time
 import tkinter as tk
 from tkinter import ttk
-from src.gui import fonts, windowing
+from src.gui import fonts, windowing, theme
 from src.shells import shell_db
 from src.shells.ftp_shell import FTPConnectionThread
 from src.shells.ssh_shell import SSHConnectionThread
@@ -53,13 +53,6 @@ class RemoteAccessDialog(tk.Toplevel):
         self._notebook = ttk.Notebook(self)
         self._notebook.grid(row=0, column=0, sticky="nsew", padx=5, pady=(15, 5))
 
-        style = ttk.Style()
-        style.theme_use("default")
-        style.configure("TNotebook", background=BG, borderwidth=0)
-        style.configure("TNotebook.Tab", background="#222222", foreground=FG,
-                        padding=[20, 6], font=fonts.view_font(10))
-        style.map("TNotebook.Tab", background=[("selected", "#333333")])
-
         self._tab_ftp = tk.Frame(self._notebook, bg=BG)
         self._tab_ssh = tk.Frame(self._notebook, bg=BG)
         self._tab_winrm = tk.Frame(self._notebook, bg=BG)
@@ -89,18 +82,9 @@ class RemoteAccessDialog(tk.Toplevel):
         self._ftp_proto = tk.StringVar(value="ftp")
         proto_frame = tk.Frame(tab, bg=BG)
         proto_frame.grid(row=0, column=1, sticky="w", padx=15, pady=(15, 5))
-        ftp_rb = tk.Radiobutton(
-            proto_frame, text="FTP", variable=self._ftp_proto, value="ftp",
-            bg=BG, fg=FG, selectcolor=BG, font=fonts.view_font(10),
-            activebackground=BG, activeforeground=FG, highlightthickness=0,
-        )
-        ftp_rb.pack(side=tk.LEFT, padx=(0, 15))
-        sftp_rb = tk.Radiobutton(
-            proto_frame, text="SFTP", variable=self._ftp_proto, value="sftp",
-            bg=BG, fg=FG, selectcolor=BG, font=fonts.view_font(10),
-            activebackground=BG, activeforeground=FG, highlightthickness=0,
-        )
-        sftp_rb.pack(side=tk.LEFT)
+        theme.Segmented(
+            proto_frame, [("ftp", "FTP"), ("sftp", "SFTP")],
+            self._ftp_proto).pack(side=tk.LEFT)
 
         tk.Label(
             tab, text="Machine:", font=fonts.view_font_bold(11),
@@ -112,19 +96,11 @@ class RemoteAccessDialog(tk.Toplevel):
         mach_frame.columnconfigure(0, weight=1)
         mach_frame.rowconfigure(0, weight=1)
 
-        self._machine_list = tk.Listbox(
-            mach_frame, bg="#000000", fg=FG,
-            selectbackground="#333333", selectforeground=FG,
-            font=fonts.view_font(11), borderwidth=0, highlightthickness=0,
-            activestyle="none", exportselection=False, height=3,
-        )
+        self._machine_list = theme.listbox(mach_frame, height=3)
         self._machine_list.grid(row=0, column=0, sticky="nsew")
 
-        scrollbar = tk.Scrollbar(mach_frame, orient=tk.VERTICAL, command=self._machine_list.yview)
-        scrollbar.configure(bg="#333333", troughcolor="#1a1a1a", activebackground="#555555",
-                            width=10, borderwidth=0, highlightthickness=0, elementborderwidth=0)
+        scrollbar = theme.scrollbar(mach_frame, self._machine_list)
         scrollbar.grid(row=0, column=1, sticky="ns")
-        self._machine_list.configure(yscrollcommand=scrollbar.set)
 
         self._machine_keys = []
         self._populate_machines()
@@ -141,19 +117,11 @@ class RemoteAccessDialog(tk.Toplevel):
         cred_frame.columnconfigure(0, weight=1)
         cred_frame.rowconfigure(0, weight=1)
 
-        self._cred_list = tk.Listbox(
-            cred_frame, bg="#000000", fg=FG,
-            selectbackground="#333333", selectforeground=FG,
-            font=fonts.view_font(11), borderwidth=0, highlightthickness=0,
-            activestyle="none", exportselection=False, height=3,
-        )
+        self._cred_list = theme.listbox(cred_frame, height=3)
         self._cred_list.grid(row=0, column=0, sticky="nsew")
 
-        cred_scroll = tk.Scrollbar(cred_frame, orient=tk.VERTICAL, command=self._cred_list.yview)
-        cred_scroll.configure(bg="#333333", troughcolor="#1a1a1a", activebackground="#555555",
-                              width=10, borderwidth=0, highlightthickness=0, elementborderwidth=0)
+        cred_scroll = theme.scrollbar(cred_frame, self._cred_list)
         cred_scroll.grid(row=0, column=1, sticky="ns")
-        self._cred_list.configure(yscrollcommand=cred_scroll.set)
 
         self._cred_keys = []
         self._populate_creds()
@@ -173,12 +141,8 @@ class RemoteAccessDialog(tk.Toplevel):
                 fg=MUTED, bg=BG,
             ).grid(row=row, column=0, sticky="w", padx=15, pady=(8, 0))
             var = tk.StringVar(value=default)
-            tk.Entry(
-                tab, textvariable=var,
-                bg="#000000", fg=FG, insertbackground=FG,
-                font=fonts.view_font(11), borderwidth=1, relief=tk.FLAT,
-                highlightthickness=1, highlightcolor="#333333", highlightbackground="#333333",
-            ).grid(row=row, column=1, sticky="ew", padx=15, pady=(8, 0))
+            theme.entry(tab, textvariable=var, width=30).grid(
+                row=row, column=1, sticky="ew", padx=15, pady=(8, 0))
             self._ftp_vars[key] = var
             row += 1
 
@@ -328,19 +292,11 @@ class RemoteAccessDialog(tk.Toplevel):
         mach_frame.columnconfigure(0, weight=1)
         mach_frame.rowconfigure(0, weight=1)
 
-        self._ssh_machine_list = tk.Listbox(
-            mach_frame, bg="#000000", fg=FG,
-            selectbackground="#333333", selectforeground=FG,
-            font=fonts.view_font(11), borderwidth=0, highlightthickness=0,
-            activestyle="none", exportselection=False, height=3,
-        )
+        self._ssh_machine_list = theme.listbox(mach_frame, height=3)
         self._ssh_machine_list.grid(row=0, column=0, sticky="nsew")
 
-        scrollbar = tk.Scrollbar(mach_frame, orient=tk.VERTICAL, command=self._ssh_machine_list.yview)
-        scrollbar.configure(bg="#333333", troughcolor="#1a1a1a", activebackground="#555555",
-                            width=10, borderwidth=0, highlightthickness=0, elementborderwidth=0)
+        scrollbar = theme.scrollbar(mach_frame, self._ssh_machine_list)
         scrollbar.grid(row=0, column=1, sticky="ns")
-        self._ssh_machine_list.configure(yscrollcommand=scrollbar.set)
 
         self._ssh_machine_keys = []
         self._populate_ssh_machines()
@@ -356,19 +312,11 @@ class RemoteAccessDialog(tk.Toplevel):
         cred_frame.columnconfigure(0, weight=1)
         cred_frame.rowconfigure(0, weight=1)
 
-        self._ssh_cred_list = tk.Listbox(
-            cred_frame, bg="#000000", fg=FG,
-            selectbackground="#333333", selectforeground=FG,
-            font=fonts.view_font(11), borderwidth=0, highlightthickness=0,
-            activestyle="none", exportselection=False, height=3,
-        )
+        self._ssh_cred_list = theme.listbox(cred_frame, height=3)
         self._ssh_cred_list.grid(row=0, column=0, sticky="nsew")
 
-        cred_scroll = tk.Scrollbar(cred_frame, orient=tk.VERTICAL, command=self._ssh_cred_list.yview)
-        cred_scroll.configure(bg="#333333", troughcolor="#1a1a1a", activebackground="#555555",
-                              width=10, borderwidth=0, highlightthickness=0, elementborderwidth=0)
+        cred_scroll = theme.scrollbar(cred_frame, self._ssh_cred_list)
         cred_scroll.grid(row=0, column=1, sticky="ns")
-        self._ssh_cred_list.configure(yscrollcommand=cred_scroll.set)
 
         self._ssh_cred_keys = []
         self._populate_ssh_creds()
@@ -388,12 +336,8 @@ class RemoteAccessDialog(tk.Toplevel):
                 fg=MUTED, bg=BG,
             ).grid(row=row, column=0, sticky="w", padx=15, pady=(8, 0))
             var = tk.StringVar(value=default)
-            tk.Entry(
-                tab, textvariable=var,
-                bg="#000000", fg=FG, insertbackground=FG,
-                font=fonts.view_font(11), borderwidth=1, relief=tk.FLAT,
-                highlightthickness=1, highlightcolor="#333333", highlightbackground="#333333",
-            ).grid(row=row, column=1, sticky="ew", padx=15, pady=(8, 0))
+            theme.entry(tab, textvariable=var, width=30).grid(
+                row=row, column=1, sticky="ew", padx=15, pady=(8, 0))
             self._ssh_vars[key] = var
             row += 1
 
@@ -418,19 +362,11 @@ class RemoteAccessDialog(tk.Toplevel):
         mach_frame.columnconfigure(0, weight=1)
         mach_frame.rowconfigure(0, weight=1)
 
-        self._winrm_machine_list = tk.Listbox(
-            mach_frame, bg="#000000", fg=FG,
-            selectbackground="#333333", selectforeground=FG,
-            font=fonts.view_font(11), borderwidth=0, highlightthickness=0,
-            activestyle="none", exportselection=False, height=3,
-        )
+        self._winrm_machine_list = theme.listbox(mach_frame, height=3)
         self._winrm_machine_list.grid(row=0, column=0, sticky="nsew")
 
-        scrollbar = tk.Scrollbar(mach_frame, orient=tk.VERTICAL, command=self._winrm_machine_list.yview)
-        scrollbar.configure(bg="#333333", troughcolor="#1a1a1a", activebackground="#555555",
-                            width=10, borderwidth=0, highlightthickness=0, elementborderwidth=0)
+        scrollbar = theme.scrollbar(mach_frame, self._winrm_machine_list)
         scrollbar.grid(row=0, column=1, sticky="ns")
-        self._winrm_machine_list.configure(yscrollcommand=scrollbar.set)
 
         self._winrm_machine_keys = []
         self._populate_winrm_machines()
@@ -446,19 +382,11 @@ class RemoteAccessDialog(tk.Toplevel):
         cred_frame.columnconfigure(0, weight=1)
         cred_frame.rowconfigure(0, weight=1)
 
-        self._winrm_cred_list = tk.Listbox(
-            cred_frame, bg="#000000", fg=FG,
-            selectbackground="#333333", selectforeground=FG,
-            font=fonts.view_font(11), borderwidth=0, highlightthickness=0,
-            activestyle="none", exportselection=False, height=3,
-        )
+        self._winrm_cred_list = theme.listbox(cred_frame, height=3)
         self._winrm_cred_list.grid(row=0, column=0, sticky="nsew")
 
-        cred_scroll = tk.Scrollbar(cred_frame, orient=tk.VERTICAL, command=self._winrm_cred_list.yview)
-        cred_scroll.configure(bg="#333333", troughcolor="#1a1a1a", activebackground="#555555",
-                              width=10, borderwidth=0, highlightthickness=0, elementborderwidth=0)
+        cred_scroll = theme.scrollbar(cred_frame, self._winrm_cred_list)
         cred_scroll.grid(row=0, column=1, sticky="ns")
-        self._winrm_cred_list.configure(yscrollcommand=cred_scroll.set)
 
         self._winrm_cred_keys = []
         self._populate_winrm_creds()
@@ -479,12 +407,8 @@ class RemoteAccessDialog(tk.Toplevel):
                 fg=MUTED, bg=BG,
             ).grid(row=row, column=0, sticky="w", padx=15, pady=(8, 0))
             var = tk.StringVar(value=default)
-            tk.Entry(
-                tab, textvariable=var,
-                bg="#000000", fg=FG, insertbackground=FG,
-                font=fonts.view_font(11), borderwidth=1, relief=tk.FLAT,
-                highlightthickness=1, highlightcolor="#333333", highlightbackground="#333333",
-            ).grid(row=row, column=1, sticky="ew", padx=15, pady=(8, 0))
+            theme.entry(tab, textvariable=var, width=30).grid(
+                row=row, column=1, sticky="ew", padx=15, pady=(8, 0))
             self._winrm_vars[key] = var
 
         self._winrm_feedback = tk.Label(
@@ -497,25 +421,12 @@ class RemoteAccessDialog(tk.Toplevel):
         btn_frame = tk.Frame(self, bg=BG)
         btn_frame.grid(row=1, column=0, sticky="ew", padx=15, pady=(5, 15))
 
-        close_btn = tk.Label(
-            btn_frame, text="  Close  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6,
-        )
+        close_btn = theme.button(btn_frame, "  Close  ", command=self.destroy)
         close_btn.pack(side=tk.RIGHT, padx=(5, 0))
-        close_btn.bind("<Button-1>", lambda e: self.destroy())
-        close_btn.bind("<Enter>", lambda e: close_btn.config(bg="#333333"))
-        close_btn.bind("<Leave>", lambda e: close_btn.config(bg="#222222"))
 
-        self._connect_btn = tk.Label(
-            btn_frame, text="  Connect  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6,
-        )
+        self._connect_btn = theme.button(
+            btn_frame, "  Connect  ", command=self._on_connect)
         self._connect_btn.pack(side=tk.RIGHT)
-        self._connect_btn.bind("<Button-1>", lambda e: self._on_connect())
-        self._connect_btn.bind("<Enter>", lambda e: self._connect_btn.config(bg="#333333"))
-        self._connect_btn.bind("<Leave>", lambda e: self._connect_btn.config(bg="#222222"))
 
     def _on_connect(self):
         tab = self._notebook.index(self._notebook.select())

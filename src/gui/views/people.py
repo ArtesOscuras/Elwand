@@ -1,6 +1,6 @@
 import tkinter as tk
 import tkinter.font as tkfont
-from src.gui import fonts, windowing
+from src.gui import fonts, windowing, theme
 from src.gui import icons
 from src.machines import people_db
 from .base import BaseView
@@ -84,7 +84,7 @@ class PeopleView(BaseView):
 
         back_btn = tk.Label(
             btn_frame, text="  \u2190 Back  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         back_btn.pack(side=tk.RIGHT, padx=(10, 0))
@@ -95,7 +95,7 @@ class PeopleView(BaseView):
 
         add_btn = tk.Label(
             btn_frame, text="  Add person  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         add_btn.pack(side=tk.LEFT)
@@ -276,14 +276,9 @@ class _AddPersonDialog(tk.Toplevel):
                 fg=BRIGHT, bg="#111111",
             ).grid(row=row, column=0, sticky="w", padx=15,
                     pady=(10 if row == 0 else 3, 0))
-            tk.Entry(
-                self, textvariable=var, bg="#000000", fg=BRIGHT,
-                insertbackground=BRIGHT, font=fonts.view_font(11),
-                borderwidth=1, relief=tk.FLAT,
-                highlightthickness=1, highlightcolor="#333333",
-                highlightbackground="#333333",
-            ).grid(row=row, column=1, sticky="ew", padx=15,
-                    pady=(10 if row == 0 else 3, 0))
+            theme.entry(self, textvariable=var).grid(
+                row=row, column=1, sticky="ew", padx=15,
+                pady=(10 if row == 0 else 3, 0))
             row += 1
 
         self._feedback = tk.Label(
@@ -297,25 +292,9 @@ class _AddPersonDialog(tk.Toplevel):
         btn_frame.grid(row=row, column=0, columnspan=2, sticky="ew",
                        padx=15, pady=(15, 15))
 
-        close_btn = tk.Label(
-            btn_frame, text="  Close  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6,
-        )
-        close_btn.pack(side=tk.RIGHT, padx=(5, 0))
-        close_btn.bind("<Button-1>", lambda e: self.destroy())
-        close_btn.bind("<Enter>", lambda e: close_btn.config(bg="#333333"))
-        close_btn.bind("<Leave>", lambda e: close_btn.config(bg="#222222"))
-
-        save_btn = tk.Label(
-            btn_frame, text="  Save  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6,
-        )
-        save_btn.pack(side=tk.RIGHT)
-        save_btn.bind("<Button-1>", lambda e: self._save())
-        save_btn.bind("<Enter>", lambda e: save_btn.config(bg="#333333"))
-        save_btn.bind("<Leave>", lambda e: save_btn.config(bg="#222222"))
+        theme.button(btn_frame, "  Close  ", command=self.destroy).pack(
+            side=tk.RIGHT, padx=(5, 0))
+        theme.button(btn_frame, "  Save  ", command=self._save).pack(side=tk.RIGHT)
 
         self.protocol("WM_DELETE_WINDOW", self.destroy)
 

@@ -83,7 +83,7 @@ class CredentialListView(BaseView):
 
         new_btn = tk.Label(
             btn_frame, text="  New credential  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         new_btn.pack(side=tk.LEFT, padx=(0, 10))
@@ -93,7 +93,7 @@ class CredentialListView(BaseView):
 
         back_btn = tk.Label(
             btn_frame, text="  \u2190 Back  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         back_btn.pack(side=tk.LEFT)

@@ -1,4 +1,4 @@
-from src.gui import fonts, windowing
+from src.gui import fonts, windowing, theme
 import os
 import random
 import re
@@ -38,50 +38,26 @@ class _TargetSection:
         ).grid(row=row, column=0, sticky="nw", padx=15, pady=(10, 5))
 
         mode_frame = tk.Frame(parent, bg=BG)
-        if mode != "domains":
-            mode_frame.grid(row=row, column=1, sticky="w", padx=15, pady=(10, 5))
-        else:
-            mode_frame.grid(row=row, column=1, sticky="w", padx=15, pady=(10, 5))
+        mode_frame.grid(row=row, column=1, sticky="w", padx=15, pady=(10, 5))
 
         self._target_mode = tk.StringVar(value="machine" if mode == "both" else "domain")
 
         if mode == "both":
-            machine_radio = tk.Radiobutton(
-                mode_frame, text="  Machine  ", variable=self._target_mode, value="machine",
-                bg=BG, fg=FG, selectcolor=BG, font=fonts.view_font(10),
-                activebackground=BG, activeforeground=FG,
-                indicatoron=False, relief=tk.FLAT,
-                command=self._populate,
-            )
-            machine_radio.pack(side=tk.LEFT, padx=(0, 5))
-
-            domain_radio = tk.Radiobutton(
-                mode_frame, text="  Domain  ", variable=self._target_mode, value="domain",
-                bg=BG, fg=FG, selectcolor=BG, font=fonts.view_font(10),
-                activebackground=BG, activeforeground=FG,
-                indicatoron=False, relief=tk.FLAT,
-                command=self._populate,
-            )
-            domain_radio.pack(side=tk.LEFT)
+            theme.Segmented(
+                mode_frame,
+                [("machine", "  Machine  "), ("domain", "  Domain  ")],
+                self._target_mode, command=self._populate).pack(side=tk.LEFT)
 
         frame = tk.Frame(parent, bg=BG_WIDGET)
         frame.grid(row=row + 1, column=0, columnspan=2, sticky="nsew", padx=15, pady=(0, 5))
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(0, weight=1)
 
-        self._listbox = tk.Listbox(
-            frame, bg=BG_WIDGET, fg=FG,
-            selectbackground=SEL_BG, selectforeground=FG,
-            font=fonts.view_font(11), borderwidth=0, highlightthickness=0,
-            activestyle="none", exportselection=False, height=3,
-        )
+        self._listbox = theme.listbox(frame, height=3)
         self._listbox.grid(row=0, column=0, sticky="nsew")
 
-        scrollbar = tk.Scrollbar(frame, orient=tk.VERTICAL, command=self._listbox.yview)
-        scrollbar.configure(bg="#333333", troughcolor="#1a1a1a", activebackground="#555555",
-                            width=10, borderwidth=0, highlightthickness=0, elementborderwidth=0)
+        scrollbar = theme.scrollbar(frame, self._listbox)
         scrollbar.grid(row=0, column=1, sticky="ns")
-        self._listbox.configure(yscrollcommand=scrollbar.set)
 
         self._listbox.bind("<<ListboxSelect>>", self._on_list_select)
         self._populate()
@@ -125,6 +101,7 @@ class _TargetSection:
 
 class _WordlistSection:
     def __init__(self, parent, row):
+        self._parent = parent
         tk.Label(
             parent, text="Wordlist", font=fonts.view_font_bold(11),
             fg=FG, bg=BG,
@@ -139,19 +116,15 @@ class _WordlistSection:
                               font=fonts.view_font(9), anchor="w")
         path_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
 
-        browse_btn = tk.Label(path_frame, text="  Browse...  ", bg="#222222", fg=FG,
-                              font=fonts.view_font(10), relief=tk.RAISED, bd=1, padx=10, pady=4)
+        browse_btn = theme.button(path_frame, "  Browse...  ",
+                                  command=self._browse, padx=10, pady=4)
         browse_btn.pack(side=tk.LEFT)
-        browse_btn.bind("<Button-1>", lambda e: self._browse())
-        browse_btn.bind("<Enter>", lambda e: browse_btn.config(bg="#333333"))
-        browse_btn.bind("<Leave>", lambda e: browse_btn.config(bg="#222222"))
 
     def _browse(self):
-        from tkinter import filedialog
         from src.elwand_paths import lst_dir
-        f = filedialog.askopenfilename(
+        f = windowing.ask_open_file(
+            self._parent, title="Select wordlist",
             initialdir=str(lst_dir()),
-            title="Select wordlist",
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
         if f:
             self._path.set(f)
@@ -181,13 +154,6 @@ class FuzzDialog(tk.Toplevel):
 
         self._notebook = ttk.Notebook(self)
         self._notebook.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=5, pady=(15, 0))
-
-        style = ttk.Style()
-        style.theme_use("default")
-        style.configure("TNotebook", background=BG, borderwidth=0)
-        style.configure("TNotebook.Tab", background="#222222", foreground=FG,
-                        padding=[20, 6], font=fonts.view_font(10))
-        style.map("TNotebook.Tab", background=[("selected", "#333333")])
 
         self._tab_dir = tk.Frame(self._notebook, bg=BG)
         self._tab_vhost = tk.Frame(self._notebook, bg=BG)
@@ -289,12 +255,9 @@ class FuzzDialog(tk.Toplevel):
         ).grid(row=row, column=1, sticky="ew", padx=15, pady=(10, 0))
 
         self._wildcard_dir_var = tk.BooleanVar(value=True)
-        tk.Checkbutton(
-            tab, text="Wildcard detection", variable=self._wildcard_dir_var,
-            bg=BG, fg=FG, selectcolor=BG,
-            font=fonts.view_font(10),
-            activebackground=BG, activeforeground=FG,
-        ).grid(row=row + 1, column=1, sticky="w", padx=15, pady=(10, 0))
+        theme.Toggle(tab, "Wildcard detection",
+                     variable=self._wildcard_dir_var).grid(
+            row=row + 1, column=1, sticky="w", padx=15, pady=(10, 0))
 
     def _build_vhost_tab(self):
         tab = self._tab_vhost
@@ -339,12 +302,9 @@ class FuzzDialog(tk.Toplevel):
         ).grid(row=5, column=1, sticky="ew", padx=15, pady=(10, 0))
 
         self._wildcard_vhost_var = tk.BooleanVar(value=True)
-        tk.Checkbutton(
-            tab, text="Wildcard detection", variable=self._wildcard_vhost_var,
-            bg=BG, fg=FG, selectcolor=BG,
-            font=fonts.view_font(10),
-            activebackground=BG, activeforeground=FG,
-        ).grid(row=6, column=1, sticky="w", padx=15, pady=(10, 0))
+        theme.Toggle(tab, "Wildcard detection",
+                     variable=self._wildcard_vhost_var).grid(
+            row=6, column=1, sticky="w", padx=15, pady=(10, 0))
 
     def _build_dns_tab(self):
         tab = self._tab_dns
@@ -389,12 +349,9 @@ class FuzzDialog(tk.Toplevel):
         ).grid(row=5, column=1, sticky="ew", padx=15, pady=(10, 0))
 
         self._wildcard_dns_var = tk.BooleanVar(value=True)
-        tk.Checkbutton(
-            tab, text="Wildcard detection", variable=self._wildcard_dns_var,
-            bg=BG, fg=FG, selectcolor=BG,
-            font=fonts.view_font(10),
-            activebackground=BG, activeforeground=FG,
-        ).grid(row=6, column=1, sticky="w", padx=15, pady=(10, 0))
+        theme.Toggle(tab, "Wildcard detection",
+                     variable=self._wildcard_dns_var).grid(
+            row=6, column=1, sticky="w", padx=15, pady=(10, 0))
 
     def _build_output_section(self):
         tk.Label(
@@ -407,22 +364,12 @@ class FuzzDialog(tk.Toplevel):
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(0, weight=1)
 
-        self._output_text = tk.Text(
-            frame, bg=BG_WIDGET, fg=FG_DIM, insertbackground=FG,
-            font=fonts.view_font(10), borderwidth=0, highlightthickness=0,
-            state=tk.DISABLED, wrap=tk.WORD,
-        )
+        self._output_text = theme.output(frame)
+        self._output_text.tag_configure("info", foreground=INFO_COLOR)
         self._output_text.grid(row=0, column=0, sticky="nsew")
 
-        scrollbar = tk.Scrollbar(frame, orient=tk.VERTICAL, command=self._output_text.yview)
-        scrollbar.configure(bg="#333333", troughcolor="#1a1a1a", activebackground="#555555",
-                            width=10, borderwidth=0, highlightthickness=0, elementborderwidth=0)
+        scrollbar = theme.scrollbar(frame, self._output_text)
         scrollbar.grid(row=0, column=1, sticky="ns")
-        self._output_text.configure(yscrollcommand=scrollbar.set)
-
-        self._output_text.tag_configure("success", foreground=SUCCESS)
-        self._output_text.tag_configure("error", foreground=ERR_COLOR)
-        self._output_text.tag_configure("info", foreground=INFO_COLOR)
 
         self.rowconfigure(1, weight=1)
 
@@ -445,75 +392,27 @@ class FuzzDialog(tk.Toplevel):
         btn_frame = tk.Frame(self, bg=BG)
         btn_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=15, pady=(10, 15))
 
-        close_btn = tk.Label(
-            btn_frame, text="  Close  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6, cursor="",
-        )
+        close_btn = theme.button(btn_frame, "  Close  ", command=self._on_close)
         close_btn.pack(side=tk.RIGHT, padx=(5, 0))
-        close_btn.bind("<Button-1>", lambda e: self._on_close())
-        close_btn.bind("<Enter>", lambda e: close_btn.config(bg="#333333"))
-        close_btn.bind("<Leave>", lambda e: close_btn.config(bg="#222222"))
         self._close_btn = close_btn
 
-        self._save_dir_btn = tk.Label(
-            btn_frame, text="  Save  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6, cursor="",
-        )
-        self._save_dir_btn.bind("<Button-1>", lambda e: self._save_dir_results())
-        self._save_dir_btn.bind("<Enter>", lambda e: self._save_dir_btn.config(bg="#333333"))
-        self._save_dir_btn.bind("<Leave>", lambda e: self._save_dir_btn.config(bg="#222222"))
-
-        self._save_vhost_btn = tk.Label(
-            btn_frame, text="  Save  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6, cursor="",
-        )
-        self._save_vhost_btn.bind("<Button-1>", lambda e: self._save_vhost_results())
-        self._save_vhost_btn.bind("<Enter>", lambda e: self._save_vhost_btn.config(bg="#333333"))
-        self._save_vhost_btn.bind("<Leave>", lambda e: self._save_vhost_btn.config(bg="#222222"))
-
-        self._save_dns_btn = tk.Label(
-            btn_frame, text="  Save  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6, cursor="",
-        )
-        self._save_dns_btn.bind("<Button-1>", lambda e: self._save_dns_results())
-        self._save_dns_btn.bind("<Enter>", lambda e: self._save_dns_btn.config(bg="#333333"))
-        self._save_dns_btn.bind("<Leave>", lambda e: self._save_dns_btn.config(bg="#222222"))
+        self._save_dir_btn = theme.button(
+            btn_frame, "  Save  ", command=self._save_dir_results)
+        self._save_vhost_btn = theme.button(
+            btn_frame, "  Save  ", command=self._save_vhost_results)
+        self._save_dns_btn = theme.button(
+            btn_frame, "  Save  ", command=self._save_dns_results)
 
         self._save_buttons = [self._save_dir_btn, self._save_vhost_btn, self._save_dns_btn]
 
-        clear_btn = tk.Label(
-            btn_frame, text="  Clear  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6, cursor="",
-        )
+        clear_btn = theme.button(btn_frame, "  Clear  ", command=self._clear)
         clear_btn.pack(side=tk.RIGHT, padx=(5, 0))
-        clear_btn.bind("<Button-1>", lambda e: self._clear())
-        clear_btn.bind("<Enter>", lambda e: clear_btn.config(bg="#333333"))
-        clear_btn.bind("<Leave>", lambda e: clear_btn.config(bg="#222222"))
 
-        stop_btn = tk.Label(
-            btn_frame, text="  Stop  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6, cursor="",
-        )
+        stop_btn = theme.button(btn_frame, "  Stop  ", command=self._stop)
         stop_btn.pack(side=tk.RIGHT, padx=(5, 0))
-        stop_btn.bind("<Button-1>", lambda e: self._stop())
-        stop_btn.bind("<Enter>", lambda e: stop_btn.config(bg="#333333"))
-        stop_btn.bind("<Leave>", lambda e: stop_btn.config(bg="#222222"))
 
-        start_btn = tk.Label(
-            btn_frame, text="  Start  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6, cursor="",
-        )
+        start_btn = theme.button(btn_frame, "  Start  ", command=self._start)
         start_btn.pack(side=tk.RIGHT, padx=(5, 0))
-        start_btn.bind("<Button-1>", lambda e: self._start())
-        start_btn.bind("<Enter>", lambda e: start_btn.config(bg="#333333"))
-        start_btn.bind("<Leave>", lambda e: start_btn.config(bg="#222222"))
 
     def _write_output(self, text, color=None):
         self.after(0, lambda: self._do_write(text, color))

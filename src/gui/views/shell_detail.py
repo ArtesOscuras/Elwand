@@ -1,5 +1,5 @@
 import re
-from src.gui import fonts, windowing
+from src.gui import fonts, windowing, theme
 import json
 import os
 import tkinter as tk
@@ -56,35 +56,16 @@ class _RecordDialog(tk.Toplevel):
         ).grid(row=1, column=0, sticky="w", padx=15, pady=(0, 5))
 
         self._name_var = tk.StringVar()
-        tk.Entry(
-            self, textvariable=self._name_var,
-            bg="#000000", fg=BRIGHT, insertbackground=BRIGHT,
-            font=fonts.view_font(12), borderwidth=1, relief=tk.FLAT,
-            highlightthickness=1, highlightcolor="#333333", highlightbackground="#333333",
-        ).grid(row=2, column=0, columnspan=2, sticky="ew", padx=15, pady=(0, 10))
+        theme.entry(self, textvariable=self._name_var).grid(
+            row=2, column=0, columnspan=2, sticky="ew", padx=15, pady=(0, 10))
 
         btn_frame = tk.Frame(self, bg="#111111")
         btn_frame.grid(row=3, column=0, columnspan=2, sticky="ew", padx=15, pady=(0, 15))
 
-        cancel_btn = tk.Label(
-            btn_frame, text="  Cancel  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6, cursor="",
-        )
-        cancel_btn.pack(side=tk.RIGHT, padx=(5, 0))
-        cancel_btn.bind("<Button-1>", lambda e: self.destroy())
-        cancel_btn.bind("<Enter>", lambda e: cancel_btn.config(bg="#333333"))
-        cancel_btn.bind("<Leave>", lambda e: cancel_btn.config(bg="#222222"))
-
-        start_btn = tk.Label(
-            btn_frame, text="  Start Recording  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6, cursor="",
-        )
-        start_btn.pack(side=tk.RIGHT)
-        start_btn.bind("<Button-1>", lambda e: self._select())
-        start_btn.bind("<Enter>", lambda e: start_btn.config(bg="#333333"))
-        start_btn.bind("<Leave>", lambda e: start_btn.config(bg="#222222"))
+        theme.button(btn_frame, "  Cancel  ", command=self.destroy).pack(
+            side=tk.RIGHT, padx=(5, 0))
+        theme.button(btn_frame, "  Start Recording  ",
+                     command=self._select).pack(side=tk.RIGHT)
 
         self.bind("<Return>", lambda e: self._select())
         self.protocol("WM_DELETE_WINDOW", self.destroy)
@@ -201,7 +182,7 @@ class ShellDetailView(BaseView):
         self._record_btn = tk.Label(
             bar, text="  Record evidence  ",
             bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6, cursor="",
         )
         self._record_btn.pack(side=tk.RIGHT)
@@ -215,7 +196,7 @@ class ShellDetailView(BaseView):
             bar, text="Agent: ON" if agent_on else "Agent: OFF",
             bg="#222222",
             fg=SUCCESS if agent_on else "#f44747",
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=12, pady=6, cursor="",
         )
         self._agent_toggle.pack(side=tk.RIGHT, padx=(0, 10))

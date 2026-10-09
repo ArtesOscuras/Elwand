@@ -1,5 +1,5 @@
 import tkinter as tk
-from src.gui import fonts, windowing
+from src.gui import fonts, windowing, theme
 from src.machines import credential_db
 from .base import BaseView
 
@@ -49,37 +49,11 @@ class _UserEditDialog(tk.Toplevel):
         type_frame = tk.Frame(self, bg="#111111")
         type_frame.grid(row=row, column=1, sticky="w", padx=15, pady=(5, 3))
 
-        local_rb = tk.Radiobutton(
-            type_frame, text="  Local  ", variable=self._utype_var,
-            value="local", bg="#222222", fg=MUTED, selectcolor="#111111",
-            font=fonts.view_font(11), indicatoron=False, relief=tk.FLAT,
-            padx=10, pady=4,
-            activebackground="#333333", activeforeground=BRIGHT,
-            command=self._on_type_changed,
-        )
-        local_rb.pack(side=tk.LEFT)
-        local_rb.bind("<Enter>", lambda e, b=local_rb: b.config(
-            bg="#444444" if self._utype_var.get() == "local" else "#333333"))
-        local_rb.bind("<Leave>", lambda e, b=local_rb: b.config(
-            bg="#333333" if self._utype_var.get() == "local" else "#222222"))
-
-        domain_rb = tk.Radiobutton(
-            type_frame, text="  Domain  ", variable=self._utype_var,
-            value="domain", bg="#222222", fg=MUTED, selectcolor="#111111",
-            font=fonts.view_font(11), indicatoron=False, relief=tk.FLAT,
-            padx=10, pady=4,
-            activebackground="#333333", activeforeground=BRIGHT,
-            command=self._on_type_changed,
-        )
-        domain_rb.pack(side=tk.LEFT, padx=(8, 0))
-        domain_rb.bind("<Enter>", lambda e, b=domain_rb: b.config(
-            bg="#444444" if self._utype_var.get() == "domain" else "#333333"))
-        domain_rb.bind("<Leave>", lambda e, b=domain_rb: b.config(
-            bg="#333333" if self._utype_var.get() == "domain" else "#222222"))
-
-        self._local_rb = local_rb
-        self._domain_rb = domain_rb
-        self._update_rb_styles()
+        self._type_seg = theme.Segmented(
+            type_frame,
+            [("local", "  Local  "), ("domain", "  Domain  ")],
+            self._utype_var, command=self._on_type_changed)
+        self._type_seg.pack(side=tk.LEFT)
         row += 1
 
         tk.Label(
@@ -151,7 +125,7 @@ class _UserEditDialog(tk.Toplevel):
 
         close_btn = tk.Label(
             btn_frame, text="  Close  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         close_btn.pack(side=tk.RIGHT, padx=(5, 0))
@@ -161,7 +135,7 @@ class _UserEditDialog(tk.Toplevel):
 
         update_btn = tk.Label(
             btn_frame, text="  Update  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         update_btn.pack(side=tk.RIGHT)
@@ -200,13 +174,8 @@ class _UserEditDialog(tk.Toplevel):
         self._update_rb_styles()
 
     def _update_rb_styles(self):
-        utype = self._utype_var.get()
-        self._local_rb.config(
-            fg=BRIGHT if utype == "local" else MUTED,
-            bg="#333333" if utype == "local" else "#222222")
-        self._domain_rb.config(
-            fg=BRIGHT if utype == "domain" else MUTED,
-            bg="#333333" if utype == "domain" else "#222222")
+        if hasattr(self, "_type_seg"):
+            self._type_seg.refresh()
 
     def _save(self):
         utype = self._utype_var.get()
@@ -291,7 +260,7 @@ class UserDetailView(BaseView):
 
         edit_btn = tk.Label(
             inner, text="  Edit  ", bg="#222222", fg="#ffffff",
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         edit_btn.pack(side=tk.LEFT, padx=(0, 10))
@@ -301,7 +270,7 @@ class UserDetailView(BaseView):
 
         back_btn = tk.Label(
             inner, text="  \u2190 Back  ", bg="#222222", fg="#ffffff",
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         back_btn.pack(side=tk.LEFT)

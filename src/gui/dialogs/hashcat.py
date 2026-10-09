@@ -8,7 +8,7 @@ import time
 import tkinter as tk
 from collections import defaultdict
 from tkinter import ttk
-from src.gui import fonts, windowing
+from src.gui import fonts, windowing, theme
 from src.machines import credential_db
 from src.tools.hashcat import HashcatEngine
 from src.elwand_paths import hashcat_db as _hashcat_db
@@ -114,7 +114,7 @@ class _StatusPanel:
 
         self.details_btn = tk.Label(
             parent, text="  Details  ", bg="#222222", fg=FG,
-            font=fonts.view_font(9), relief=tk.RAISED, bd=1, padx=10, pady=3,
+            font=fonts.view_font(9), relief=tk.FLAT, bd=0, padx=10, pady=3,
             cursor="")
         self.details_btn.grid(row=row, column=0, sticky="w", padx=15,
                               pady=(2, 2))
@@ -327,14 +327,6 @@ class HashcatDialog(tk.Toplevel):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
 
-        style = ttk.Style()
-        style.theme_use("default")
-        style.configure("TNotebook", background=BG, borderwidth=0)
-        style.configure("TNotebook.Tab", background="#222222", foreground=FG_DIM,
-                        font=fonts.view_font(10), padding=[14, 6])
-        style.map("TNotebook.Tab", background=[("selected", BG)],
-                  foreground=[("selected", FG)])
-
         self._nb = ttk.Notebook(self)
         self._nb.grid(row=0, column=0, sticky="nsew", padx=10, pady=(10, 0))
 
@@ -471,7 +463,7 @@ class HashcatDialog(tk.Toplevel):
         self._wl_path_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
 
         browse_btn = tk.Label(wl_frame, text="  Browse...  ", bg="#222222", fg=FG,
-                              font=fonts.view_font(10), relief=tk.RAISED, bd=1, padx=10, pady=4)
+                              font=fonts.view_font(10), relief=tk.FLAT, bd=0, padx=10, pady=4)
         browse_btn.pack(side=tk.LEFT)
         browse_btn.bind("<Button-1>", lambda e: self._browse_wordlist())
         browse_btn.bind("<Enter>", lambda e: browse_btn.config(bg="#333333"))
@@ -493,7 +485,7 @@ class HashcatDialog(tk.Toplevel):
         self._rules_path_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
 
         rules_browse_btn = tk.Label(rules_frame, text="  Browse...  ", bg="#222222", fg=FG,
-                                    font=fonts.view_font(10), relief=tk.RAISED, bd=1, padx=10, pady=4)
+                                    font=fonts.view_font(10), relief=tk.FLAT, bd=0, padx=10, pady=4)
         rules_browse_btn.pack(side=tk.LEFT)
         rules_browse_btn.bind("<Button-1>", lambda e: self._browse_rules())
         rules_browse_btn.bind("<Enter>", lambda e: rules_browse_btn.config(bg="#333333"))
@@ -513,7 +505,7 @@ class HashcatDialog(tk.Toplevel):
 
         close_btn = tk.Label(
             btn_frame, text="  Close  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6, cursor="",
         )
         close_btn.pack(side=tk.RIGHT, padx=(5, 0))
@@ -523,7 +515,7 @@ class HashcatDialog(tk.Toplevel):
 
         stop_btn = tk.Label(
             btn_frame, text="  Stop  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6, cursor="",
         )
         stop_btn.pack(side=tk.RIGHT, padx=(5, 0))
@@ -533,7 +525,7 @@ class HashcatDialog(tk.Toplevel):
 
         start_btn = tk.Label(
             btn_frame, text="  Start  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6, cursor="",
         )
         start_btn.pack(side=tk.RIGHT, padx=(5, 0))
@@ -727,7 +719,7 @@ class HashcatDialog(tk.Toplevel):
 
         close_btn = tk.Label(
             mask_btn_frame, text="  Close  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6, cursor="",
         )
         close_btn.pack(side=tk.RIGHT, padx=(5, 0))
@@ -737,7 +729,7 @@ class HashcatDialog(tk.Toplevel):
 
         stop_btn = tk.Label(
             mask_btn_frame, text="  Stop  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6, cursor="",
         )
         stop_btn.pack(side=tk.RIGHT, padx=(5, 0))
@@ -747,7 +739,7 @@ class HashcatDialog(tk.Toplevel):
 
         start_btn = tk.Label(
             mask_btn_frame, text="  Start  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6, cursor="",
         )
         start_btn.pack(side=tk.RIGHT, padx=(5, 0))
@@ -794,33 +786,25 @@ class HashcatDialog(tk.Toplevel):
     def _build_mask_hw_buttons(self, hw):
         self._mask_hw_placeholder.destroy()
 
-        def _build_rb(text, value):
-            return tk.Radiobutton(
-                self._mask_hw_frame, text=text, variable=self._hw_var,
-                value=value, bg=BG, fg=FG, selectcolor=BG,
-                font=fonts.view_font(11), activebackground=BG,
-                activeforeground=FG, indicatoron=False, relief=tk.FLAT,
-            )
-
-        auto_rb = _build_rb("  Auto  ", "auto")
-        auto_rb.pack(side=tk.LEFT, padx=(0, 5))
-        auto_rb.bind("<Enter>", lambda e: auto_rb.config(bg="#333333"))
-        auto_rb.bind("<Leave>", lambda e: auto_rb.config(bg=BG))
-
+        options = [("auto", "  Auto  ")]
         if hw.get("cpu", True):
-            cpu_rb = _build_rb("  CPU  ", "1")
-            cpu_rb.pack(side=tk.LEFT, padx=(0, 5))
-            cpu_rb.bind("<Enter>", lambda e: cpu_rb.config(bg="#333333"))
-            cpu_rb.bind("<Leave>", lambda e: cpu_rb.config(bg=BG))
-            cpu_rb.select()
-
+            options.append(("1", "  CPU  "))
         if hw.get("gpu", True):
-            gpu_rb = _build_rb("  GPU  ", "2")
-            gpu_rb.pack(side=tk.LEFT, padx=(0, 5))
-            gpu_rb.bind("<Enter>", lambda e: gpu_rb.config(bg="#333333"))
-            gpu_rb.bind("<Leave>", lambda e: gpu_rb.config(bg=BG))
+            options.append(("2", "  GPU  "))
+        self._hw_var.set("auto")
+        self._mask_hw_seg = theme.Segmented(
+            self._mask_hw_frame, options, self._hw_var,
+            command=self._sync_hw_segments)
+        self._mask_hw_seg.pack(side=tk.LEFT)
 
-        auto_rb.select()
+    def _sync_hw_segments(self):
+        for attr in ("_hw_seg", "_mask_hw_seg"):
+            seg = getattr(self, attr, None)
+            if seg is not None:
+                try:
+                    seg.refresh()
+                except Exception:
+                    pass
 
     def _start_mask(self):
         mode = self._mode_var.get().strip()
@@ -966,7 +950,7 @@ class HashcatDialog(tk.Toplevel):
 
         close_btn = tk.Label(
             add_btn_frame, text="  Close  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         close_btn.pack(side=tk.RIGHT, padx=(5, 0))
@@ -976,7 +960,7 @@ class HashcatDialog(tk.Toplevel):
 
         add_btn = tk.Label(
             add_btn_frame, text="  Add  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         add_btn.pack(side=tk.RIGHT)
@@ -1063,20 +1047,18 @@ class HashcatDialog(tk.Toplevel):
         self._type_label_var.set(htype)
 
     def _browse_wordlist(self):
-        from tkinter import filedialog
         from src.elwand_paths import lst_dir
-        f = filedialog.askopenfilename(
-            title="Select wordlist",
+        f = windowing.ask_open_file(
+            self, title="Select wordlist",
             initialdir=str(lst_dir()),
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
         if f:
             self._wl_var.set(f)
 
     def _browse_rules(self):
-        from tkinter import filedialog
         from src.elwand_paths import rules_dir
-        f = filedialog.askopenfilename(
-            title="Select rules file",
+        f = windowing.ask_open_file(
+            self, title="Select rules file",
             initialdir=str(rules_dir()),
             filetypes=[("Rule files", "*.rule"), ("All files", "*.*")])
         if f:
@@ -1096,34 +1078,16 @@ class HashcatDialog(tk.Toplevel):
         has_cpu = hw.get("cpu", True)
         has_gpu = hw.get("gpu", True)
 
-        def _build_rb(text, value):
-            rb = tk.Radiobutton(
-                self._hw_frame, text=text, variable=self._hw_var, value=value,
-                bg=BG, fg=FG, selectcolor=BG, font=fonts.view_font(11),
-                activebackground=BG, activeforeground=FG,
-                indicatoron=False, relief=tk.FLAT,
-            )
-            return rb
-
-        self._hw_auto_rb = _build_rb("  Auto  ", "auto")
-        self._hw_auto_rb.pack(side=tk.LEFT, padx=(0, 5))
-        self._hw_auto_rb.bind("<Enter>", lambda e: self._hw_auto_rb.config(bg="#333333"))
-        self._hw_auto_rb.bind("<Leave>", lambda e: self._hw_auto_rb.config(bg=BG))
-
+        options = [("auto", "  Auto  ")]
         if has_cpu:
-            self._hw_cpu_rb = _build_rb("  CPU  ", "1")
-            self._hw_cpu_rb.pack(side=tk.LEFT, padx=(0, 5))
-            self._hw_cpu_rb.bind("<Enter>", lambda e: self._hw_cpu_rb.config(bg="#333333"))
-            self._hw_cpu_rb.bind("<Leave>", lambda e: self._hw_cpu_rb.config(bg=BG))
-            self._hw_cpu_rb.select()
-
+            options.append(("1", "  CPU  "))
         if has_gpu:
-            self._hw_gpu_rb = _build_rb("  GPU  ", "2")
-            self._hw_gpu_rb.pack(side=tk.LEFT, padx=(0, 5))
-            self._hw_gpu_rb.bind("<Enter>", lambda e: self._hw_gpu_rb.config(bg="#333333"))
-            self._hw_gpu_rb.bind("<Leave>", lambda e: self._hw_gpu_rb.config(bg=BG))
-
-        self._hw_auto_rb.select()
+            options.append(("2", "  GPU  "))
+        self._hw_var.set("auto")
+        self._hw_seg = theme.Segmented(
+            self._hw_frame, options, self._hw_var,
+            command=self._sync_hw_segments)
+        self._hw_seg.pack(side=tk.LEFT)
 
         if hasattr(self, "_mask_hw_placeholder"):
             self._build_mask_hw_buttons(hw)
@@ -1285,7 +1249,7 @@ class HashcatDialog(tk.Toplevel):
 
         load_btn = tk.Label(
             detect_btn_frame, text="  Load file...  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         load_btn.pack(side=tk.LEFT)
@@ -1295,7 +1259,7 @@ class HashcatDialog(tk.Toplevel):
 
         detect_btn = tk.Label(
             detect_btn_frame, text="  Detect  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         detect_btn.pack(side=tk.LEFT, padx=(10, 0))
@@ -1339,7 +1303,7 @@ class HashcatDialog(tk.Toplevel):
 
         close_btn = tk.Label(
             btn_frame, text="  Close  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         close_btn.pack(side=tk.RIGHT, padx=(5, 0))
@@ -1349,7 +1313,7 @@ class HashcatDialog(tk.Toplevel):
 
         save_sel_btn = tk.Label(
             btn_frame, text="  Save selected  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         save_sel_btn.pack(side=tk.RIGHT)
@@ -1477,9 +1441,8 @@ class HashcatDialog(tk.Toplevel):
         return matches
 
     def _detect_load_file(self):
-        from tkinter import filedialog
-        f = filedialog.askopenfilename(
-            title="Load file for hash detection",
+        f = windowing.ask_open_file(
+            self, title="Load file for hash detection",
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
         if not f:
             return

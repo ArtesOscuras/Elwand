@@ -1,7 +1,7 @@
 import os
 import tkinter as tk
-from tkinter import ttk, filedialog
-from src.gui import fonts, windowing
+from tkinter import ttk
+from src.gui import fonts, windowing, theme
 from src.elwand_paths import lst_dir as _lst_dir, rules_dir as _rules_dir
 
 MUTED = "#888888"
@@ -27,14 +27,6 @@ class DicmaDialog(tk.Toplevel):
         self.rowconfigure(0, weight=0)
         self.rowconfigure(1, weight=0)
         self.rowconfigure(2, weight=0)
-
-        style = ttk.Style()
-        style.theme_use("default")
-        style.configure("TNotebook", background=BG, borderwidth=0)
-        style.configure("TNotebook.Tab", background="#222222", foreground=MUTED,
-                        font=fonts.view_font(10), padding=[12, 4])
-        style.map("TNotebook.Tab", background=[("selected", "#111111")],
-                  foreground=[("selected", FG)])
 
         self._nb = ttk.Notebook(self)
         self._nb.grid(row=0, column=0, sticky="ew", padx=0, pady=(5, 0))
@@ -80,21 +72,10 @@ class DicmaDialog(tk.Toplevel):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _make_button(self, parent, text):
-        btn = tk.Label(parent, text=text, bg="#222222", fg=FG,
-                       relief=tk.RAISED, bd=1, padx=15, pady=6,
-                       font=fonts.view_font(10), cursor="")
-        btn.bind("<Enter>", lambda e: btn.config(bg="#333333"))
-        btn.bind("<Leave>", lambda e: btn.config(bg="#222222"))
-        return btn
+        return theme.button(parent, text)
 
     def _make_entry(self, parent, var, width=30):
-        e = tk.Entry(
-            parent, textvariable=var,
-            bg="#000000", fg=FG, insertbackground=FG,
-            font=fonts.view_font(10), relief=tk.FLAT, borderwidth=0,
-            highlightbackground="#333333", highlightthickness=1, width=width,
-        )
-        return e
+        return theme.entry(parent, textvariable=var, width=width)
 
     def _make_label(self, parent, text):
         return tk.Label(parent, text=text, fg=MUTED, bg=BG,
@@ -122,11 +103,11 @@ class DicmaDialog(tk.Toplevel):
         menu = tk.OptionMenu(
             prow, provider_var, first,
             *[p for p in providers if p != first])
-        menu.config(bg="#000000", fg=FG, font=fonts.view_font(10),
+        menu.config(bg=theme.PANEL, fg=FG, font=fonts.view_font(10),
                     borderwidth=0, highlightthickness=1,
                     highlightcolor="#333333", highlightbackground="#333333",
-                    activebackground="#333333", activeforeground=FG)
-        menu["menu"].config(bg="#000000", fg=FG, font=fonts.view_font(10))
+                    activebackground=theme.BTN_HOVER, activeforeground=FG)
+        menu["menu"].config(bg=theme.PANEL, fg=FG, font=fonts.view_font(10))
         menu.pack(side=tk.LEFT, padx=(4, 0), fill=tk.X, expand=True)
 
         mrow = tk.Frame(parent, bg=BG)
@@ -169,22 +150,9 @@ class DicmaDialog(tk.Toplevel):
         self.destroy()
 
     def _make_output(self, tab, name, with_progress=False):
-        out = tk.Text(
-            tab, bg="#000000", fg=SUCCESS,
-            insertbackground=SUCCESS, font=fonts.view_font(10),
-            state=tk.DISABLED, wrap=tk.WORD, cursor="",
-            borderwidth=0, highlightthickness=0, height=4,
-        )
-        out.tag_configure("success", foreground=SUCCESS)
-        out.tag_configure("error", foreground=ERR_COLOR)
+        out = theme.output(tab, height=4)
         out.tag_configure("info", foreground=BRIGHT)
-
-        scroll = tk.Scrollbar(tab, orient=tk.VERTICAL, command=out.yview)
-        scroll.configure(bg="#333333", troughcolor="#1a1a1a",
-                         activebackground="#555555", width=10,
-                         borderwidth=0, highlightthickness=0,
-                         elementborderwidth=0)
-        out.configure(yscrollcommand=scroll.set)
+        scroll = theme.scrollbar(tab, out)
         self._tab_outputs[name] = out
 
         if with_progress:
@@ -244,10 +212,7 @@ class DicmaDialog(tk.Toplevel):
             if full:
                 people_names.append(full)
 
-        self._users_combo = ttk.Combobox(
-            inv_frame, values=people_names, state="readonly",
-            font=fonts.view_font(10), width=22,
-        )
+        self._users_combo = theme.combo(inv_frame, values=people_names, width=22)
         self._users_combo.pack(side=tk.LEFT, padx=(6, 6))
         if people_names:
             self._users_combo.current(0)
@@ -281,24 +246,15 @@ class DicmaDialog(tk.Toplevel):
         )
         self._users_names_text.grid(row=0, column=0, sticky="nsew")
 
-        names_scroll = tk.Scrollbar(names_frame, orient=tk.VERTICAL,
-                                    command=self._users_names_text.yview)
-        names_scroll.configure(bg="#333333", troughcolor="#1a1a1a",
-                               activebackground="#555555", width=10,
-                               borderwidth=0, highlightthickness=0,
-                               elementborderwidth=0)
+        names_scroll = theme.scrollbar(names_frame, self._users_names_text)
         names_scroll.grid(row=0, column=1, sticky="ns")
-        self._users_names_text.configure(yscrollcommand=names_scroll.set)
 
         opts_frame = tk.Frame(tab, bg=BG)
         opts_frame.grid(row=3, column=0, columnspan=2, sticky="w",
                         padx=15, pady=(10, 0))
         self._users_light_var = tk.BooleanVar(value=False)
-        self._users_light_cb = tk.Checkbutton(
-            opts_frame, text="Light mode", variable=self._users_light_var,
-            bg=BG, fg=FG, selectcolor="#333333",
-            font=fonts.view_font(10), activebackground=BG, activeforeground=FG,
-        )
+        self._users_light_cb = theme.Toggle(
+            opts_frame, "Light mode", variable=self._users_light_var)
         self._users_light_cb.pack(side=tk.LEFT)
 
         self._make_label(tab, "Output").grid(
@@ -309,8 +265,8 @@ class DicmaDialog(tk.Toplevel):
         out_scroll.grid(row=5, column=2, sticky="ns")
 
     def _browse_output(self, var):
-        path = filedialog.asksaveasfilename(
-            parent=self, title="Save output as",
+        path = windowing.ask_save_file(
+            self, title="Save output as",
             initialdir=str(_lst_dir()),
             defaultextension=".txt",
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
@@ -406,10 +362,7 @@ class DicmaDialog(tk.Toplevel):
             if full:
                 people_names.append(full)
 
-        self._neigh_combo = ttk.Combobox(
-            inv_frame, values=people_names, state="readonly",
-            font=fonts.view_font(10), width=22,
-        )
+        self._neigh_combo = theme.combo(inv_frame, values=people_names, width=22)
         self._neigh_combo.pack(side=tk.LEFT, padx=(6, 6))
         if people_names:
             self._neigh_combo.current(0)
@@ -446,14 +399,8 @@ class DicmaDialog(tk.Toplevel):
         # Use KeyRelease to trigger total update
         self._neigh_words_text.bind("<KeyRelease>", lambda e: self.after(100, self._update_total_label))
 
-        words_scroll = tk.Scrollbar(words_frame, orient=tk.VERTICAL,
-                                    command=self._neigh_words_text.yview)
-        words_scroll.configure(bg="#333333", troughcolor="#1a1a1a",
-                               activebackground="#555555", width=10,
-                               borderwidth=0, highlightthickness=0,
-                               elementborderwidth=0)
+        words_scroll = theme.scrollbar(words_frame, self._neigh_words_text)
         words_scroll.grid(row=0, column=1, sticky="ns")
-        self._neigh_words_text.configure(yscrollcommand=words_scroll.set)
 
         levels_frame = tk.Frame(tab, bg=BG)
         levels_frame.grid(row=3, column=0, columnspan=2, sticky="ew",
@@ -632,10 +579,7 @@ class DicmaDialog(tk.Toplevel):
 
         self._pass_people = people_list_raw
         pass_values = pw_list or []
-        self._pass_pw_combo = ttk.Combobox(
-            src_frame, values=pass_values, state="readonly",
-            font=fonts.view_font(10), width=22,
-        )
+        self._pass_pw_combo = theme.combo(src_frame, values=pass_values, width=22)
         self._pass_pw_combo.pack(side=tk.LEFT, padx=(6, 6))
         if pass_values:
             self._pass_pw_combo.current(0)
@@ -649,10 +593,7 @@ class DicmaDialog(tk.Toplevel):
 
         people_names = [f"{p['first_name']} {p['last_name']}".strip() or p.get("username", "")
                         for p in people_list_raw if f"{p['first_name']} {p['last_name']}".strip() or p.get("username")]
-        self._pass_combo = ttk.Combobox(
-            src_frame, values=people_names, state="readonly",
-            font=fonts.view_font(10), width=22,
-        )
+        self._pass_combo = theme.combo(src_frame, values=people_names, width=22)
         self._pass_combo.pack(side=tk.LEFT, padx=(6, 6))
         if people_names:
             self._pass_combo.current(0)
@@ -684,22 +625,13 @@ class DicmaDialog(tk.Toplevel):
             height=5,
         )
         self._pass_words_text.grid(row=0, column=0, sticky="nsew")
-        words_scroll = tk.Scrollbar(words_frame, orient=tk.VERTICAL,
-                                    command=self._pass_words_text.yview)
-        words_scroll.configure(bg="#333333", troughcolor="#1a1a1a",
-                               activebackground="#555555", width=10,
-                               borderwidth=0, highlightthickness=0,
-                               elementborderwidth=0)
+        words_scroll = theme.scrollbar(words_frame, self._pass_words_text)
         words_scroll.grid(row=0, column=1, sticky="ns")
-        self._pass_words_text.configure(yscrollcommand=words_scroll.set)
 
         self._pass_llm_var = tk.BooleanVar(value=False)
-        self._pass_llm_cb = tk.Checkbutton(
-            tab, text="Enable related words expansion",
-            variable=self._pass_llm_var,
-            bg=BG, fg=FG, selectcolor="#333333",
-            font=fonts.view_font(10), activebackground=BG, activeforeground=FG,
-            command=self._pass_toggle_llm,
+        self._pass_llm_cb = theme.Toggle(
+            tab, "Enable related words expansion",
+            variable=self._pass_llm_var, command=self._pass_toggle_llm,
         )
         self._pass_llm_cb.grid(row=5, column=0, columnspan=2, sticky="w",
                                padx=15, pady=(10, 0))
@@ -736,18 +668,12 @@ class DicmaDialog(tk.Toplevel):
         opts_frame.grid(row=7, column=0, columnspan=2, sticky="w",
                         padx=15, pady=(10, 0))
         self._pass_light_var = tk.BooleanVar(value=False)
-        self._pass_light_cb = tk.Checkbutton(
-            opts_frame, text="Light mode", variable=self._pass_light_var,
-            bg=BG, fg=FG, selectcolor="#333333",
-            font=fonts.view_font(10), activebackground=BG, activeforeground=FG,
-        )
+        self._pass_light_cb = theme.Toggle(
+            opts_frame, "Light mode", variable=self._pass_light_var)
         self._pass_light_cb.pack(side=tk.LEFT)
         self._pass_full_var = tk.BooleanVar(value=False)
-        self._pass_full_cb = tk.Checkbutton(
-            opts_frame, text="Full mode", variable=self._pass_full_var,
-            bg=BG, fg=FG, selectcolor="#333333",
-            font=fonts.view_font(10), activebackground=BG, activeforeground=FG,
-        )
+        self._pass_full_cb = theme.Toggle(
+            opts_frame, "Full mode", variable=self._pass_full_var)
         self._pass_full_cb.pack(side=tk.LEFT, padx=(12, 0))
         tk.Label(opts_frame, text="(large output!)", fg=ERR_COLOR, bg=BG,
                  font=fonts.view_font(8)).pack(side=tk.LEFT, padx=(4, 0))
@@ -848,18 +774,12 @@ class DicmaDialog(tk.Toplevel):
         opts_frame.grid(row=3, column=0, columnspan=2, sticky="w",
                         padx=15, pady=(15, 0))
         self._rules_light_var = tk.BooleanVar(value=False)
-        self._rules_light_cb = tk.Checkbutton(
-            opts_frame, text="Light mode", variable=self._rules_light_var,
-            bg=BG, fg=FG, selectcolor="#333333",
-            font=fonts.view_font(10), activebackground=BG, activeforeground=FG,
-        )
+        self._rules_light_cb = theme.Toggle(
+            opts_frame, "Light mode", variable=self._rules_light_var)
         self._rules_light_cb.pack(side=tk.LEFT)
         self._rules_full_var = tk.BooleanVar(value=False)
-        self._rules_full_cb = tk.Checkbutton(
-            opts_frame, text="Full mode", variable=self._rules_full_var,
-            bg=BG, fg=FG, selectcolor="#333333",
-            font=fonts.view_font(10), activebackground=BG, activeforeground=FG,
-        )
+        self._rules_full_cb = theme.Toggle(
+            opts_frame, "Full mode", variable=self._rules_full_var)
         self._rules_full_cb.pack(side=tk.LEFT, padx=(12, 0))
         tk.Label(opts_frame, text="(many rules!)", fg=ERR_COLOR, bg=BG,
                  font=fonts.view_font(8)).pack(side=tk.LEFT, padx=(4, 0))
@@ -872,8 +792,8 @@ class DicmaDialog(tk.Toplevel):
         out_scroll.grid(row=5, column=2, sticky="ns")
 
     def _browse_rules_output(self):
-        path = filedialog.asksaveasfilename(
-            parent=self, title="Save rules as",
+        path = windowing.ask_save_file(
+            self, title="Save rules as",
             initialdir=str(_rules_dir()),
             defaultextension=".rule",
             filetypes=[("Rule files", "*.rule"), ("All files", "*.*")],
@@ -882,8 +802,8 @@ class DicmaDialog(tk.Toplevel):
             self._rules_out_var.set(path)
 
     def _browse_dict(self):
-        path = filedialog.askopenfilename(
-            parent=self, title="Select dictionary",
+        path = windowing.ask_open_file(
+            self, title="Select dictionary",
             initialdir=str(_lst_dir()),
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
         )
@@ -891,8 +811,8 @@ class DicmaDialog(tk.Toplevel):
             self._rules_dict_var.set(path)
 
     def _browse_pass_dict(self):
-        path = filedialog.askopenfilename(
-            parent=self, title="Select dictionary",
+        path = windowing.ask_open_file(
+            self, title="Select dictionary",
             initialdir=str(_lst_dir()),
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
         )

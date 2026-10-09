@@ -1,4 +1,4 @@
-from src.gui import fonts, windowing
+from src.gui import fonts, windowing, theme
 import os
 import sqlite3
 import tkinter as tk
@@ -38,20 +38,12 @@ class _HashEditDialog(tk.Toplevel):
         type_frame.columnconfigure(0, weight=1)
         type_frame.rowconfigure(0, weight=1)
 
-        self._type_list = tk.Listbox(
-            type_frame, bg="#000000", fg="#ffffff",
-            selectbackground="#333333", selectforeground="#ffffff",
-            font=fonts.view_font(11), borderwidth=0, highlightthickness=0,
-            activestyle="none", exportselection=False, height=6,
-        )
+        self._type_list = theme.listbox(type_frame, height=6)
         self._type_list.grid(row=0, column=0, sticky="nsew")
         self._type_list.bind("<<ListboxSelect>>", self._on_type_select)
 
-        scrollbar = tk.Scrollbar(type_frame, orient=tk.VERTICAL, command=self._type_list.yview)
-        scrollbar.configure(bg="#333333", troughcolor="#1a1a1a", activebackground="#555555",
-                            width=10, borderwidth=0, highlightthickness=0, elementborderwidth=0)
+        scrollbar = theme.scrollbar(type_frame, self._type_list)
         scrollbar.grid(row=0, column=1, sticky="ns")
-        self._type_list.configure(yscrollcommand=scrollbar.set)
 
         self._type_names = []
         self._type_modes = {}
@@ -97,12 +89,8 @@ class _HashEditDialog(tk.Toplevel):
                 fg=MUTED, bg="#111111",
             ).grid(row=row, column=0, sticky="w", padx=15, pady=(10, 0))
             var = tk.StringVar(value=default)
-            tk.Entry(
-                self, textvariable=var,
-                bg="#000000", fg="#ffffff", insertbackground="#ffffff",
-                font=fonts.view_font(11), borderwidth=1, relief=tk.FLAT,
-                highlightthickness=1, highlightcolor="#333333", highlightbackground="#333333",
-            ).grid(row=row, column=1, sticky="ew", padx=15, pady=(10, 0))
+            theme.entry(self, textvariable=var).grid(
+                row=row, column=1, sticky="ew", padx=15, pady=(10, 0))
             setattr(self, f"_{key}_var", var)
             row += 1
 
@@ -116,25 +104,9 @@ class _HashEditDialog(tk.Toplevel):
         btn_frame = tk.Frame(self, bg="#111111")
         btn_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=15, pady=(15, 15))
 
-        close_btn = tk.Label(
-            btn_frame, text="  Close  ", bg="#222222", fg="#ffffff",
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6,
-        )
-        close_btn.pack(side=tk.RIGHT, padx=(5, 0))
-        close_btn.bind("<Button-1>", lambda e: self.destroy())
-        close_btn.bind("<Enter>", lambda e: close_btn.config(bg="#333333"))
-        close_btn.bind("<Leave>", lambda e: close_btn.config(bg="#222222"))
-
-        update_btn = tk.Label(
-            btn_frame, text="  Update  ", bg="#222222", fg="#ffffff",
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6,
-        )
-        update_btn.pack(side=tk.RIGHT)
-        update_btn.bind("<Button-1>", lambda e: self._save())
-        update_btn.bind("<Enter>", lambda e: update_btn.config(bg="#333333"))
-        update_btn.bind("<Leave>", lambda e: update_btn.config(bg="#222222"))
+        theme.button(btn_frame, "  Close  ", command=self.destroy).pack(
+            side=tk.RIGHT, padx=(5, 0))
+        theme.button(btn_frame, "  Update  ", command=self._save).pack(side=tk.RIGHT)
 
         self.protocol("WM_DELETE_WINDOW", self.destroy)
         self.wait_window(self)
@@ -222,7 +194,7 @@ class HashDetailView(BaseView):
 
         edit_btn = tk.Label(
             inner, text="  Edit  ", bg="#222222", fg="#ffffff",
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         edit_btn.pack(side=tk.LEFT, padx=(0, 10))
@@ -232,7 +204,7 @@ class HashDetailView(BaseView):
 
         back_btn = tk.Label(
             inner, text="  \u2190 Back  ", bg="#222222", fg="#ffffff",
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         back_btn.pack(side=tk.LEFT)

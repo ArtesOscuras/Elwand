@@ -49,17 +49,6 @@ class WifiOperatorDialog(tk.Toplevel):
         self._csa_clients_sig = None
         self._csa_ifaces_sig = None
 
-        style = ttk.Style()
-        try:
-            style.theme_use("default")
-        except tk.TclError:
-            pass
-        style.configure("TNotebook", background=BG, borderwidth=0)
-        style.configure("TNotebook.Tab", background="#222222", foreground=MUTED,
-                        font=fonts.view_font(10), padding=[12, 4])
-        style.map("TNotebook.Tab", background=[("selected", "#111111")],
-                  foreground=[("selected", FG)])
-
         self._nb = ttk.Notebook(self)
         self._nb.grid(row=0, column=0, sticky="nsew")
         self.columnconfigure(0, weight=1)

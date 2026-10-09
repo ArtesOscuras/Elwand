@@ -1,4 +1,4 @@
-from src.gui import fonts, windowing
+from src.gui import fonts, windowing, theme
 import tkinter as tk
 from tkinter import ttk
 from src.network_iface import interfaces, ifaddresses, AF_INET
@@ -21,15 +21,6 @@ class ScanDialog(tk.Toplevel):
         self.rowconfigure(0, weight=0)
         self.rowconfigure(1, weight=1)
 
-        style = ttk.Style()
-        style.theme_use("default")
-        style.configure("TNotebook", background="#111111", borderwidth=0)
-        style.configure("TNotebook.Tab", background="#222222", foreground="#888888",
-                        font=fonts.view_font(11), padding=[20, 6],
-                        borderwidth=0, focuscolor="")
-        style.map("TNotebook.Tab", background=[("selected", "#111111")],
-                  foreground=[("selected", "#ffffff")])
-
         self._notebook = ttk.Notebook(self)
         self._notebook.grid(row=0, column=0, sticky="ew", padx=0, pady=(5, 0))
 
@@ -51,15 +42,8 @@ class ScanDialog(tk.Toplevel):
         footer = tk.Frame(self, bg="#111111")
         footer.grid(row=1, column=0, sticky="ew", padx=15, pady=(10, 15))
 
-        cancel_btn = tk.Label(
-            footer, text="  Cancel  ", bg="#222222", fg="#ffffff",
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6, cursor="",
-        )
+        cancel_btn = theme.button(footer, "  Cancel  ", command=self.destroy)
         cancel_btn.pack(side=tk.RIGHT, padx=(5, 0))
-        cancel_btn.bind("<Button-1>", lambda e: self.destroy())
-        cancel_btn.bind("<Enter>", lambda e: cancel_btn.config(bg="#333333"))
-        cancel_btn.bind("<Leave>", lambda e: cancel_btn.config(bg="#222222"))
 
         self.protocol("WM_DELETE_WINDOW", self.destroy)
         self.wait_window(self)
@@ -81,20 +65,11 @@ class ScanDialog(tk.Toplevel):
         list_frame.columnconfigure(0, weight=1)
         list_frame.rowconfigure(0, weight=1)
 
-        self._iface_listbox = tk.Listbox(
-            list_frame,
-            bg="#000000", fg="#ffffff",
-            selectbackground="#333333", selectforeground="#ffffff",
-            font=fonts.view_font(12), borderwidth=0, highlightthickness=0,
-            activestyle="none", exportselection=False,
-        )
+        self._iface_listbox = theme.listbox(list_frame)
         self._iface_listbox.grid(row=0, column=0, sticky="nsew")
 
-        scrollbar = tk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self._iface_listbox.yview)
-        scrollbar.configure(bg="#333333", troughcolor="#1a1a1a", activebackground="#555555",
-                            width=10, borderwidth=0, highlightthickness=0, elementborderwidth=0)
+        scrollbar = theme.scrollbar(list_frame, self._iface_listbox)
         scrollbar.grid(row=0, column=1, sticky="ns")
-        self._iface_listbox.configure(yscrollcommand=scrollbar.set)
 
         self._interfaces = self._list_interfaces()
         for name, ip, _ in self._interfaces:
@@ -114,27 +89,15 @@ class ScanDialog(tk.Toplevel):
         ).grid(row=0, column=0, sticky="w", padx=(0, 10))
 
         self._scan_ip_var = tk.StringVar()
-        self._scan_ip_entry = tk.Entry(
-            ip_frame, textvariable=self._scan_ip_var,
-            bg="#000000", fg="#ffffff", insertbackground="#ffffff",
-            font=fonts.view_font(12), borderwidth=1, relief=tk.FLAT,
-            highlightthickness=1, highlightcolor="#333333", highlightbackground="#333333",
-        )
+        self._scan_ip_entry = theme.entry(ip_frame, textvariable=self._scan_ip_var)
         self._scan_ip_entry.grid(row=0, column=1, sticky="ew")
         self._scan_ip_entry.bind("<Return>", lambda e: self._select_scan())
 
         self._iface_listbox.bind("<Return>", lambda e: self._select_scan())
         self._iface_listbox.bind("<Double-Button-1>", lambda e: self._select_scan())
 
-        select_btn = tk.Label(
-            frame, text="  Scan  ", bg="#222222", fg="#ffffff",
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6, cursor="",
-        )
+        select_btn = theme.button(frame, "  Scan  ", command=self._select_scan)
         select_btn.grid(row=2, column=0, sticky="e", padx=15, pady=(5, 8))
-        select_btn.bind("<Button-1>", lambda e: self._select_scan())
-        select_btn.bind("<Enter>", lambda e: select_btn.config(bg="#333333"))
-        select_btn.bind("<Leave>", lambda e: select_btn.config(bg="#222222"))
 
     @staticmethod
     def _list_interfaces():
@@ -175,20 +138,11 @@ class ScanDialog(tk.Toplevel):
         list_frame.columnconfigure(0, weight=1)
         list_frame.rowconfigure(0, weight=1)
 
-        lb = tk.Listbox(
-            list_frame,
-            bg="#000000", fg="#ffffff",
-            selectbackground="#333333", selectforeground="#ffffff",
-            font=fonts.view_font(11), borderwidth=0, highlightthickness=0,
-            activestyle="none",
-        )
+        lb = theme.listbox(list_frame)
         lb.grid(row=0, column=0, sticky="nsew")
 
-        scrollbar = tk.Scrollbar(list_frame, orient=tk.VERTICAL, command=lb.yview)
-        scrollbar.configure(bg="#333333", troughcolor="#1a1a1a", activebackground="#555555",
-                            width=10, borderwidth=0, highlightthickness=0, elementborderwidth=0)
+        scrollbar = theme.scrollbar(list_frame, lb)
         scrollbar.grid(row=0, column=1, sticky="ns")
-        lb.configure(yscrollcommand=scrollbar.set)
 
         machines = store.get_all_sorted()
         machine_list = [m for m in machines if not (m.ip == "127.0.0.1" or m.ip.startswith("127."))]
@@ -202,15 +156,10 @@ class ScanDialog(tk.Toplevel):
         lb.bind("<Return>", lambda e: self._select_port(action, machine_list, lb))
         lb.bind("<Double-Button-1>", lambda e: self._select_port(action, machine_list, lb))
 
-        select_btn = tk.Label(
-            frame, text="  Scan  ", bg="#222222", fg="#ffffff",
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6, cursor="",
-        )
+        select_btn = theme.button(
+            frame, "  Scan  ",
+            command=lambda: self._select_port(action, machine_list, lb))
         select_btn.grid(row=2, column=0, sticky="e", padx=15, pady=(5, 8))
-        select_btn.bind("<Button-1>", lambda e: self._select_port(action, machine_list, lb))
-        select_btn.bind("<Enter>", lambda e: select_btn.config(bg="#333333"))
-        select_btn.bind("<Leave>", lambda e: select_btn.config(bg="#222222"))
 
     def _build_banner_tab(self):
         frame = self._banner_frame
@@ -229,20 +178,11 @@ class ScanDialog(tk.Toplevel):
         list_frame.columnconfigure(0, weight=1)
         list_frame.rowconfigure(0, weight=1)
 
-        lb = tk.Listbox(
-            list_frame,
-            bg="#000000", fg="#ffffff",
-            selectbackground="#333333", selectforeground="#ffffff",
-            font=fonts.view_font(11), borderwidth=0, highlightthickness=0,
-            activestyle="none",
-        )
+        lb = theme.listbox(list_frame)
         lb.grid(row=0, column=0, sticky="nsew")
 
-        scrollbar = tk.Scrollbar(list_frame, orient=tk.VERTICAL, command=lb.yview)
-        scrollbar.configure(bg="#333333", troughcolor="#1a1a1a", activebackground="#555555",
-                            width=10, borderwidth=0, highlightthickness=0, elementborderwidth=0)
+        scrollbar = theme.scrollbar(list_frame, lb)
         scrollbar.grid(row=0, column=1, sticky="ns")
-        lb.configure(yscrollcommand=scrollbar.set)
 
         machines = store.get_all_sorted()
         machine_list = [m for m in machines if not (m.ip == "127.0.0.1" or m.ip.startswith("127."))]
@@ -263,23 +203,14 @@ class ScanDialog(tk.Toplevel):
         ).grid(row=0, column=0, sticky="w", padx=(0, 10))
 
         banner_port_var = tk.StringVar(value="80")
-        banner_port_entry = tk.Entry(
-            port_frame, textvariable=banner_port_var,
-            bg="#000000", fg="#ffffff", insertbackground="#ffffff",
-            font=fonts.view_font(12), borderwidth=1, relief=tk.FLAT, width=8,
-            highlightthickness=1, highlightcolor="#333333", highlightbackground="#333333",
-        )
+        banner_port_entry = theme.entry(
+            port_frame, textvariable=banner_port_var, width=8)
         banner_port_entry.grid(row=0, column=1, sticky="w")
 
-        select_btn = tk.Label(
-            frame, text="  Scan  ", bg="#222222", fg="#ffffff",
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6, cursor="",
-        )
+        select_btn = theme.button(
+            frame, "  Scan  ",
+            command=lambda: self._select_banner(machine_list, lb, banner_port_var))
         select_btn.grid(row=2, column=0, sticky="e", padx=15, pady=(5, 8))
-        select_btn.bind("<Button-1>", lambda e: self._select_banner(machine_list, lb, banner_port_var))
-        select_btn.bind("<Enter>", lambda e: select_btn.config(bg="#333333"))
-        select_btn.bind("<Leave>", lambda e: select_btn.config(bg="#222222"))
 
         lb.bind("<Return>", lambda e: self._select_banner(machine_list, lb, banner_port_var))
         lb.bind("<Double-Button-1>", lambda e: self._select_banner(machine_list, lb, banner_port_var))

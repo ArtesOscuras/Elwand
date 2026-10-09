@@ -102,6 +102,7 @@ btn.bind("<Leave>", lambda e: btn.config(bg="#222222"))
 - Do not change font weight on hover (bold stays bold, regular stays regular).
 - For underlined hover on bold text, use `view_font_bold_under(size)` which preserves `"bold"` weight while adding underline.
 - All text widgets (non-clickable) set `cursor=""` explicitly to prevent I-beam on disabled widgets.
+- This section covers the general model. For `Toplevel` dialogs follow the dedicated **"Dialog Aesthetic Guide"** (`src/gui/theme.py`), which builds on these rules and forbids `tk.Checkbutton`/`tk.Radiobutton` and `relief=tk.RAISED`.
 
 ---
 
@@ -203,6 +204,128 @@ self.visualizer.winfo_toplevel().update_idletasks()
 
 ---
 
+### Dialog Aesthetic Guide (`src/gui/theme.py`)
+
+Every `tk.Toplevel` dialog shares **one minimalist look**, defined once in `src/gui/theme.py` (palette + `install()` + widget factories). The reference look is the **Fuzzer** tab style combined with the **WifiOperator** flat controls. Do **not** re-style a dialog inline — import `theme` and use it. This keeps all dialogs visually identical and zoom-aware.
+
+#### 1. Fonts (mandatory)
+
+Every widget and ttk style uses the **bundled named fonts** via `fonts.view_font(size)` / `fonts.view_font_bold(size)`. Never raw tuples (`("Helvetica", 10)`) or OS font names. Because they are named fonts, `fonts.set_view_scale()` reconfigures them and the whole dialog (including ttk tabs/comboboxes) follows live zoom. All theme factories already do this correctly.
+
+#### 2. Palette (import from `theme`, never hardcode)
+
+| Constant | Value | Use |
+|---|---|---|
+| `theme.BG` | `#111111` | dialog background |
+| `theme.PANEL` | `#000000` | list/text/entry surfaces |
+| `theme.FG` | `#ffffff` | primary text |
+| `theme.MUTED` | `#888888` | labels, section headers, inactive state |
+| `theme.SUCCESS` | `#00cc66` | success log |
+| `theme.ERROR` | `#f44747` | error log / warnings |
+| `theme.INFO` | `#5ba3ec` | info accents |
+| `theme.WARN` | `#ce9178` | warnings |
+| `theme.SEL_BG` | `#2d6cdf` | active/selected highlight (toggles, segments, listbox selection) |
+| `theme.BTN_BG` | `#222222` | button / toggle inactive background |
+| `theme.BTN_HOVER` | `#333333` | button / toggle hover, selected tab |
+| `theme.SCROLL_BG` / `SCROLL_ACTIVE` / `TROUGH` | `#333333` / `#555555` / `#1a1a1a` | scrollbars |
+| `theme.BORDER` | `#333333` | subtle borders |
+
+#### 3. Tabs (`ttk.Notebook`)
+
+The global look is set **once** by `theme.install()` in `App.__init__` (after `fonts.init()`/`windowing.init()`, before any dialog is created):
+
+```python
+style.configure("TNotebook", background=theme.BG, borderwidth=0)
+style.configure("TNotebook.Tab", background="#222222", foreground=theme.FG,
+                padding=[20, 6], font=fonts.view_font(10), borderwidth=0)
+style.map("TNotebook.Tab", background=[("selected", "#333333")])
+```
+
+ttk styles are **global per interpreter**, so a dialog must **never** call `style.configure("TNotebook.Tab", ...)` or `style.theme_use(...)` — doing so silently overrides the shared look for every other dialog. Just create the `ttk.Notebook` and add frames.
+
+#### 4. Buttons — flat, hover-only
+
+Use `theme.button(parent, text, command=...)`. It returns a flat `tk.Label` (no `relief`, no border) with the standard hover (`#222222` → `#333333`) and `cursor=""`. It also exposes `.enable()` / `.disable()` (disabled = dimmed to `BG`/`MUTED` and ignores clicks). **Never** use `relief=tk.RAISED`/`bd=1` or `tk.Button`.
+
+```python
+btn = theme.button(frame, "  Start  ", command=self._start)
+btn.pack(side=tk.RIGHT, padx=(5, 0))
+```
+
+#### 5. Toggles & segmented controls — **no bright checkboxes**
+
+The default `tk.Checkbutton` / `tk.Radiobutton` indicator renders as a **bright white box** on Linux regardless of `selectcolor` — never use them in dialogs. Instead:
+
+* **`theme.Toggle(parent, text, variable=<BooleanVar>, command=...)`** — a Label on/off switch. Wraps an optional `BooleanVar` (so existing `.get()`/`.set()` code keeps working); highlights with `SEL_BG` when on, `BTN_BG`/`MUTED` when off. Has `.pack()`/`.grid()`/`.config()`/`.get()`/`.set()`/`.refresh()`.
+* **`theme.Segmented(parent, [(value, label), ...], variable, command=...)`** — a row of mutually-exclusive Label options for mode/protocol selection; active option uses `SEL_BG`.
+
+#### 6. Lists, entries, output, scrollbars
+
+* `theme.listbox(parent, height=...)` — `PANEL` surface, `SEL_BG` selection, no border, `exportselection=False`.
+* `theme.scrollbar(parent, widget)` — styled (`SCROLL_BG`/`TROUGH`/`SCROLL_ACTIVE`), wired to the widget's `yview`.
+* `theme.entry(parent, textvariable=..., width=..., center=...)` — `PANEL` surface, flat, no highlight ring.
+* `theme.output(parent, height=...)` — disabled `Text` with the `success` / `error` / `info` / `muted` tags preconfigured; enable it around inserts as usual.
+* `theme.combo(parent, textvariable=..., values=..., width=...)` — dark `ttk.Combobox` (styled globally). On macOS, where ttk readonly comboboxes ignore the dark theme, prefer `tk.OptionMenu` styled with `theme.PANEL`/`theme.BTN_HOVER`.
+
+#### 7. Spacing & layout
+
+* Size dialogs with `windowing.size_dialog(...)` (see "DPI-aware sizing"); never hardcode pixels.
+* Outer padding `padx/pady = 15`; inner groups `10`; tight control rows `4`–`6`. Buttons use `padx=15, pady=6` (compact rows `padx=10, pady=4`).
+* Section headers: `tk.Label(..., fg=theme.MUTED, font=fonts.view_font_bold(10 or 11))`.
+* Keep `self.protocol("WM_DELETE_WINDOW", self._on_close)` and the modal pattern (below).
+
+#### 8. Checklist for a new/changed dialog
+
+- [ ] Imports `theme` and uses `theme.*` constants (no hardcoded hex).
+- [ ] Creates `ttk.Notebook` without any local `style.configure`/`theme_use`.
+- [ ] All buttons via `theme.button` (flat, no `relief=tk.RAISED`).
+- [ ] No `tk.Checkbutton`/`tk.Radiobutton` — use `theme.Toggle`/`theme.Segmented`.
+- [ ] List/text/entry/scrollbar via the factories.
+- [ ] Fonts only via `fonts.view_font*`.
+- [ ] `windowing.size_dialog` + `wait_visibility()` before `grab_set()`.
+
+#### 9. Minimal example
+
+```python
+import tkinter as tk
+from tkinter import ttk
+from src.gui import fonts, theme, windowing
+
+class ExampleDialog(tk.Toplevel):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title("Example")
+        windowing.size_dialog(self, 600, 400)
+        self.configure(bg=theme.BG)
+        self.transient(parent)
+
+        nb = ttk.Notebook(self)                    # tabs come from theme.install()
+        nb.grid(row=0, column=0, sticky="nsew")
+
+        tab = tk.Frame(nb, bg=theme.BG)
+        nb.add(tab, text="Main")
+
+        tk.Label(tab, text="Mode", fg=theme.MUTED, bg=theme.BG,
+                 font=fonts.view_font_bold(11)).grid(row=0, column=0, sticky="w",
+                                                     padx=15, pady=(10, 4))
+        self._mode = tk.StringVar(value="a")
+        theme.Segmented(tab, [("a", "Option A"), ("b", "Option B")],
+                        self._mode).grid(row=0, column=1, sticky="w")
+
+        self._light = tk.BooleanVar(value=False)
+        theme.Toggle(tab, "Light mode", variable=self._light).grid(
+            row=1, column=1, sticky="w", padx=15, pady=4)
+
+        theme.button(tab, "  Close  ", command=self.destroy).grid(
+            row=2, column=1, sticky="e", padx=15, pady=(10, 15))
+
+        self.update_idletasks()
+        self.wait_visibility()
+        self.grab_set()
+```
+
+---
+
 ### Modal Dialogs and Cross-Platform `grab_set()`
 
 When opening a `tk.Toplevel` dialog that uses `grab_set()` (modal behavior), always call `self.wait_visibility()` before `self.grab_set()`. Without this, Linux X11/Wayland window managers may not have finished mapping the window, causing `tkinter.TclError: grab failed: window not viewable`.
@@ -233,6 +356,10 @@ windowing.min_size(dialog, 620, 1)                           # for content-sized
 `windowing.init(root)` is called once in `App.__init__` (right after `elwand_settings.load()`). On Linux it sets `tk scaling` from the display DPI and multiplies reference sizes by `dpi/96` (clamped to 95% of the screen); on macOS it is a no-op, preserving the tuned look. Override with the `ELWAND_UI_SCALE`/`ELWAND_DPI` env vars or the `ui_scale` key in `settings.json`.
 
 This pattern is already used in `HashcatDialog`, `InitDialog`, `_CredentialGenerator`, `SettingsDialog`, `_AddUserDialog`, `_AddPersonDialog`, `_UserEditDialog`, `_PersonEditDialog`, and others. New dialogs must follow it.
+
+**File choosers (`windowing.ask_open_file` / `windowing.ask_save_file`):** never call `tkinter.filedialog.askopenfilename`/`asksaveasfilename` directly. Use the central helpers, which force `parent=` to the active window (normalized to its toplevel). Without a parent, on Linux the file chooser can open **behind** the modal dialog (`grab_set`) and be unreachable. The parent may be a `Toplevel` or any widget (a `Frame` is resolved to its toplevel).
+
+On **macOS/Windows** the helpers use the **native** chooser. On **Linux**, Tk's classic chooser has a light background that clashes with the dark theme, so the helpers use the themed in-app chooser `src/gui/file_dialog.py` (`FileChooser`): a minimal dark `Toplevel` built with `theme.*` factories (path entry + `Up`, file list with `[dir]` markers, file-name entry, file-type combo, Cancel/Open-Save buttons), with directory navigation on double-click, `Enter` to accept, and `defaultextension` applied on save. Keep it themed (no `relief=tk.RAISED`, named fonts, `theme` colors) and modal via `wait_visibility()` before `grab_set()`.
 
 ---
 

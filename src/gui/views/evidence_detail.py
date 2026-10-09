@@ -1,4 +1,4 @@
-from src.gui import fonts, windowing
+from src.gui import fonts, windowing, theme
 import json
 import os
 import tkinter as tk
@@ -101,11 +101,8 @@ class _RequestDetailDialog(tk.Toplevel):
         )
         self.text.grid(row=0, column=0, sticky="nsew")
 
-        scrollbar = tk.Scrollbar(content_frame, orient=tk.VERTICAL, command=self.text.yview)
-        scrollbar.configure(bg="#333333", troughcolor="#1a1a1a", activebackground="#555555",
-                            width=10, borderwidth=0, highlightthickness=0, elementborderwidth=0)
+        scrollbar = theme.scrollbar(content_frame, self.text)
         scrollbar.grid(row=0, column=1, sticky="ns")
-        self.text.configure(yscrollcommand=scrollbar.set)
 
         self.text.tag_configure("section", foreground=INFO, font=fonts.view_font_bold(12))
         self.text.tag_configure("muted", foreground=MUTED)
@@ -119,15 +116,7 @@ class _RequestDetailDialog(tk.Toplevel):
         btn_frame = tk.Frame(self, bg="#111111")
         btn_frame.grid(row=2, column=0, pady=(0, 15))
 
-        close_btn = tk.Label(
-            btn_frame, text="  Close  ", bg="#222222", fg="#ffffff",
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6,
-        )
-        close_btn.pack()
-        close_btn.bind("<Button-1>", lambda e: self.destroy())
-        close_btn.bind("<Enter>", lambda e: close_btn.config(bg="#333333"))
-        close_btn.bind("<Leave>", lambda e: close_btn.config(bg="#222222"))
+        theme.button(btn_frame, "  Close  ", command=self.destroy).pack()
 
         self.protocol("WM_DELETE_WINDOW", self.destroy)
 
@@ -245,7 +234,7 @@ class EvidenceDetailView(BaseView):
 
         back_btn = tk.Label(
             btn_frame, text="  \u2190 Back  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         back_btn.pack(side=tk.LEFT)

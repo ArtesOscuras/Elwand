@@ -34,15 +34,6 @@ class SettingsDialog(tk.Toplevel):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
 
-        style = ttk.Style()
-        style.theme_use("default")
-        style.configure("TNotebook", background=BG, borderwidth=0)
-        style.configure("TNotebook.Tab", background="#222222",
-                        foreground=FG_DIM, font=fonts.view_font(10),
-                        padding=[14, 6])
-        style.map("TNotebook.Tab", background=[("selected", BG)],
-                  foreground=[("selected", FG)])
-
         self._nb = ttk.Notebook(self)
         self._nb.grid(row=0, column=0, sticky="nsew", padx=10, pady=(10, 10))
 
@@ -110,7 +101,7 @@ class SettingsDialog(tk.Toplevel):
 
         save_btn = tk.Label(
             btn_frame, text="  Save  ", bg="#222222", fg=SUCCESS,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         save_btn.pack()
@@ -348,7 +339,7 @@ class SettingsDialog(tk.Toplevel):
 
         close_btn = tk.Label(
             btn_frame, text="  Close  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         close_btn.pack(side=tk.RIGHT, padx=(5, 0))
@@ -358,7 +349,7 @@ class SettingsDialog(tk.Toplevel):
 
         add_btn = tk.Label(
             btn_frame, text="  Add provider  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         add_btn.pack(side=tk.RIGHT, padx=(5, 0))
@@ -368,7 +359,7 @@ class SettingsDialog(tk.Toplevel):
 
         edit_btn = tk.Label(
             btn_frame, text="  Edit / Set active  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         edit_btn.pack(side=tk.RIGHT, padx=(5, 0))
@@ -378,7 +369,7 @@ class SettingsDialog(tk.Toplevel):
 
         save_btn = tk.Label(
             btn_frame, text="  Save  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         save_btn.pack(side=tk.RIGHT, padx=(5, 0))
@@ -480,15 +471,6 @@ def open_provider_dialog(parent, config, refresh_cb=None, is_new=False, preselec
     dialog.columnconfigure(0, weight=0)
     dialog.columnconfigure(1, weight=1)
 
-    style = ttk.Style()
-    style.configure("TCombobox",
-                     fieldbackground=BG_WIDGET,
-                     foreground=FG,
-                     insertcolor=FG,
-                     selectbackground=SEL_BG,
-                     selectforeground=FG,
-                     arrowsize=12)
-
     providers = config.get("providers", {})
     active = config.get("active_provider", "")
     active_models = config.get("active_models", {})
@@ -577,7 +559,7 @@ def open_provider_dialog(parent, config, refresh_cb=None, is_new=False, preselec
 
     detect_btn = tk.Label(
         dialog, text=" Detect ", bg="#222222", fg=FG,
-        font=fonts.view_font(9), relief=tk.RAISED, bd=1,
+        font=fonts.view_font(9), relief=tk.FLAT, bd=0,
         padx=8, pady=3,
     )
     detect_btn.grid(row=row, column=2, padx=(5, 15), pady=(5, 3))
@@ -684,7 +666,7 @@ def open_provider_dialog(parent, config, refresh_cb=None, is_new=False, preselec
 
     tk.Label(
         btn_inner, text="  Close  ", bg="#222222", fg=FG,
-        font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+        font=fonts.view_font(10), relief=tk.FLAT, bd=0,
         padx=15, pady=6,
     ).pack(side=tk.RIGHT, padx=(5, 0))
     close_btn = btn_inner.winfo_children()[-1]
@@ -694,7 +676,7 @@ def open_provider_dialog(parent, config, refresh_cb=None, is_new=False, preselec
 
     save_btn = tk.Label(
         btn_inner, text="  Save  ", bg="#222222", fg=FG,
-        font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+        font=fonts.view_font(10), relief=tk.FLAT, bd=0,
         padx=15, pady=6,
     )
     save_btn.pack(side=tk.RIGHT)
@@ -704,7 +686,7 @@ def open_provider_dialog(parent, config, refresh_cb=None, is_new=False, preselec
     if not is_new:
         del_btn = tk.Label(
             btn_inner, text="  Delete  ", bg="#222222", fg=ERR,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         del_btn.pack(side=tk.RIGHT, padx=(5, 0))

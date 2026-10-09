@@ -220,7 +220,7 @@ class InitDialog(tk.Toplevel):
 
         self._dl_btn = tk.Label(
             btn_inner, text="  Download lists  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         self._dl_btn.pack(side=tk.LEFT, padx=(0, 10))
@@ -231,7 +231,7 @@ class InitDialog(tk.Toplevel):
 
         self._ok_btn = tk.Label(
             btn_inner, text="  Continue  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         self._ok_btn.pack(side=tk.LEFT)

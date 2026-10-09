@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from src.network_iface import interfaces, ifaddresses, AF_INET
 from . import fonts
 from . import windowing
+from . import theme
 from .console import Console
 from .visualizer import Visualizer
 from .views import WifiView, NetworkView, DomainListView, EvidenceListView, CredentialListView, UsersView, PasswordsView, HashListView, ShellListView, ToolsView, InventoryView, PeopleView, ProcessView, ServicesView, DictionarysView, RulesView, PocsView, ReportsView, ReportView, HandshakesView
@@ -138,9 +139,9 @@ class _ReviewDialogManager:
         url_frame.grid(row=row, column=0, sticky="ew", padx=15, pady=(10, 0))
         url_frame.columnconfigure(1, weight=1)
         tk.Label(url_frame, text="URL:", bg="#111111", fg="#aaaaaa",
-                 font=("Menlo", 10)).grid(row=0, column=0, sticky="w", padx=(0, 5))
+                 font=fonts.view_font(10)).grid(row=0, column=0, sticky="w", padx=(0, 5))
         self._url_entry = tk.Entry(url_frame, bg="#000000", fg="#ffffff",
-                                   font=("Menlo", 10), borderwidth=0, highlightthickness=1,
+                                   font=fonts.view_font(10), borderwidth=0, highlightthickness=1,
                                    highlightbackground="#333333", insertbackground="#ffffff")
         self._url_entry.grid(row=0, column=1, sticky="ew")
         row += 1
@@ -150,26 +151,26 @@ class _ReviewDialogManager:
         info_frame.grid(row=row, column=0, sticky="ew", padx=15, pady=(5, 0))
         info_frame.columnconfigure(2, weight=1)
         tk.Label(info_frame, text="Method:", bg="#111111", fg="#aaaaaa",
-                 font=("Menlo", 10)).grid(row=0, column=0, sticky="w", padx=(0, 5))
+                 font=fonts.view_font(10)).grid(row=0, column=0, sticky="w", padx=(0, 5))
         self._method_var = tk.StringVar(value="GET")
         method_menu = tk.OptionMenu(info_frame, self._method_var, "GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS")
         method_menu.configure(bg="#000000", fg="#ffffff", borderwidth=0, highlightthickness=0,
-                               font=("Menlo", 10), activebackground="#333333", activeforeground="#ffffff")
-        method_menu["menu"].configure(bg="#000000", fg="#ffffff", font=("Menlo", 10))
+                               font=fonts.view_font(10), activebackground="#333333", activeforeground="#ffffff")
+        method_menu["menu"].configure(bg="#000000", fg="#ffffff", font=fonts.view_font(10))
         method_menu.grid(row=0, column=1, sticky="w")
         self._status_label = tk.Label(info_frame, text="", bg="#111111", fg="#888888",
-                                       font=("Menlo", 10))
+                                       font=fonts.view_font(10))
         self._status_label.grid(row=0, column=2, sticky="w", padx=(15, 0))
         row += 1
         self._dlg.rowconfigure(row, weight=0)
 
         tk.Label(self._dlg, text="Request Headers:", bg="#111111", fg="#aaaaaa",
-                 font=("Menlo", 10, "bold"), anchor="w").grid(row=row, column=0, sticky="ew", padx=15, pady=(10, 0))
+                 font=fonts.view_font_bold(10), anchor="w").grid(row=row, column=0, sticky="ew", padx=15, pady=(10, 0))
         row += 1
         self._dlg.rowconfigure(row, weight=1)
 
         self._headers_text = tk.Text(self._dlg, bg="#000000", fg="#ffffff",
-                                      font=("Menlo", 10), borderwidth=0, highlightthickness=1,
+                                      font=fonts.view_font(10), borderwidth=0, highlightthickness=1,
                                       highlightbackground="#333333", insertbackground="#ffffff",
                                       wrap=tk.NONE, padx=8, pady=8, height=5)
         self._headers_text.grid(row=row, column=0, sticky="nsew", padx=15, pady=(2, 0))
@@ -177,13 +178,13 @@ class _ReviewDialogManager:
         self._dlg.rowconfigure(row, weight=0)
 
         self._resp_header_label = tk.Label(self._dlg, text="Response Headers:", bg="#111111", fg="#aaaaaa",
-                                            font=("Menlo", 10, "bold"), anchor="w")
+                                            font=fonts.view_font_bold(10), anchor="w")
         self._resp_header_label.grid(row=row, column=0, sticky="ew", padx=15, pady=(10, 0))
         row += 1
         self._dlg.rowconfigure(row, weight=1)
 
         self._resp_headers_text = tk.Text(self._dlg, bg="#000000", fg="#ffffff",
-                                           font=("Menlo", 10), borderwidth=0, highlightthickness=1,
+                                           font=fonts.view_font(10), borderwidth=0, highlightthickness=1,
                                            highlightbackground="#333333", insertbackground="#ffffff",
                                            wrap=tk.NONE, padx=8, pady=8, height=4)
         self._resp_headers_text.grid(row=row, column=0, sticky="nsew", padx=15, pady=(2, 0))
@@ -191,12 +192,12 @@ class _ReviewDialogManager:
         self._dlg.rowconfigure(row, weight=0)
 
         tk.Label(self._dlg, text="Body:", bg="#111111", fg="#aaaaaa",
-                 font=("Menlo", 10, "bold"), anchor="w").grid(row=row, column=0, sticky="ew", padx=15, pady=(10, 0))
+                 font=fonts.view_font_bold(10), anchor="w").grid(row=row, column=0, sticky="ew", padx=15, pady=(10, 0))
         row += 1
         self._dlg.rowconfigure(row, weight=2)
 
         self._body_text = tk.Text(self._dlg, bg="#000000", fg="#ffffff",
-                                   font=("Menlo", 10), borderwidth=0, highlightthickness=1,
+                                   font=fonts.view_font(10), borderwidth=0, highlightthickness=1,
                                    highlightbackground="#333333", insertbackground="#ffffff",
                                    wrap=tk.WORD, padx=8, pady=8)
         self._body_text.grid(row=row, column=0, sticky="nsew", padx=15, pady=(2, 0))
@@ -206,35 +207,18 @@ class _ReviewDialogManager:
         check_frame = tk.Frame(self._dlg, bg="#111111")
         check_frame.grid(row=row, column=0, sticky="w", padx=15, pady=(8, 0))
         self._out_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(
-            check_frame, text="  Review outgoing", variable=self._out_var,
-            bg="#111111", fg="#888888", selectcolor="#111111",
-            font=("Menlo", 10),
-            activebackground="#111111", activeforeground="#ffffff",
-            command=self._on_check_change,
-        ).pack(side=tk.LEFT, padx=(0, 15))
+        theme.Toggle(check_frame, "  Review outgoing", variable=self._out_var,
+                     command=self._on_check_change).pack(side=tk.LEFT, padx=(0, 15))
         self._in_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(
-            check_frame, text="  Review incoming", variable=self._in_var,
-            bg="#111111", fg="#888888", selectcolor="#111111",
-            font=("Menlo", 10),
-            activebackground="#111111", activeforeground="#ffffff",
-            command=self._on_check_change,
-        ).pack(side=tk.LEFT)
+        theme.Toggle(check_frame, "  Review incoming", variable=self._in_var,
+                     command=self._on_check_change).pack(side=tk.LEFT)
         row += 1
         self._dlg.rowconfigure(row, weight=0)
 
         btn_frame = tk.Frame(self._dlg, bg="#111111")
         btn_frame.grid(row=row, column=0, sticky="ew", padx=15, pady=(8, 12))
-        send_btn = tk.Label(
-            btn_frame, text="  Send  ", bg="#222222", fg="#ffffff",
-            font=("Menlo", 10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6,
-        )
-        send_btn.pack(side=tk.RIGHT)
-        send_btn.bind("<Button-1>", lambda e: self._send_and_close())
-        send_btn.bind("<Enter>", lambda e: send_btn.config(bg="#333333"))
-        send_btn.bind("<Leave>", lambda e: send_btn.config(bg="#222222"))
+        theme.button(btn_frame, "  Send  ",
+                     command=self._send_and_close).pack(side=tk.RIGHT)
 
     def _show_waiting_ui(self):
         if self._dlg is None:
@@ -609,6 +593,7 @@ class App(tk.Tk):
 
         elwand_settings.load()
         windowing.init(self)
+        theme.install()
         console_font = elwand_settings.get("console_font_size", 11)
         self.console = Console(self._pane, initial_font_size=console_font)
         self.console._focus_callback = self._toggle_focus
@@ -4976,7 +4961,6 @@ class App(tk.Tk):
             self.console.error(f"Unknown add target: {sub}")
 
     def _cmd_add_file(self, file_type, args):
-        from tkinter import filedialog
         if file_type == "dictionary":
             from src.elwand_paths import lst_dir
             dst_dir = str(lst_dir())
@@ -4985,8 +4969,8 @@ class App(tk.Tk):
             from src.elwand_paths import rules_dir
             dst_dir = str(rules_dir())
             title = "Select rule file"
-        path = filedialog.askopenfilename(
-            parent=self, title=title,
+        path = windowing.ask_open_file(
+            self, title=title,
             filetypes=[("All files", "*.*")],
         )
         if not path:

@@ -5,6 +5,7 @@ import tkinter.font as tkfont
 from src.gui import fonts
 from src.gui import icons
 from src.gui import windowing
+from src.gui import theme
 from .base import BaseView
 from .nav import build as build_nav
 from src.elwand_paths import handshakes_dir
@@ -81,7 +82,7 @@ class HandshakesView(BaseView):
 
         extract_btn = tk.Label(
             btn_frame, text="  Extract hash  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         extract_btn.pack(side=tk.LEFT, padx=(0, 10))
@@ -91,7 +92,7 @@ class HandshakesView(BaseView):
 
         back_btn = tk.Label(
             btn_frame, text="  \u2190 Back  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
             padx=15, pady=6,
         )
         back_btn.pack(side=tk.RIGHT, padx=(10, 0))
@@ -258,12 +259,7 @@ class ExtractHashDialog(tk.Toplevel):
         left.grid(row=1, column=0, sticky="nsew", padx=(15, 8))
         left.columnconfigure(0, weight=1)
         left.rowconfigure(0, weight=1)
-        self._pcap_list = tk.Listbox(
-            left, bg="#000000", fg=BRIGHT, font=fonts.view_font(11),
-            selectbackground="#333333", selectforeground=BRIGHT,
-            activestyle="none", borderwidth=0, highlightthickness=0,
-            cursor="", exportselection=False,
-        )
+        self._pcap_list = theme.listbox(left)
         self._pcap_list.grid(row=0, column=0, sticky="nsew")
         self._make_scrollbar(left, self._pcap_list).grid(
             row=0, column=1, sticky="ns")
@@ -273,12 +269,7 @@ class ExtractHashDialog(tk.Toplevel):
         right.grid(row=1, column=1, sticky="nsew", padx=(8, 15))
         right.columnconfigure(0, weight=1)
         right.rowconfigure(0, weight=1)
-        self._hs_list = tk.Listbox(
-            right, bg="#000000", fg=BRIGHT, font=fonts.view_font(11),
-            selectbackground="#333333", selectforeground=BRIGHT,
-            activestyle="none", borderwidth=0, highlightthickness=0,
-            cursor="", exportselection=False,
-        )
+        self._hs_list = theme.listbox(right)
         self._hs_list.grid(row=0, column=0, sticky="nsew")
         self._make_scrollbar(right, self._hs_list).grid(
             row=0, column=1, sticky="ns")
@@ -295,27 +286,13 @@ class ExtractHashDialog(tk.Toplevel):
         btns.grid(row=3, column=0, columnspan=2, sticky="ew",
                   padx=15, pady=(8, 14))
 
-        self._extract_btn = tk.Label(
-            btns, text="  Extract hash  ", bg="#222222", fg=MUTED,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6, cursor="",
-        )
+        self._extract_btn = theme.button(btns, "  Extract hash  ",
+                                         command=self._extract)
         self._extract_btn.pack(side=tk.LEFT)
-        self._extract_btn.bind("<Button-1>", lambda e: self._extract())
-        self._extract_btn.bind(
-            "<Enter>", lambda e: self._extract_hover(True))
-        self._extract_btn.bind(
-            "<Leave>", lambda e: self._extract_hover(False))
+        self._extract_btn.disable()
 
-        close_btn = tk.Label(
-            btns, text="  Close  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.RAISED, bd=1,
-            padx=15, pady=6, cursor="",
-        )
+        close_btn = theme.button(btns, "  Close  ", command=self.destroy)
         close_btn.pack(side=tk.RIGHT)
-        close_btn.bind("<Button-1>", lambda e: self.destroy())
-        close_btn.bind("<Enter>", lambda e: close_btn.config(bg="#333333"))
-        close_btn.bind("<Leave>", lambda e: close_btn.config(bg="#222222"))
 
         self.protocol("WM_DELETE_WINDOW", self.destroy)
 
@@ -327,17 +304,14 @@ class ExtractHashDialog(tk.Toplevel):
 
     @staticmethod
     def _make_scrollbar(parent, widget):
-        sb = tk.Scrollbar(parent, orient=tk.VERTICAL, command=widget.yview)
-        sb.configure(bg="#333333", troughcolor="#1a1a1a",
-                     activebackground="#555555", width=10,
-                     borderwidth=0, highlightthickness=0,
-                     elementborderwidth=0)
-        widget.configure(yscrollcommand=sb.set)
-        return sb
+        return theme.scrollbar(parent, widget)
 
     def _set_extract_state(self, enabled):
         self._extract_enabled = enabled
-        self._extract_btn.config(fg=BRIGHT if enabled else MUTED)
+        if enabled:
+            self._extract_btn.enable()
+        else:
+            self._extract_btn.disable()
 
     def _extract_hover(self, entering):
         if not self._extract_enabled:
