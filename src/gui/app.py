@@ -2198,7 +2198,7 @@ class App(tk.Tk):
     def _cmd_use_hashcat(self, args):
         from .dialogs.hashcat import HashcatDialog
         if not args:
-            HashcatDialog(self)
+            HashcatDialog(self, on_hash_added=self._refresh_hash_views)
             return
         if args[0].lower() == "stop":
             if hasattr(self, "_hashcat_engine") and self._hashcat_engine:
@@ -5217,7 +5217,7 @@ class App(tk.Tk):
     def _cmd_add_hash(self, args):
         if not args:
             from .dialogs.hashcat import HashcatDialog
-            HashcatDialog(self, active_tab=2)
+            HashcatDialog(self, active_tab=2, on_hash_added=self._refresh_hash_views)
             return
         if len(args) < 2:
             self.console.body("Usage: add hash <type> <hash>")
@@ -5229,6 +5229,23 @@ class App(tk.Tk):
         from src.machines.credential_db import save_hash_entry
         hid = save_hash_entry(hash_type, args[1], origin="manual")
         self.console.success(f"Hash #{hid} added")
+        self._refresh_hash_views()
+
+    def _refresh_hash_views(self):
+        """Refresh any open hash list/detail views after a hash changed."""
+        try:
+            names = list(self.visualizer.get_view_names())
+        except Exception:
+            names = []
+        for name in names:
+            if name == "hashes" or name.startswith("hash_detail_"):
+                view = self.visualizer.get_view(name)
+                fn = getattr(view, "_refresh_now", None) or getattr(view, "_refresh", None)
+                if callable(fn):
+                    try:
+                        fn()
+                    except Exception:
+                        pass
 
     def _cmd_add_people(self, args):
         if not args:

@@ -94,6 +94,9 @@ class _HashEditDialog(tk.Toplevel):
             setattr(self, f"_{key}_var", var)
             row += 1
 
+        if self._sel_type in self._type_names:
+            self._on_type_select(None)
+
         self._feedback = tk.Label(
             self,             text="", font=fonts.view_font(11),
             fg=SUCCESS, bg="#111111",
@@ -120,17 +123,30 @@ class _HashEditDialog(tk.Toplevel):
 
     def _save(self):
         if not self._sel_type:
+            self._feedback.config(text="Select a hash type.", fg=theme.ERROR)
             return
-        credential_db.delete_hash_entry(self._h["id"])
-        credential_db.save_hash_entry(
+        hval = self._hash_var.get().strip()
+        if not hval:
+            self._feedback.config(text="Hash value is required.", fg=theme.ERROR)
+            return
+        for item in credential_db.load_hashes():
+            if item.get("id") == self._h["id"]:
+                continue
+            if (item.get("type", "") == self._sel_type
+                    and (item.get("hash", "") or "").strip().lower() == hval.lower()):
+                self._feedback.config(
+                    text="Another hash already has this value.", fg=theme.ERROR)
+                return
+        credential_db.update_hash_entry(
+            self._h["id"],
             self._sel_type,
-            self._hash_var.get().strip(),
+            hval,
             self._salt_var.get().strip(),
             self._peper_var.get().strip(),
             self._hascat_mode_var.get().strip(),
             self._origin_obteined_var.get().strip(),
         )
-        self._feedback.config(text="Updated.")
+        self._feedback.config(text="Updated.", fg=SUCCESS)
         self.result = True
         self.after(800, self.destroy)
 
@@ -231,6 +247,10 @@ class HashDetailView(BaseView):
         dialog = _HashEditDialog(self, h)
         if dialog.result:
             self._refresh()
+            top = self.winfo_toplevel()
+            fn = getattr(top, "_refresh_hash_views", None)
+            if callable(fn):
+                fn()
 
     def _refresh(self):
         items = credential_db.load_hashes()

@@ -112,6 +112,14 @@ class HashListView(BaseView):
             self._poll_id = None
         self._items = []
 
+    def _refresh_now(self):
+        """Re-render immediately (used after a hash is added/edited elsewhere)."""
+        if self._poll_id:
+            self.after_cancel(self._poll_id)
+            self._poll_id = None
+        self._last_hash = None
+        self._poll()
+
     def _insert_line(self, item, w_type, w_hash, center_pad):
         hid = item["id"]
         htype = item.get("type", "") or ""
@@ -217,5 +225,5 @@ class HashListView(BaseView):
 
     def _open_add_hash(self):
         from src.gui.dialogs.hashcat import HashcatDialog
-        HashcatDialog(self, active_tab=2)
+        HashcatDialog(self, active_tab=2, on_hash_added=self._refresh_now)
 

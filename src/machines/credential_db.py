@@ -335,6 +335,20 @@ def update_hash_value(hash_id, hash_value):
         pass
 
 
+def update_hash_entry(hash_id, hash_type, hash_value, salt="", peper="",
+                      hascat_mode="", origin=""):
+    _init_db_path()
+    try:
+        with sqlite3.connect(_DB_PATH) as conn:
+            conn.execute(
+                "UPDATE hashes SET type = ?, hash = ?, salt = ?, peper = ?, "
+                "hascat_mode = ?, origin_obteined = ? WHERE id = ?",
+                (hash_type, hash_value, salt, peper, hascat_mode, origin, hash_id),
+            )
+    except (PermissionError, OSError, sqlite3.OperationalError):
+        pass
+
+
 def repair_handshake_hashes():
     """Repair legacy WPA handshake rows.
 

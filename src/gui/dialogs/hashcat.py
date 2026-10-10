@@ -13,14 +13,14 @@ from src.machines import credential_db
 from src.tools.hashcat import HashcatEngine
 from src.elwand_paths import hashcat_db as _hashcat_db
 
-BG = "#111111"
-BG_WIDGET = "#000000"
-FG = "#ffffff"
-FG_DIM = "#888888"
-SEL_BG = "#333333"
-SUCCESS = "#00cc66"
-ERR_COLOR = "#f44747"
-INFO_COLOR = "#5ba3ec"
+BG = theme.BG
+BG_WIDGET = theme.PANEL
+FG = theme.FG
+FG_DIM = theme.MUTED
+SEL_BG = theme.SEL_BG
+SUCCESS = theme.SUCCESS
+ERR_COLOR = theme.ERROR
+INFO_COLOR = theme.INFO
 
 
 def _fmt_int(n):
@@ -296,7 +296,7 @@ class _StatusPanel:
 
 
 class HashcatDialog(tk.Toplevel):
-    def __init__(self, parent, active_tab=0):
+    def __init__(self, parent, active_tab=0, on_hash_added=None):
         super().__init__(parent)
         self._engine = None
         self._cracked = []
@@ -305,6 +305,7 @@ class HashcatDialog(tk.Toplevel):
         self._hw = None
         self._detect_db = None
         self.result = None
+        self._on_hash_added = on_hash_added
         self._ui_q = queue.Queue()
         self._drain_id = None
         self._tick_id = None
@@ -870,20 +871,12 @@ class HashcatDialog(tk.Toplevel):
         type_frame.columnconfigure(0, weight=1)
         type_frame.rowconfigure(0, weight=1)
 
-        self._add_type_list = tk.Listbox(
-            type_frame, bg=BG_WIDGET, fg=FG,
-            selectbackground=SEL_BG, selectforeground=FG,
-            font=fonts.view_font(11), borderwidth=0, highlightthickness=0,
-            activestyle="none", exportselection=False, height=4,
-        )
+        self._add_type_list = theme.listbox(type_frame, height=4)
         self._add_type_list.grid(row=0, column=0, sticky="nsew")
         self._add_type_list.bind("<<ListboxSelect>>", self._add_on_type_select)
 
-        scrollbar = tk.Scrollbar(type_frame, orient=tk.VERTICAL, command=self._add_type_list.yview)
-        scrollbar.configure(bg="#333333", troughcolor="#1a1a1a", activebackground="#555555",
-                            width=10, borderwidth=0, highlightthickness=0, elementborderwidth=0)
+        scrollbar = theme.scrollbar(type_frame, self._add_type_list)
         scrollbar.grid(row=0, column=1, sticky="ns")
-        self._add_type_list.configure(yscrollcommand=scrollbar.set)
 
         self._add_type_names = []
         self._add_type_modes = {}
@@ -929,14 +922,13 @@ class HashcatDialog(tk.Toplevel):
                 fg=FG_DIM, bg=BG,
             ).grid(row=row, column=0, sticky="w", padx=15, pady=(6, 0))
             var = tk.StringVar(value=default)
-            tk.Entry(
-                parent, textvariable=var,
-                bg=BG_WIDGET, fg=FG, insertbackground=FG,
-                font=fonts.view_font(11), borderwidth=1, relief=tk.FLAT,
-                highlightthickness=1, highlightcolor="#333333", highlightbackground="#333333",
-            ).grid(row=row, column=1, sticky="ew", padx=15, pady=(6, 0))
+            theme.entry(parent, textvariable=var).grid(
+                row=row, column=1, sticky="ew", padx=15, pady=(6, 0))
             setattr(self, f"_add_{key}_var", var)
             row += 1
+
+        if self._add_type_names:
+            self._add_on_type_select(None)
 
         self._add_feedback = tk.Label(
             parent, text="", font=fonts.view_font(11),
@@ -948,25 +940,10 @@ class HashcatDialog(tk.Toplevel):
         add_btn_frame = tk.Frame(parent, bg=BG)
         add_btn_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=15, pady=(10, 10))
 
-        close_btn = tk.Label(
-            add_btn_frame, text="  Close  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
-            padx=15, pady=6,
-        )
-        close_btn.pack(side=tk.RIGHT, padx=(5, 0))
-        close_btn.bind("<Button-1>", lambda e: self._on_close())
-        close_btn.bind("<Enter>", lambda e: close_btn.config(bg="#333333"))
-        close_btn.bind("<Leave>", lambda e: close_btn.config(bg="#222222"))
-
-        add_btn = tk.Label(
-            add_btn_frame, text="  Add  ", bg="#222222", fg=FG,
-            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
-            padx=15, pady=6,
-        )
-        add_btn.pack(side=tk.RIGHT)
-        add_btn.bind("<Button-1>", lambda e: self._add_save())
-        add_btn.bind("<Enter>", lambda e: add_btn.config(bg="#333333"))
-        add_btn.bind("<Leave>", lambda e: add_btn.config(bg="#222222"))
+        theme.button(add_btn_frame, "  Close  ", command=self._on_close).pack(
+            side=tk.RIGHT, padx=(5, 0))
+        theme.button(add_btn_frame, "  Add  ", command=self._add_save).pack(
+            side=tk.RIGHT)
 
     def _add_on_type_select(self, event):
         idx = self._add_type_list.curselection()
@@ -983,19 +960,35 @@ class HashcatDialog(tk.Toplevel):
 
     def _add_save(self):
         if not self._add_sel_type:
+            self._add_feedback.config(text="Select a hash type.", fg=ERR_COLOR)
             return
+        hval = self._add_hash_var.get().strip()
+        if not hval:
+            self._add_feedback.config(text="Hash value is required.", fg=ERR_COLOR)
+            return
+        for item in credential_db.load_hashes():
+            if (item.get("type", "") == self._add_sel_type
+                    and (item.get("hash", "") or "").strip().lower() == hval.lower()):
+                self._add_feedback.config(
+                    text="Hash already in inventory.", fg=ERR_COLOR)
+                return
         credential_db.save_hash_entry(
             self._add_sel_type,
-            self._add_hash_var.get().strip(),
+            hval,
             self._add_salt_var.get().strip(),
             self._add_peper_var.get().strip(),
             self._add_hascat_mode_var.get().strip(),
             self._add_origin_obteined_var.get().strip(),
         )
         self.result = True
-        self._add_feedback.config(text="Done.")
-        self.after(800, lambda: self._add_feedback.config(text=""))
+        self._add_feedback.config(text="Done.", fg=SUCCESS)
+        self.after(1500, lambda: self._add_feedback.config(text=""))
         self._refresh_hash_list()
+        if self._on_hash_added:
+            try:
+                self._on_hash_added()
+            except Exception:
+                pass
 
     # ─── Shared Methods ─────────────────────────────────────────
 
