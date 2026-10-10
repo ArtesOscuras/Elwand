@@ -911,6 +911,7 @@ class App(tk.Tk):
         self.console.set_arg2_provider("view", "user", self._autocomplete_user_noall)
         self.console.set_arg2_provider("view", "hash", self._autocomplete_hash_noall)
         self.console.set_arg2_provider("view", "evidence", self._autocomplete_evidence_only)
+        self.console.set_arg2_provider("view", "wifi", self._autocomplete_wifi_networks)
         self.console.set_arg2_provider("view", "people", self._autocomplete_people_noall)
         self.console.set_arg2_provider("view", "dictionary", self._autocomplete_dictionary_noall)
         self.console.set_arg2_provider("view", "rule", self._autocomplete_rules_noall)
@@ -1602,6 +1603,38 @@ class App(tk.Tk):
             results.append((f"{s['ip']}  #{s['id']}", s["ip"]))
         return results
 
+    def _wifi_networks_now(self):
+        """Available WiFi networks (live monitor, else the view's fallback scan)."""
+        nets = []
+        try:
+            from src.tools.scanner import wifi_monitor
+            if wifi_monitor.is_running():
+                nets = list(wifi_monitor.get_networks())
+        except Exception:
+            nets = []
+        if not nets:
+            try:
+                v = self.visualizer.get_view("wifi")
+                nets = list(getattr(v, "_fb_nets", []) or [])
+            except Exception:
+                nets = []
+        return nets
+
+    def _autocomplete_wifi_networks(self, prefix):
+        results = []
+        seen = set()
+        for n in self._wifi_networks_now():
+            ssid = (n.get("ssid") or "").strip() or "(hidden)"
+            bssid = (n.get("bssid") or "").strip()
+            token = bssid or ssid
+            if not token or token in seen:
+                continue
+            seen.add(token)
+            display = f"{ssid}  ({bssid})" if bssid else ssid
+            results.append((display, token))
+        results.sort(key=lambda x: x[0].lower())
+        return results
+
     def _cmd_view(self, args):
         if not args:
             self.console.body("Usage: view <subcommand> or view list")
@@ -1653,7 +1686,12 @@ class App(tk.Tk):
                 self._cmd_view_evidence_name(rest)
             else:
                 self.visualizer.activate_view("evidences")
-        elif sub in ("wifi", "tools", "passwords", "inventory", "process", "services"):
+        elif sub == "wifi":
+            if rest:
+                self._cmd_view_wifi(rest)
+            else:
+                self.visualizer.activate_view("wifi")
+        elif sub in ("tools", "passwords", "inventory", "process", "services"):
             self.visualizer.activate_view(sub)
         elif sub == "dictionary":
             if rest:
@@ -1684,6 +1722,30 @@ class App(tk.Tk):
                 self.visualizer.activate_view("people")
         else:
             self.console.error(f"Unknown view subcommand: {sub}. Use 'view list' to see available views.")
+
+    def _cmd_view_wifi(self, args):
+        target = args[0].strip() if args else ""
+        if not target:
+            return
+        nets = self._wifi_networks_now()
+        tnorm = target.replace(":", "").lower()
+        match = None
+        for n in nets:
+            bssid = n.get("bssid") or ""
+            ssid = n.get("ssid") or ""
+            if bssid and bssid.lower() == target.lower():
+                match = n
+                break
+            if bssid and bssid.replace(":", "").lower() == tnorm:
+                match = n
+                break
+            if ssid and ssid.lower() == target.lower():
+                match = n
+                break
+        if not match:
+            self.console.warning(f"WiFi network not found: {target}")
+            return
+        self._open_wifi_view(match)
 
     def _cmd_view_file(self, args, file_type):
         if not args:
