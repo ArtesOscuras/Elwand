@@ -1375,10 +1375,18 @@ class HashcatDialog(tk.Toplevel):
         parent.rowconfigure(2, weight=0)
         parent.rowconfigure(3, weight=0)
 
+        detect_header = tk.Frame(parent, bg=BG)
+        detect_header.grid(row=0, column=0, sticky="ew", padx=15, pady=(10, 5))
         tk.Label(
-            parent, text="Paste text or load a file to detect hash types",
+            detect_header, text="Paste text or load a file to detect hash types",
             font=fonts.view_font_bold(11), fg=FG, bg=BG,
-        ).grid(row=0, column=0, sticky="w", padx=15, pady=(10, 5))
+        ).pack(anchor="w")
+        tk.Label(
+            detect_header,
+            text="Experimental module. Hash type detection may be inaccurate "
+                 "or incomplete — always verify the suggested mode.",
+            font=fonts.view_font(9), fg=theme.WARN, bg=BG,
+        ).pack(anchor="w", pady=(2, 0))
 
         text_frame = tk.Frame(parent, bg=BG_WIDGET)
         text_frame.grid(row=1, column=0, sticky="nsew", padx=15, pady=(0, 5))
