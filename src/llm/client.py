@@ -214,25 +214,54 @@ class LLMClient:
 
         return self._rate_limit_retry(_call)
 
-    def raw_chat(self, messages, model=None, **kwargs):
-        """Like chat(), but sends `messages` verbatim (no system/mode prefix).
+    def raw_complete(self, messages, model=None, **kwargs):
+        """Return the assistant text for a verbatim (self-contained) prompt.
 
-        Used by helpers (e.g. DICMA related-word expansion) that supply their
-        own self-contained prompt. Keeps the opencode headers + rate-limit
-        retry so it behaves identically to the rest of Elwand.
+        The opencode free tier only serves requests that look like the official
+        client, i.e. they must be **streaming and carry the tool schemas**;
+        `tool_choice="none"` keeps the model from actually calling a tool. Other
+        providers use a plain (non-streaming) request.
         """
         self._ensure_client()
         m = model or self._model
 
-        def _call():
+        if self._provider_id != "opencode":
+            resp = self._rate_limit_retry(
+                lambda: self._client.chat.completions.create(
+                    model=m, messages=messages,
+                    extra_headers=self._opencode_headers(), **kwargs,
+                )
+            )
+            return resp.choices[0].message.content
+
+        from src.llm.tools import TOOLS as _TOOLS
+
+        def _call(use_tool_choice):
+            kw = dict(kwargs)
+            if use_tool_choice:
+                kw["tool_choice"] = "none"
             return self._client.chat.completions.create(
-                model=m,
-                messages=messages,
-                extra_headers=self._opencode_headers(),
-                **kwargs,
+                model=m, messages=messages, tools=_TOOLS, stream=True,
+                extra_headers=self._opencode_headers(), **kw,
             )
 
-        return self._rate_limit_retry(_call)
+        try:
+            stream = self._rate_limit_retry(lambda: _call(True))
+        except RateLimitError:
+            raise
+        except Exception as e:
+            if "tool_choice" not in str(e).lower():
+                raise
+            stream = self._rate_limit_retry(lambda: _call(False))
+
+        parts = []
+        for chunk in stream:
+            if not getattr(chunk, "choices", None):
+                continue
+            delta = chunk.choices[0].delta
+            if delta is not None and delta.content:
+                parts.append(delta.content)
+        return "".join(parts)
 
     def chat_with_tools(self, messages, on_tool=None, model=None, tool_context=None, on_text=None, stop_event=None, on_warning=None, allowed_tools=None, on_flush=None):
         from src.llm.tools import TOOLS as _TOOLS, execute as _execute

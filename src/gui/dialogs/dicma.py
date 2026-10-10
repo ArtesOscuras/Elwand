@@ -12,16 +12,40 @@ SUCCESS = "#00cc66"
 ERR_COLOR = "#f44747"
 
 
+class _LogStream:
+    """File-like object that forwards each written line to a dialog output."""
+
+    def __init__(self, dialog, color="error"):
+        self._dialog = dialog
+        self._color = color
+        self._buf = ""
+
+    def write(self, s):
+        self._buf += s
+        while "\n" in self._buf:
+            line, self._buf = self._buf.split("\n", 1)
+            line = line.rstrip()
+            if not line:
+                continue
+            try:
+                if not self._dialog.winfo_exists():
+                    return
+                self._dialog.after(
+                    0, lambda l=line, c=self._color: self._dialog._log(l, c))
+            except (tk.TclError, RuntimeError):
+                return
+
+    def flush(self):
+        pass
+
+
 class DicmaDialog(tk.Toplevel):
     def __init__(self, parent, active_tab=None):
         super().__init__(parent)
         self.title("DICMA — Dictionary Maker")
-        windowing.size_dialog(self, 760, 720, min_w=650, min_h=650)
         self.configure(bg=BG)
 
         self.transient(parent)
-        self.wait_visibility()
-        self.grab_set()
 
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=0)
@@ -70,6 +94,18 @@ class DicmaDialog(tk.Toplevel):
             self._nb.select(active_tab)
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        windowing.min_size(self, 760, 1)
+        self.update_idletasks()
+        w = windowing.px(760)
+        h = self.winfo_reqheight()
+        sw = self.winfo_screenwidth()
+        sh = self.winfo_screenheight()
+        x = max(0, (sw - w) // 2)
+        y = max(0, (sh - h) // 2 - windowing.px(20))
+        self.geometry(f"{w}x{h}+{x}+{y}")
+        self.wait_visibility()
+        self.grab_set()
 
     def _make_button(self, parent, text):
         return theme.button(parent, text)
@@ -149,8 +185,8 @@ class DicmaDialog(tk.Toplevel):
         self._destroyed = True
         self.destroy()
 
-    def _make_output(self, tab, name, with_progress=False):
-        out = theme.output(tab, height=4)
+    def _make_output(self, tab, name, with_progress=False, height=4):
+        out = theme.output(tab, height=height)
         out.tag_configure("info", foreground=BRIGHT)
         scroll = theme.scrollbar(tab, out)
         self._tab_outputs[name] = out
@@ -166,6 +202,47 @@ class DicmaDialog(tk.Toplevel):
 
     def _on_tab_changed(self, event=None):
         pass
+
+    def _run_captured(self, fn, stdout=None):
+        """Run fn() with stdout/stderr routed to this dialog's Output pane.
+
+        Keeps the DICMA engine from printing to the terminal: engine errors
+        (stderr) and verbose lines (stdout) appear in the Output box instead.
+        `stdout` may be a custom stream (e.g. a progress writer)."""
+        import sys
+        old = (sys.stdout, sys.stderr)
+        sys.stdout = stdout if stdout is not None else _LogStream(self, "muted")
+        sys.stderr = _LogStream(self, "error")
+        try:
+            fn()
+        finally:
+            sys.stdout, sys.stderr = old
+
+    def _resize_to_content(self):
+        """Shrink/grow the window height to fit the current content.
+
+        The notebook is as tall as its tallest tab, so the window ends right
+        where the buttons end. Used after toggling sub-frames that change a
+        tab's height (e.g. the Passwords LLM section)."""
+        if not self.winfo_exists():
+            return
+        self.update_idletasks()
+        self.geometry(f"{windowing.px(760)}x{self.winfo_reqheight()}")
+
+    def _set_progress_visible(self, name, visible):
+        """Show/hide a tab's progress bar + label and resize to fit.
+
+        The progress widgets are hidden when idle so the output box reaches
+        down to the buttons instead of leaving an empty reserved strip."""
+        for w in (self._tab_progress.get(name),
+                  self._tab_progress_labels.get(name)):
+            if w is None:
+                continue
+            if visible:
+                w.grid()
+            else:
+                w.grid_remove()
+        self._resize_to_content()
 
     # ------------------------------------------------------------------ Users
 
@@ -259,10 +336,11 @@ class DicmaDialog(tk.Toplevel):
 
         self._make_label(tab, "Output").grid(
             row=4, column=0, sticky="w", padx=(15, 0), pady=(8, 0))
-        out, out_scroll = self._make_output(tab, "users")
+        out, out_scroll = self._make_output(tab, "users", height=7)
         out.grid(row=5, column=0, columnspan=2, sticky="nsew",
                  padx=15, pady=(4, 15))
         out_scroll.grid(row=5, column=2, sticky="ns")
+        tab.rowconfigure(5, weight=1)
 
     def _browse_output(self, var):
         path = windowing.ask_save_file(
@@ -277,6 +355,16 @@ class DicmaDialog(tk.Toplevel):
     def _get_text_lines(self, widget):
         text = widget.get("1.0", tk.END)
         return [n.strip() for n in text.splitlines() if n.strip()]
+
+    def _get_words(self, widget):
+        """Words from a text box, split on newlines and commas."""
+        text = widget.get("1.0", tk.END)
+        words = []
+        for chunk in text.replace(",", "\n").splitlines():
+            chunk = chunk.strip()
+            if chunk:
+                words.append(chunk)
+        return words
 
     def _set_text_lines(self, widget, lines):
         widget.delete("1.0", tk.END)
@@ -392,7 +480,7 @@ class DicmaDialog(tk.Toplevel):
             borderwidth=0,
             relief=tk.FLAT,
             highlightbackground="#333333", highlightthickness=1,
-            height=6,
+            height=7,
         )
         self._neigh_words_text.grid(row=0, column=0, sticky="nsew")
         self._neigh_words_text.bind("<<Modified>>", lambda e: self._update_total_label())
@@ -440,7 +528,7 @@ class DicmaDialog(tk.Toplevel):
             var.trace_add("write", lambda *a: self._update_total_label())
 
         llm_label = tk.Frame(tab, bg=BG)
-        llm_label.grid(row=4, column=0, columnspan=2, sticky="ew",
+        llm_label.grid(row=5, column=0, columnspan=2, sticky="ew",
                        padx=15, pady=(12, 0))
         tk.Label(
             llm_label, text="LLM provider", fg=MUTED, bg=BG,
@@ -448,21 +536,24 @@ class DicmaDialog(tk.Toplevel):
         ).pack(anchor="w")
 
         llm_frame = tk.Frame(tab, bg=BG)
-        llm_frame.grid(row=5, column=0, columnspan=2, sticky="ew",
+        llm_frame.grid(row=6, column=0, columnspan=2, sticky="ew",
                        padx=15, pady=(4, 0))
         self._neigh_provider_var, self._neigh_model_var = self._make_llm_selector(llm_frame)
 
         self._make_label(tab, "Output").grid(
-            row=8, column=0, sticky="w", padx=(15, 0), pady=(8, 0))
+            row=7, column=0, sticky="w", padx=(15, 0), pady=(8, 0))
         out, out_scroll, prog, prog_label = self._make_output(
-            tab, "neighbours", with_progress=True)
-        out.grid(row=9, column=0, columnspan=2, sticky="nsew",
+            tab, "neighbours", with_progress=True, height=6)
+        out.grid(row=8, column=0, columnspan=2, sticky="nsew",
                  padx=15, pady=(4, 0))
-        out_scroll.grid(row=9, column=2, sticky="ns")
-        prog.grid(row=10, column=0, columnspan=2, sticky="ew",
+        out_scroll.grid(row=8, column=2, sticky="ns")
+        prog.grid(row=9, column=0, columnspan=2, sticky="ew",
                   padx=15, pady=(4, 0))
-        prog_label.grid(row=11, column=0, columnspan=2, sticky="ew",
+        prog_label.grid(row=10, column=0, columnspan=2, sticky="ew",
                         padx=15, pady=(2, 15))
+        prog.grid_remove()
+        prog_label.grid_remove()
+        tab.rowconfigure(8, weight=1)
 
     def _update_total_label(self):
         try:
@@ -689,12 +780,15 @@ class DicmaDialog(tk.Toplevel):
                   padx=15, pady=(4, 0))
         prog_label.grid(row=11, column=0, columnspan=2, sticky="ew",
                         padx=15, pady=(2, 15))
+        prog.grid_remove()
+        prog_label.grid_remove()
 
     def _pass_toggle_llm(self):
         if self._pass_llm_var.get():
             self._pass_llm_frame.grid()
         else:
             self._pass_llm_frame.grid_remove()
+        self._resize_to_content()
 
     def _pass_add_pw(self):
         pw = self._pass_pw_combo.get().strip()
@@ -848,6 +942,8 @@ class DicmaDialog(tk.Toplevel):
         prog_label = self._tab_progress_labels.get(name)
         if prog_label:
             prog_label.config(text="")
+        if prog is not None:
+            self._set_progress_visible(name, False)
 
     def _start_users(self):
         import threading
@@ -880,8 +976,11 @@ class DicmaDialog(tk.Toplevel):
             dicma.OUTPUT_FILE_BULEAN = True
             dicma.VERBOSE = False
             names_str = ", ".join(names)
-            try:
+
+            def _work():
                 dicma.process_input_user(names_str, out_path)
+            try:
+                self._run_captured(_work)
                 self.after(0, lambda: self._log(
                     f"Dictionary saved to: {out_path}", "success"))
             except Exception as e:
@@ -892,7 +991,7 @@ class DicmaDialog(tk.Toplevel):
 
     def _start_neighbours(self):
         import threading
-        words = self._get_text_lines(self._neigh_words_text)
+        words = self._get_words(self._neigh_words_text)
         if not words:
             self._log("No words provided.", "error")
             return
@@ -941,6 +1040,7 @@ class DicmaDialog(tk.Toplevel):
             prog.configure(mode="determinate", maximum=100, value=0)
         if prog_label:
             prog_label.config(text="")
+        self._set_progress_visible("neighbours", True)
 
         if n3 > 0:
             phase_weights = (40, 30, 30)
@@ -1019,6 +1119,9 @@ class DicmaDialog(tk.Toplevel):
                             self._completed += 1
                             self._cur_word_pct = 0.0
                         self._update(line)
+                    else:
+                        self._dialog.after(
+                            0, lambda l=line: self._dialog._log(l, "muted"))
 
             def flush(self):
                 pass
@@ -1026,25 +1129,23 @@ class DicmaDialog(tk.Toplevel):
         log_writer = _ProgressWriter(self, len(words), phase_weights, prog, prog_label)
 
         def _run():
-            import sys
-            try:
+            def _work():
                 from src.llm.client import LLMClient
                 from src.llm.config import load as _llm_load
                 from src.tools.dicma import engine as dicma
                 client = LLMClient(config=_llm_load(), provider_id=provider_id)
-                complete = lambda m, **kw: client.raw_chat(
-                    m, model=model, **kw).choices[0].message.content
-                old_stdout = sys.stdout
-                sys.stdout = log_writer
-                try:
-                    expanded = dicma.ml_expand_words(complete, words, n1, n2, n3)
-                finally:
-                    sys.stdout = old_stdout
-                result = [w for w in expanded if w not in set(words)]
+                complete = lambda m, **kw: client.raw_complete(
+                    m, model=model, **kw)
+                dicma.RAISE_ON_ERROR = True
+                dicma.VERBOSE = True
+                expanded = dicma.ml_expand_words(complete, words, n1, n2, n3)
+                result = dicma.merge_with_inputs(expanded, words)
                 dicma.save_list_to_file(result, out_path)
                 self.after(0, lambda: self._log(
-                    f"Found {len(result)} related words. Saved to: {out_path}",
-                    "success"))
+                    f"Saved {len(result)} words ({len(words)} seed words first) "
+                    f"to: {out_path}", "success"))
+            try:
+                self._run_captured(_work, stdout=log_writer)
             except Exception as e:
                 self.after(0, lambda e=e: self._log(f"Error: {e}", "error"))
             self.after(0, lambda: self.winfo_exists() and self._on_done("neighbours"))
@@ -1053,7 +1154,7 @@ class DicmaDialog(tk.Toplevel):
 
     def _start_passwords(self):
         import threading
-        words = self._get_text_lines(self._pass_words_text)
+        words = self._get_words(self._pass_words_text)
         if not words:
             self._log("No words provided.", "error")
             return
@@ -1082,6 +1183,7 @@ class DicmaDialog(tk.Toplevel):
             prog.configure(mode="determinate", maximum=100, value=0)
         if prog_label:
             prog_label.config(text="")
+        self._set_progress_visible("passwords", True)
 
         self._log(f"Generating passwords from {len(words)} word(s)...", "info")
         self._log(f"  Output: {out_path}", "info")
@@ -1102,11 +1204,14 @@ class DicmaDialog(tk.Toplevel):
                 dicma.OUTPUT_FILE_BULEAN = True
                 dicma.VERBOSE = False
                 dicma._NO_MULTIPROC = True
-                try:
+
+                def _work():
                     if dict_path:
                         dicma.extract_patterns(dict_path)
                     self.after(0, lambda: self._update_progress("passwords", 50, "Passworifying..."))
                     dicma.process_passwd(words, out_path)
+                try:
+                    self._run_captured(_work)
                     self.after(0, lambda: self._log(
                         f"Dictionary saved to: {out_path}", "success"))
                 except Exception as e:
@@ -1202,6 +1307,9 @@ class DicmaDialog(tk.Toplevel):
                             self._completed += 1
                             self._cur_word_pct = 0.0
                         self._update(line)
+                    else:
+                        self._dialog.after(
+                            0, lambda l=line: self._dialog._log(l, "muted"))
 
             def flush(self):
                 pass
@@ -1209,21 +1317,17 @@ class DicmaDialog(tk.Toplevel):
         log_writer = _PassProgressWriter(self, len(words), phase_weights, prog, prog_label)
 
         def _run():
-            import sys
-            try:
+            def _work():
                 from src.llm.client import LLMClient
                 from src.llm.config import load as _llm_load
                 from src.tools.dicma import engine as dicma
                 client = LLMClient(config=_llm_load(), provider_id=provider_id)
-                complete = lambda m, **kw: client.raw_chat(
-                    m, model=model, **kw).choices[0].message.content
-                old_stdout = sys.stdout
-                sys.stdout = log_writer
-                try:
-                    expanded = dicma.ml_expand_words(complete, words, n1, n2, n3)
-                finally:
-                    sys.stdout = old_stdout
-                all_words = list(expanded)
+                complete = lambda m, **kw: client.raw_complete(
+                    m, model=model, **kw)
+                dicma.RAISE_ON_ERROR = True
+                dicma.VERBOSE = True
+                expanded = dicma.ml_expand_words(complete, words, n1, n2, n3)
+                all_words = dicma.merge_with_inputs(expanded, words)
                 self.after(0, lambda: self._log(
                     f"LLM expanded to {len(all_words)} words. Passworifying...", "info"))
                 self.after(0, lambda: self._update_progress(
@@ -1238,6 +1342,8 @@ class DicmaDialog(tk.Toplevel):
                 dicma.process_passwd(all_words, out_path)
                 self.after(0, lambda: self._log(
                     f"Dictionary saved to: {out_path}", "success"))
+            try:
+                self._run_captured(_work, stdout=log_writer)
             except Exception as e:
                 self.after(0, lambda e=e: self._log(f"Error: {e}", "error"))
             self.after(0, lambda: self.winfo_exists() and self._on_done("passwords"))
@@ -1304,7 +1410,9 @@ class DicmaDialog(tk.Toplevel):
 
         def _run():
             from src.tools.dicma import engine as dicma
-            try:
+            dicma.VERBOSE = False
+
+            def _work():
                 if dict_path:
                     self.after(0, lambda: self._log(
                         "Extracting patterns from dictionary...", "info"))
@@ -1320,6 +1428,8 @@ class DicmaDialog(tk.Toplevel):
                 dicma.save_list_to_file(rules, out_path)
                 self.after(0, lambda: self._log(
                     f"{len(rules)} rules saved to: {out_path}", "success"))
+            try:
+                self._run_captured(_work)
             except Exception as e:
                 self.after(0, lambda e=e: self._log(f"Error: {e}", "error"))
             self.after(0, lambda: self.winfo_exists() and self._on_done("rules"))

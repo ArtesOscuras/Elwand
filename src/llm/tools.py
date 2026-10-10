@@ -2429,12 +2429,16 @@ def _dicma_find_related(args, ctx=None):
         return "No active LLM config. Configure in Settings → Models."
     from src.llm.client import LLMClient
     client = LLMClient(config=config)
-    complete = lambda messages, **kw: client.raw_chat(
-        messages, model=model, **kw).choices[0].message.content
+    complete = lambda messages, **kw: client.raw_complete(
+        messages, model=model, **kw)
+    dicma.RAISE_ON_ERROR = True
+    dicma.VERBOSE = False
     expanded = dicma.ml_expand_words(complete, words, n1, n2, n3)
-    result = [w for w in expanded if w not in set(words)]
+    result = dicma.merge_with_inputs(expanded, words)
+    if not result:
+        return "No related words were generated (the LLM request failed)."
     dicma.save_list_to_file(result, out_path)
-    return (f"Found {len(result)} related words from {len(words)} seed(s). "
+    return (f"Found {len(result)} words (seed words first) from {len(words)} seed(s). "
             f"Saved to {out_path}")
 
 

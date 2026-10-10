@@ -42,6 +42,9 @@ VERBOSE = True
 OUTPUT_FILE_BULEAN = False
 MASSIVE_MODE = False
 _NO_MULTIPROC = False
+# When True, API errors are raised as exceptions instead of calling sys.exit()
+# (used by Elwand so the GUI/console can surface the error and abort cleanly).
+RAISE_ON_ERROR = False
 
 # LLM neighbour expansion
 
@@ -549,6 +552,11 @@ def _parse_words_batch(raw, input_words):
 
 
 def _handle_api_error(e):
+    # Let the caller re-raise the original exception (Elwand surfaces it in the
+    # GUI/console instead of killing the worker thread with sys.exit).
+    if RAISE_ON_ERROR:
+        return
+
     msg = str(e).lower()
     body = getattr(e, "body", None) or {}
 
@@ -602,9 +610,9 @@ def _json_format_unsupported(e):
 def _call_api(complete, word, n):
     """Call the LLM through `complete(messages, **kwargs) -> str`.
 
-    `complete` is supplied by the caller (usually Elwand's LLMClient.raw_chat)
-    so the request uses the active/selected provider with the same client
-    identity and retries as the rest of Elwand.
+    `complete` is supplied by the caller (usually Elwand's
+    LLMClient.raw_complete) so the request uses the active/selected provider
+    with the same client identity and retries as the rest of Elwand.
     """
     messages = [{
         "role": "user",
@@ -738,6 +746,8 @@ def ml_expand_words(complete, input_words, n1, n2, n3):
                 if cleaned and cleaned not in seen:
                     seen.add(cleaned)
         except Exception as exc:
+            if RAISE_ON_ERROR:
+                raise
             print(f"Error L1 '{word}': {exc}", file=sys.stderr)
 
     if n2 <= 0:
@@ -758,6 +768,8 @@ def ml_expand_words(complete, input_words, n1, n2, n3):
         try:
             batch_result = _call_api_batch(complete, group, n2)
         except Exception as exc:
+            if RAISE_ON_ERROR:
+                raise
             print(f"Error L2 batch: {exc}", file=sys.stderr)
             continue
         new_in_batch = 0
@@ -789,6 +801,8 @@ def ml_expand_words(complete, input_words, n1, n2, n3):
         try:
             batch_result = _call_api_batch(complete, group, n3)
         except Exception as exc:
+            if RAISE_ON_ERROR:
+                raise
             print(f"Error L3 batch: {exc}", file=sys.stderr)
             continue
         new_in_batch = 0
@@ -807,6 +821,21 @@ def ml_expand_words(complete, input_words, n1, n2, n3):
     verbose_print(f"[+] L3 done — {l3_new} new words")
 
     return seen
+
+
+def merge_with_inputs(expanded, input_words):
+    """Final dictionary order: the input words first, then the expanded ones.
+
+    `expanded` is the set returned by ml_expand_words (which already contains
+    the input words); this reorders it so the seeds come first and dedupes.
+    """
+    out = []
+    seen = set()
+    for w in list(input_words) + list(expanded):
+        if w and w not in seen:
+            seen.add(w)
+            out.append(w)
+    return out
 
 def worker_generate(word, FULL_MODE, LIGHT_MODE, queue, batch_size=200):
     try:

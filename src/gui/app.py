@@ -2524,13 +2524,24 @@ class App(tk.Tk):
                 "No LLM config found. Configure in Settings → Models."))
             return
         client = LLMClient(config=config)
-        complete = lambda messages, **kw: client.raw_chat(
-            messages, model=model, **kw).choices[0].message.content
-        expanded = dicma.ml_expand_words(complete, words, n1, n2, n3)
-        result = [w for w in expanded if w not in set(words)]
-        dicma.save_list_to_file(result, out_path)
-        self.console.after(0, lambda: self.console.success(
-            f"Related words ({len(result)}) saved to: {out_path}"))
+        complete = lambda messages, **kw: client.raw_complete(
+            messages, model=model, **kw)
+        dicma.RAISE_ON_ERROR = True
+        dicma.VERBOSE = False
+        try:
+            expanded = dicma.ml_expand_words(complete, words, n1, n2, n3)
+        except Exception as e:
+            self.console.after(0, lambda e=e: self.console.error(
+                f"DICMA related words failed: {e}"))
+            return
+        result = dicma.merge_with_inputs(expanded, words)
+        if result:
+            dicma.save_list_to_file(result, out_path)
+            self.console.after(0, lambda: self.console.success(
+                f"Related words ({len(result)}) saved to: {out_path}"))
+        else:
+            self.console.after(0, lambda: self.console.error(
+                "No related words were generated."))
 
     def _run_dicma_passwords(self, words, out_file, light=False, full=False):
         from src.elwand_paths import lst_dir
