@@ -688,10 +688,67 @@ class App(tk.Tk):
             self.console.info(
                 f"Session restored ({len(self._llm_messages)} messages)")
 
+        self._bind_global_shortcuts()
+
+    def _bind_global_shortcuts(self):
+        """App-wide keyboard shortcuts, registered in a single place.
+
+        Control on Linux/Windows and Command on macOS are both bound so the
+        same behaviour works on every platform.
+        """
+        # Focus the console / toggle fullscreen.
         self.bind_all("<Control-f>", self._toggle_focus)
-        self.bind_all("<Command-f>",  self._toggle_focus)
+        self.bind_all("<Command-f>", self._toggle_focus)
         self.bind_all("<F11>", self._toggle_fullscreen)
         self.bind_all("<Command-Control-f>", self._toggle_fullscreen)
+        # Close the current dialog (no-op when none is open).
+        self.bind_all("<Control-w>", self._close_active_dialog)
+        self.bind_all("<Command-w>", self._close_active_dialog)
+        # Quit the whole application.
+        self.bind_all("<Control-q>", self._quit_app)
+        self.bind_all("<Command-q>", self._quit_app)
+
+    def _active_dialog_toplevel(self):
+        """The open dialog Toplevel (not the main window), or None."""
+        try:
+            grab = self.grab_current()
+        except Exception:
+            grab = None
+        if grab is not None:
+            top = grab.winfo_toplevel()
+            if top is not self:
+                return top
+        focused = self.focus_get()
+        if focused is not None:
+            top = focused.winfo_toplevel()
+            if top is not self:
+                return top
+        return None
+
+    def _close_active_dialog(self, event=None):
+        """Close the topmost dialog by invoking its WM_DELETE_WINDOW handler."""
+        top = self._active_dialog_toplevel()
+        if top is None:
+            return "break"
+        try:
+            handler = top.protocol("WM_DELETE_WINDOW")
+        except Exception:
+            handler = ""
+        try:
+            if handler:
+                top.tk.call(handler)
+            else:
+                top.destroy()
+        except Exception:
+            try:
+                top.destroy()
+            except Exception:
+                pass
+        return "break"
+
+    def _quit_app(self, event=None):
+        self._on_close()
+        return "break"
 
     def _run_init_checks(self):
         from .dialogs.init_dialog import InitDialog

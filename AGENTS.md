@@ -73,6 +73,21 @@ Dialog sizing is handled by the central `windowing` module (see "Modal Dialogs a
 
 ---
 
+### Keyboard Shortcuts
+
+App-wide shortcuts are registered in **one place**: `App._bind_global_shortcuts()` (called from `App.__init__`), using `bind_all` so they fire regardless of which widget (or dialog) has focus. Every shortcut binds **both** `<Control-...>` (Linux/Windows) and `<Command-...>` (macOS) so the same behaviour works everywhere.
+
+| Shortcut | Action |
+|---|---|
+| `Ctrl/Command+F` | Focus the console input |
+| `F11` / `Cmd+Ctrl+F` (macOS) | Toggle fullscreen |
+| `Ctrl/Command+W` | Close the topmost dialog (`_close_active_dialog`) — no-op if none is open |
+| `Ctrl/Command+Q` | Quit the whole application (`_quit_app` → `_on_close`) |
+
+`_close_active_dialog` finds the open dialog via `grab_current()` (falling back to the focused widget's toplevel) and closes it by **invoking its `WM_DELETE_WINDOW` protocol handler** (so per-dialog cleanup runs), falling back to `destroy()` when none is set. When adding a new global shortcut, add it to `_bind_global_shortcuts()` (not scattered `bind` calls) and bind both `Control` and `Command`.
+
+---
+
 ### Mouse and Clickable Elements
 
 Elwand uses a **hover-only** interaction model. The mouse cursor never changes (`cursor` is always the system default, never `"hand2"`). Clickability is communicated through visual hover effects:
