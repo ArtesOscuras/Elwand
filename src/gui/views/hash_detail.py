@@ -94,9 +94,6 @@ class _HashEditDialog(tk.Toplevel):
             setattr(self, f"_{key}_var", var)
             row += 1
 
-        if self._sel_type in self._type_names:
-            self._on_type_select(None)
-
         self._feedback = tk.Label(
             self,             text="", font=fonts.view_font(11),
             fg=SUCCESS, bg="#111111",

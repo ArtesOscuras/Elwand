@@ -757,7 +757,7 @@ class HashcatDialog(tk.Toplevel):
         self._mask_hash_listbox.delete(0, tk.END)
         for item in items:
             htype = item.get("type", "")
-            mode = self._modes_by_type.get(htype, item.get("hascat_mode", ""))
+            mode = self._hash_mode(item)
             mode_str = f"  [{mode}] " if mode else "  "
             label = f"{mode_str}{htype:<30} {item.get('hash', '')[:30]}"
             self._mask_hash_listbox.insert(tk.END, label)
@@ -771,7 +771,7 @@ class HashcatDialog(tk.Toplevel):
             return
         item = items[sel[0]]
         htype = item.get("type", "")
-        mode = self._modes_by_type.get(htype, item.get("hascat_mode", ""))
+        mode = self._hash_mode(item)
         self._mode_var.set(mode or "")
         self._hash_val_var.set(item.get("hash", ""))
         self._type_label_var.set(htype)
@@ -1012,7 +1012,7 @@ class HashcatDialog(tk.Toplevel):
                 'SELECT "Hash-Name", "Hash-Mode" FROM DefaultMode'
             ).fetchall()
             for name, mode in rows:
-                self._modes_by_type[name] = str(mode)
+                self._modes_by_type[name] = "" if mode == -1 else str(mode)
             conn.close()
         except Exception:
             pass
@@ -1020,7 +1020,7 @@ class HashcatDialog(tk.Toplevel):
         for item in items:
             self._hash_items.append(item)
             htype = item.get("type", "")
-            mode = self._modes_by_type.get(htype, item.get("hascat_mode", ""))
+            mode = self._hash_mode(item)
             mode_str = f"  [{mode}] " if mode else "  "
             label = f"{mode_str}{htype:<30} {item.get('hash', '')[:30]}"
             self._hash_listbox.insert(tk.END, label)
@@ -1028,13 +1028,21 @@ class HashcatDialog(tk.Toplevel):
             self._hash_listbox.selection_set(0)
             self._on_hash_select()
 
+    def _hash_mode(self, item):
+        """The hashcat mode to use: the stored one wins, else the type's."""
+        stored = (item.get("hascat_mode") or "").strip()
+        if stored and stored != "-1":
+            return stored
+        db_mode = (self._modes_by_type.get(item.get("type", ""), "") or "").strip()
+        return "" if db_mode == "-1" else db_mode
+
     def _on_hash_select(self, event=None):
         sel = self._hash_listbox.curselection()
         if not sel or sel[0] >= len(self._hash_items):
             return
         item = self._hash_items[sel[0]]
         htype = item.get("type", "")
-        mode = self._modes_by_type.get(htype, item.get("hascat_mode", ""))
+        mode = self._hash_mode(item)
         self._mode_var.set(mode or "")
         self._hash_val_var.set(item.get("hash", ""))
         self._type_label_var.set(htype)
