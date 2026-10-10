@@ -1,7 +1,7 @@
 import time
 import tkinter as tk
 
-from src.gui import fonts
+from src.gui import fonts, theme
 from .base import BaseView
 from src.tools.scanner import wifi_monitor
 
@@ -72,25 +72,17 @@ class WifiDetailView(BaseView):
         inner = tk.Frame(btn_frame, bg="#000000")
         inner.pack(anchor="center")
 
-        self._lock_btn = tk.Label(
-            inner, text="  Lock channel  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
-            padx=15, pady=6,
-        )
+        self._lock_btn = theme.button(inner, "  Lock channel  ",
+                                      command=self._toggle_lock)
         self._lock_btn.pack(side=tk.LEFT, padx=(0, 10))
-        self._lock_btn.bind("<Button-1>", lambda e: self._toggle_lock())
-        self._lock_btn.bind("<Enter>", lambda e: self._lock_btn.config(bg="#333333"))
-        self._lock_btn.bind("<Leave>", lambda e: self._lock_btn.config(bg="#222222"))
 
-        back_btn = tk.Label(
-            inner, text="  \u2190 Back  ", bg="#222222", fg=BRIGHT,
-            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
-            padx=15, pady=6,
-        )
+        op_btn = theme.button(inner, "  Wifi operator  ",
+                              command=self._open_wifi_operator)
+        op_btn.pack(side=tk.LEFT, padx=(0, 10))
+
+        back_btn = theme.button(inner, "  \u2190 Back  ",
+                                command=lambda: self._on_back_click and self._on_back_click())
         back_btn.pack(side=tk.LEFT)
-        back_btn.bind("<Button-1>", lambda e: self._on_back_click and self._on_back_click())
-        back_btn.bind("<Enter>", lambda e: back_btn.config(bg="#333333"))
-        back_btn.bind("<Leave>", lambda e: back_btn.config(bg="#222222"))
 
         self._poll_id = None
 
@@ -105,6 +97,12 @@ class WifiDetailView(BaseView):
     def _on_title_click(self, event):
         if self._on_back_click:
             self._on_back_click()
+
+    def _open_wifi_operator(self):
+        top = self.winfo_toplevel()
+        fn = getattr(top, "_cmd_use_wifioperator", None)
+        if callable(fn):
+            fn([])
 
     def _toggle_lock(self):
         chan = self._network.get("chan")
