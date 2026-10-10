@@ -2267,9 +2267,14 @@ class App(tk.Tk):
         def status_text(st):
             parts = [f"hashcat: {st['state'].capitalize()}"]
             cur, end = st["progress"]
-            if end > 0:
-                pct = int(cur * 100 / end)
-                parts.append(f"{_fmt_int(cur)}/{_fmt_int(end)} ({pct}%)")
+            rejected = st.get("rejected", 0) or 0
+            hashed = max(0, cur - rejected)
+            usable = end - rejected
+            if usable > 0:
+                pct = int(hashed * 100 / usable)
+                parts.append(f"{_fmt_int(hashed)}/{_fmt_int(usable)} ({pct}%)")
+            if rejected:
+                parts.append(f"rejected {_fmt_int(rejected)}")
             if st["speed"]:
                 parts.append(_fmt_speed(st["speed"]))
             if st["eta"]:

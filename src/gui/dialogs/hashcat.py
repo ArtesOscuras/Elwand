@@ -12,7 +12,7 @@ from tkinter import ttk
 from src.gui import fonts, windowing, theme
 from src.machines import credential_db
 from src.tools.hashcat import HashcatEngine
-from src.tools.hashcat.engine import build_command, format_command
+from src.tools.hashcat.engine import build_command, format_command, count_lines
 from src.elwand_paths import hashcat_db as _hashcat_db
 
 BG = theme.BG
@@ -23,6 +23,14 @@ SEL_BG = theme.SEL_BG
 SUCCESS = theme.SUCCESS
 ERR_COLOR = theme.ERROR
 INFO_COLOR = theme.INFO
+
+# -S (slow-candidates) heuristic: hashcat under-uses the device when the
+# wordlist ("base loop") is small; -S moves candidate generation to the host.
+# Recommended when the ruleset is large and the wordlist is small relative to
+# the GPU's compute units.
+_S_MCU_FACTOR = 1024
+_S_RULES_MIN = 1000
+_S_WORK_MIN = 1_000_000
 
 
 def _fmt_int(n):
@@ -66,24 +74,26 @@ class _StatusPanel:
         self._state = "idle"
         self._last_end = 0
         self._indeterminate = False
+        self._device_part = ""
+        self._timing_part = ""
+
+        # Header (also shows the live state) — replaces a separate "Status"
+        # heading, so it costs no extra line.
+        self.info = tk.Label(parent, text="Status: Ready",
+                             font=fonts.view_font(10), fg=FG, bg=BG,
+                             anchor="w", justify=tk.LEFT)
+        self.info.grid(row=row, column=0, columnspan=2, sticky="ew",
+                       padx=15, pady=(6, 2))
+        row += 1
 
         self.progress_var = tk.IntVar(value=0)
         self.bar = ttk.Progressbar(parent, variable=self.progress_var,
                                    maximum=100)
         self.bar.grid(row=row, column=0, columnspan=2, sticky="ew",
-                      padx=15, pady=(6, 2))
+                      padx=15, pady=(0, 2))
         row += 1
 
-        self.info = tk.Label(parent, text="Ready", font=fonts.view_font(10),
-                             fg=FG, bg=BG, anchor="w", justify=tk.LEFT)
-        self.info.grid(row=row, column=0, columnspan=2, sticky="ew", padx=15)
-        row += 1
-
-        self.timing = tk.Label(parent, text="", font=fonts.view_font(9),
-                               fg=FG_DIM, bg=BG, anchor="w")
-        self.timing.grid(row=row, column=0, columnspan=2, sticky="ew", padx=15)
-        row += 1
-
+        # Device + Elapsed/ETA share a single line.
         self.device = tk.Label(parent, text="", font=fonts.view_font(9),
                                fg=FG_DIM, bg=BG, anchor="w")
         self.device.grid(row=row, column=0, columnspan=2, sticky="ew",
@@ -109,7 +119,8 @@ class _StatusPanel:
         out_sb.grid(row=0, column=1, sticky="ns")
         self.output.configure(yscrollcommand=out_sb.set)
         for tag, col in (("success", SUCCESS), ("error", ERR_COLOR),
-                         ("info", INFO_COLOR), ("muted", FG_DIM)):
+                         ("info", INFO_COLOR), ("muted", FG_DIM),
+                         ("warn", theme.WARN)):
             self.output.tag_configure(tag, foreground=col)
         row += 1
 
@@ -118,8 +129,9 @@ class _StatusPanel:
     def reset(self):
         self._set_indeterminate(False)
         self.progress_var.set(0)
-        self.info.config(text="Ready")
-        self.timing.config(text="")
+        self.info.config(text="Status: Ready")
+        self._device_part = ""
+        self._timing_part = ""
         self.device.config(text="")
         self._started_at = None
         self._est_end = None
@@ -181,13 +193,25 @@ class _StatusPanel:
         if self._state in ("running", "cracked", "exhausted"):
             self._set_indeterminate(False)
         cur, end = st["progress"]
+        rejected = st.get("rejected", 0) or 0
         rec = st["recovered"]
         self._last_end = end
         parts = [f"Status: {st['state'].capitalize()}"]
-        if end > 0:
-            pct = int(cur * 100 / end)
+        # hashcat counts REJECTED candidates (e.g. too short/long for the hash)
+        # as "progress". With a tiny wordlist + huge ruleset that makes the bar
+        # jump at startup (the rejects are booked almost instantly). Base the
+        # percentage on the actually-hashed candidates instead.
+        hashed = max(0, cur - rejected)
+        usable = end - rejected
+        if usable > 0:
+            pct = int(hashed * 100 / usable)
             self.progress_var.set(max(0, min(100, pct)))
-            parts.append(f"{_fmt_int(cur)} / {_fmt_int(end)} ({pct}%)")
+            parts.append(f"{_fmt_int(hashed)} / {_fmt_int(usable)} ({pct}%)")
+        elif end > 0:
+            self.progress_var.set(100)
+            parts.append("100%")
+        if rejected:
+            parts.append(f"rejected {_fmt_int(rejected)}")
         if st["speed"]:
             parts.append(_fmt_speed(st["speed"]))
         if rec[1]:
@@ -201,7 +225,9 @@ class _StatusPanel:
                 dev.append(f"Util {d['util']}%")
             if d.get("temp", -1) > 0:
                 dev.append(f"Temp {d['temp']}C")
-            self.device.config(text="    ".join(dev))
+            self._device_part = "    ".join(dev)
+        else:
+            self._device_part = ""
 
         if st["elapsed"]:
             self._started_at = time.time() - st["elapsed"]
@@ -223,16 +249,22 @@ class _StatusPanel:
         self.tick()
 
     def tick(self):
-        if (self._state not in ("starting", "preparing", "running", "paused")
-                or not self._started_at):
-            return
-        now = time.time()
-        parts = [f"Elapsed {_fmt_hms(now - self._started_at)}"]
-        if self._est_end and self._est_end > now:
-            parts.append(f"ETA ~{_fmt_hms(self._est_end - now)}")
-        elif self._state == "running":
-            parts.append("ETA computing\u2026")
-        self.timing.config(text="    ".join(parts))
+        if (self._state in ("starting", "preparing", "running", "paused")
+                and self._started_at):
+            now = time.time()
+            parts = [f"Elapsed {_fmt_hms(now - self._started_at)}"]
+            if self._est_end and self._est_end > now:
+                parts.append(f"ETA ~{_fmt_hms(self._est_end - now)}")
+            elif self._state == "running":
+                parts.append("ETA computing\u2026")
+            self._timing_part = "    ".join(parts)
+        else:
+            self._timing_part = ""
+        self._update_device_line()
+
+    def _update_device_line(self):
+        parts = [p for p in (self._device_part, self._timing_part) if p]
+        self.device.config(text="    ".join(parts))
 
     def cracked(self, plain):
         self.log(f"[+] Cracked: {plain}  (saved to inventory)", "success")
@@ -240,7 +272,8 @@ class _StatusPanel:
     def finish(self, cracked_list, failed=False):
         self._est_end = None
         self._set_indeterminate(False)
-        self.timing.config(text="")
+        self._timing_part = ""
+        self._update_device_line()
         if failed:
             self.info.config(text="Status: Failed")
             self.log("[!] Hashcat failed \u2014 see the output above.",
@@ -268,6 +301,8 @@ class HashcatDialog(tk.Toplevel):
         self._hash_items = []
         self._modes_by_type = {}
         self._hw = None
+        self._mcu = 0
+        self._slow_recommended = False
         self._detect_db = None
         self.result = None
         self._on_hash_added = on_hash_added
@@ -444,6 +479,12 @@ class HashcatDialog(tk.Toplevel):
                                           font=fonts.view_font(9), anchor="w")
         self._rules_path_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
 
+        self._slow_var = tk.BooleanVar(value=False)
+        self._slow_toggle = theme.Toggle(
+            rules_frame, "-S", variable=self._slow_var,
+            command=self._on_slow_toggle, padx=10, pady=4)
+        self._slow_toggle.pack(side=tk.LEFT, padx=(0, 6))
+
         rules_browse_btn = tk.Label(rules_frame, text="  Browse...  ", bg="#222222", fg=FG,
                                     font=fonts.view_font(10), relief=tk.FLAT, bd=0, padx=10, pady=4)
         rules_browse_btn.pack(side=tk.LEFT)
@@ -503,12 +544,7 @@ class HashcatDialog(tk.Toplevel):
             var.trace_add("write", lambda *a: self._update_cmd_preview())
         self._update_cmd_preview()
 
-        tk.Label(
-            parent, text="Status", font=fonts.view_font_bold(11),
-            fg=FG, bg=BG,
-        ).grid(row=row, column=0, columnspan=2, sticky="w", padx=15, pady=(6, 0))
-
-        self._panel = _StatusPanel(parent, row + 1)
+        self._panel = _StatusPanel(parent, row)
         row = self._panel.end_row
 
         btn_frame = tk.Frame(parent, bg=BG)
@@ -767,12 +803,7 @@ class HashcatDialog(tk.Toplevel):
             var.trace_add("write", lambda *a: self._update_mask_cmd_preview())
         self._update_mask_cmd_preview()
 
-        tk.Label(
-            parent, text="Status", font=fonts.view_font_bold(11),
-            fg=FG, bg=BG,
-        ).grid(row=row, column=0, columnspan=2, sticky="w", padx=15, pady=(6, 0))
-
-        self._mask_panel = _StatusPanel(parent, row + 1)
+        self._mask_panel = _StatusPanel(parent, row)
         row = self._mask_panel.end_row
 
         mask_btn_frame = tk.Frame(parent, bg=BG)
@@ -1113,6 +1144,7 @@ class HashcatDialog(tk.Toplevel):
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
         if f:
             self._wl_var.set(f)
+            self._evaluate_slow()
 
     def _browse_rules(self):
         from src.elwand_paths import rules_dir
@@ -1122,6 +1154,34 @@ class HashcatDialog(tk.Toplevel):
             filetypes=[("Rule files", "*.rule"), ("All files", "*.*")])
         if f:
             self._rules_var.set(f)
+            self._evaluate_slow()
+
+    def _evaluate_slow(self):
+        """Decide -S from the wordlist/rules lengths (+ GPU compute units)."""
+        recommended = False
+        wl = self._wl_var.get().strip()
+        rules = self._rules_var.get().strip()
+        if wl and rules and os.path.isfile(wl) and os.path.isfile(rules):
+            w = count_lines(wl)
+            r = count_lines(rules)
+            if (w > 0 and r >= _S_RULES_MIN
+                    and w * r >= _S_WORK_MIN
+                    and self._mcu > 0 and w < self._mcu * _S_MCU_FACTOR):
+                recommended = True
+        self._slow_recommended = recommended
+        if recommended:
+            self._slow_var.set(True)
+            if getattr(self, "_slow_toggle", None):
+                self._slow_toggle.refresh()
+        self._update_cmd_preview()
+
+    def _on_slow_toggle(self):
+        self._update_cmd_preview()
+        if not self._slow_var.get() and self._slow_recommended:
+            self._panel.log(
+                "[!] The -S option is recommended here (small wordlist, "
+                "large ruleset). Enable it for a much faster attack.",
+                "warn")
 
     def _detect_hardware(self):
         threading.Thread(target=self._run_hw_detect, daemon=True).start()
@@ -1137,6 +1197,7 @@ class HashcatDialog(tk.Toplevel):
         if not self.winfo_exists():
             return
         self._hw = hw
+        self._mcu = hw.get("mcu", 0)
         self._hw_label.destroy()
 
         has_cpu = hw.get("cpu", True)
@@ -1156,6 +1217,9 @@ class HashcatDialog(tk.Toplevel):
         if hasattr(self, "_mask_hw_placeholder"):
             self._build_mask_hw_buttons(hw)
 
+        # Now that the GPU compute units are known, re-check -S.
+        self._evaluate_slow()
+
     def _update_cmd_preview(self):
         if not getattr(self, "_cmd_text", None):
             return
@@ -1168,7 +1232,8 @@ class HashcatDialog(tk.Toplevel):
             backend = None
         cmd = build_command(mode, hash_val, wordlist=wl, rules_file=rules,
                             backend=backend, binary="hashcat",
-                            outfile="<TMP>", status_json=True)
+                            outfile="<TMP>", status_json=True,
+                            slow_candidates=self._slow_var.get())
         try:
             self._cmd_text.delete("1.0", tk.END)
             self._cmd_text.insert("1.0", format_command(cmd))

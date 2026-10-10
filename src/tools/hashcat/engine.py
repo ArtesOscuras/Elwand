@@ -14,6 +14,9 @@ from src import process_registry
 
 _PROGRESS_RE = re.compile(r"Progress\.+:\s+(\d+)/(\d+)")
 _RECOVERED_RE = re.compile(r"Recovered\.+:\s+(\d+)/(\d+).*?Digests")
+_REJECTED_RE = re.compile(r"Rejected\.+:\s+(\d+)/")
+# hashcat's interactive keyboard prompt (printed even with pipes; CR-delimited)
+_PROMPT_RE = re.compile(r"\[s\]tatus\s+\[p\]ause")
 
 _STATUS_NAMES = {
     0: "init",
@@ -63,7 +66,7 @@ def _supports_status_json(binary):
 
 def build_command(mode, hash_value, wordlist=None, mask=None, custom_charsets=None,
                   rules_file=None, backend=None, binary="hashcat",
-                  outfile="<TMP>", status_json=True):
+                  outfile="<TMP>", status_json=True, slow_candidates=False):
     """Build the hashcat argv for an attack.
 
     Single source of truth used both to run the attack and to preview the
@@ -87,7 +90,24 @@ def build_command(mode, hash_value, wordlist=None, mask=None, custom_charsets=No
         cmd += ["-D", str(backend)]
     if rules_file:
         cmd += ["-r", rules_file]
+    if slow_candidates:
+        cmd.append("-S")
     return cmd
+
+
+def count_lines(path):
+    """Count the lines of a file (chunked; safe for large wordlists/rules)."""
+    n = 0
+    try:
+        with open(path, "rb") as f:
+            while True:
+                chunk = f.read(1 << 20)
+                if not chunk:
+                    break
+                n += chunk.count(b"\n")
+    except OSError:
+        return 0
+    return n
 
 
 def format_command(cmd):
@@ -120,6 +140,7 @@ class HashcatEngine:
         self._progress_done = 0
         self._progress_total = 0
         self._progress_recovered = 0
+        self._progress_rejected = 0
         self._outfile_path = None
         self._outfile_owned = False
         self._outfile_seen = 0
@@ -191,7 +212,7 @@ class HashcatEngine:
     def detect_hardware():
         binary = resolve("hashcat")
         if not binary:
-            return {"cpu": True, "gpu": True}
+            return {"cpu": True, "gpu": True, "mcu": 0}
 
         try:
             r = subprocess.run(
@@ -201,9 +222,22 @@ class HashcatEngine:
             output = r.stdout + r.stderr
             has_cpu = "Type...........: CPU" in output
             has_gpu = "Type...........: GPU" in output
-            return {"cpu": has_cpu, "gpu": has_gpu}
+            mcu = 0
+            cur_type = ""
+            for ln in output.splitlines():
+                s = ln.strip()
+                if s.startswith("Type"):
+                    if "GPU" in s:
+                        cur_type = "GPU"
+                    elif "CPU" in s:
+                        cur_type = "CPU"
+                elif s.startswith("Processor(s)") and cur_type == "GPU":
+                    m = re.search(r":\s*(\d+)", s)
+                    if m:
+                        mcu += int(m.group(1))
+            return {"cpu": has_cpu, "gpu": has_gpu, "mcu": mcu}
         except (OSError, subprocess.TimeoutExpired):
-            return {"cpu": True, "gpu": True}
+            return {"cpu": True, "gpu": True, "mcu": 0}
 
     def _make_outfile(self):
         try:
@@ -303,7 +337,8 @@ class HashcatEngine:
 
         try:
             self._proc = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                cmd, stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 bufsize=0,
             )
         except (FileNotFoundError, PermissionError, OSError) as e:
@@ -377,8 +412,15 @@ class HashcatEngine:
                     self._on_phase(label)
 
     def _handle_line(self, line):
-        line = line.rstrip("\r")
+        # hashcat separates its interactive status/prompt from real output with
+        # bare CRs (no LF), so split on CR and drop the prompt fragments.
+        if "\r" in line:
+            for part in line.split("\r"):
+                self._handle_line(part)
+            return
         if not line.strip():
+            return
+        if _PROMPT_RE.search(line):
             return
         if line.lstrip().startswith("{") and self._handle_status_json(line):
             self._poll_outfile()
@@ -407,8 +449,11 @@ class HashcatEngine:
     def _parse_progress(self, line):
         m = _PROGRESS_RE.search(line)
         if m:
-            self._progress_done = int(m.group(1))
-            self._progress_total = int(m.group(2))
+            # The human "Progress" line counts REJECTED candidates too; drop
+            # them so the bar reflects actually-hashed candidates.
+            rej = self._progress_rejected
+            self._progress_done = max(0, int(m.group(1)) - rej)
+            self._progress_total = max(0, int(m.group(2)) - rej)
             if self._on_progress:
                 self._on_progress(self._progress_done, self._progress_total,
                                   self._progress_recovered)
@@ -416,6 +461,10 @@ class HashcatEngine:
         m = _RECOVERED_RE.search(line)
         if m:
             self._progress_recovered = int(m.group(1))
+            return
+        m = _REJECTED_RE.search(line)
+        if m:
+            self._progress_rejected = int(m.group(1))
 
     def _handle_status_json(self, raw):
         try:
@@ -444,6 +493,11 @@ class HashcatEngine:
             rec = (int(rec[0]), int(rec[1]))
         except (TypeError, ValueError, IndexError):
             rec = (0, 0)
+
+        try:
+            rejected = int(obj.get("rejected") or 0)
+        except (TypeError, ValueError):
+            rejected = 0
 
         devices = []
         speed = 0
@@ -483,6 +537,7 @@ class HashcatEngine:
             "state": state,
             "status_number": status_number,
             "progress": prog,
+            "rejected": rejected,
             "recovered": rec,
             "speed": speed,
             "elapsed": elapsed,
