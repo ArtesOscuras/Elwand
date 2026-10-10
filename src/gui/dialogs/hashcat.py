@@ -403,34 +403,36 @@ class HashcatDialog(tk.Toplevel):
         tk.Label(
             parent, text="Hash type", font=fonts.view_font(11),
             fg=FG_DIM, bg=BG,
-        ).grid(row=row, column=0, sticky="w", padx=15, pady=(5, 0))
+        ).grid(row=row, column=0, sticky="w", padx=15, pady=(5, 10))
+
+        meta_frame = tk.Frame(parent, bg=BG)
+        meta_frame.grid(row=row, column=1, sticky="w", padx=15, pady=(5, 10))
+
         self._type_label = tk.Label(
-            parent, textvariable=self._type_label_var,
+            meta_frame, textvariable=self._type_label_var,
             fg=SUCCESS, bg=BG, font=fonts.view_font(11), anchor="w",
         )
-        self._type_label.grid(row=row, column=1, sticky="w", padx=15, pady=(5, 0))
-        row += 1
+        self._type_label.pack(side=tk.LEFT)
 
         tk.Label(
-            parent, text="Mode", font=fonts.view_font(11),
+            meta_frame, text="Mode", font=fonts.view_font(11),
             fg=FG_DIM, bg=BG,
-        ).grid(row=row, column=0, sticky="w", padx=15, pady=(5, 10))
+        ).pack(side=tk.LEFT, padx=(24, 6))
         self._mode_entry = tk.Entry(
-            parent, textvariable=self._mode_var,
+            meta_frame, textvariable=self._mode_var,
             bg=BG_WIDGET, fg=FG, insertbackground=FG, width=8,
             font=fonts.view_font(11), borderwidth=1, relief=tk.FLAT,
             highlightthickness=1, highlightcolor="#333333", highlightbackground="#333333",
         )
-        self._mode_entry.grid(row=row, column=1, sticky="w", padx=15, pady=(5, 10))
-        row += 1
+        self._mode_entry.pack(side=tk.LEFT)
 
         tk.Label(
-            parent, text="Device", font=fonts.view_font_bold(11),
+            meta_frame, text="Device", font=fonts.view_font_bold(11),
             fg=FG, bg=BG,
-        ).grid(row=row, column=0, sticky="nw", padx=15, pady=(5, 5))
+        ).pack(side=tk.LEFT, padx=(24, 6))
 
-        self._hw_frame = tk.Frame(parent, bg=BG)
-        self._hw_frame.grid(row=row, column=1, sticky="ew", padx=15, pady=(5, 5))
+        self._hw_frame = tk.Frame(meta_frame, bg=BG)
+        self._hw_frame.pack(side=tk.LEFT)
 
         self._hw_label = tk.Label(
             self._hw_frame, text="Detecting hardware...", font=fonts.view_font(11),
@@ -631,33 +633,35 @@ class HashcatDialog(tk.Toplevel):
         tk.Label(
             parent, text="Hash type", font=fonts.view_font(11),
             fg=FG_DIM, bg=BG,
-        ).grid(row=row, column=0, sticky="w", padx=15, pady=(3, 0))
+        ).grid(row=row, column=0, sticky="w", padx=15, pady=(3, 5))
+
+        mask_meta_frame = tk.Frame(parent, bg=BG)
+        mask_meta_frame.grid(row=row, column=1, sticky="w", padx=15, pady=(3, 5))
+
         self._mask_type_label = tk.Label(
-            parent, textvariable=self._type_label_var,
+            mask_meta_frame, textvariable=self._type_label_var,
             fg=SUCCESS, bg=BG, font=fonts.view_font(11), anchor="w",
         )
-        self._mask_type_label.grid(row=row, column=1, sticky="w", padx=15, pady=(3, 0))
-        row += 1
+        self._mask_type_label.pack(side=tk.LEFT)
 
         tk.Label(
-            parent, text="Mode", font=fonts.view_font(11),
+            mask_meta_frame, text="Mode", font=fonts.view_font(11),
             fg=FG_DIM, bg=BG,
-        ).grid(row=row, column=0, sticky="w", padx=15, pady=(3, 5))
+        ).pack(side=tk.LEFT, padx=(24, 6))
         self._mask_mode_entry = tk.Entry(
-            parent, textvariable=self._mode_var,
+            mask_meta_frame, textvariable=self._mode_var,
             bg=BG_WIDGET, fg=FG, insertbackground=FG, width=8,
             font=fonts.view_font(11), borderwidth=1, relief=tk.FLAT,
             highlightthickness=1, highlightcolor="#333333", highlightbackground="#333333",
         )
-        self._mask_mode_entry.grid(row=row, column=1, sticky="w", padx=15, pady=(3, 5))
-        row += 1
+        self._mask_mode_entry.pack(side=tk.LEFT)
 
         tk.Label(
-            parent, text="Device", font=fonts.view_font_bold(11),
+            mask_meta_frame, text="Device", font=fonts.view_font_bold(11),
             fg=FG, bg=BG,
-        ).grid(row=row, column=0, sticky="nw", padx=15, pady=(3, 3))
-        self._mask_hw_frame = tk.Frame(parent, bg=BG)
-        self._mask_hw_frame.grid(row=row, column=1, sticky="ew", padx=15, pady=(3, 3))
+        ).pack(side=tk.LEFT, padx=(24, 6))
+        self._mask_hw_frame = tk.Frame(mask_meta_frame, bg=BG)
+        self._mask_hw_frame.pack(side=tk.LEFT)
         self._mask_hw_placeholder = tk.Label(
             self._mask_hw_frame, text="Detecting hardware...",
             font=fonts.view_font(11), fg=FG_DIM, bg=BG,
