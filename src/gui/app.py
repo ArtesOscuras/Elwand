@@ -2227,7 +2227,9 @@ class App(tk.Tk):
             return
         hash_val = h.get("hash", "")
         htype = h.get("type", "")
-        mode = h.get("hascat_mode", "")
+        mode = (h.get("hascat_mode") or "").strip()
+        if mode == "-1":
+            mode = ""
 
         if not mode and htype:
             try:
@@ -2245,9 +2247,12 @@ class App(tk.Tk):
 
         if not mode:
             self.console.error(
-                f"Could not determine hashcat mode for hash. "
-                f"Add the hash first via GUI or 'add hash'."
+                "Could not determine a valid hashcat mode for this hash. "
+                "Set it in the hash editor or 'add hash'."
             )
+            return
+        if not mode.isdigit():
+            self.console.error(f"Invalid hashcat mode: '{mode}'.")
             return
 
         wl_path = os.path.join(str(lst_dir()), wordlist_name)
@@ -2282,7 +2287,10 @@ class App(tk.Tk):
             low = stripped.lower()
             if color == "error" or any(
                     k in low for k in ("error", "warning", "failed",
-                                       "denied", "not found", "no devices")):
+                                       "denied", "not found", "no devices",
+                                       "cannot use", "token length",
+                                       "no hashes loaded", "exception",
+                                       "invalid")):
                 self._safe_after(self.console.warning, stripped)
 
         running_announced = {"v": False}
@@ -2304,10 +2312,13 @@ class App(tk.Tk):
             self._safe_after(self.console.success,
                              f"Cracked: {plain}  (saved to inventory)")
 
-        def on_done(cracked):
+        def on_done(cracked, failed=False):
             self._hashcat_engine = None
             self._safe_after(self.console.clear_live_status)
-            if cracked:
+            if failed:
+                self._safe_after(self.console.error,
+                                 "Hashcat failed. Check the output above.")
+            elif cracked:
                 self._safe_after(
                     self.console.success,
                     f"Hashcat done. {len(cracked)} password(s) cracked.")

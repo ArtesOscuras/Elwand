@@ -2504,7 +2504,9 @@ def _hashcat_crack(args, ctx=None):
         if stored_hash == hash_val or (
                 len(hash_val) >= 16 and stored_hash.startswith(hash_val)):
             htype = h.get("type", "")
-            mode = h.get("hascat_mode", "")
+            mode = (h.get("hascat_mode") or "").strip()
+            if mode == "-1":
+                mode = ""
             hash_val = stored_hash
             break
     if not mode and htype:
@@ -2522,6 +2524,8 @@ def _hashcat_crack(args, ctx=None):
     if not mode:
         return (f"Could not determine hashcat mode for '{hash_val[:30]}...'. "
                 f"Add it via 'add_hash' first.")
+    if not mode.isdigit():
+        return f"Invalid hashcat mode: '{mode}'."
     wl_path = os.path.join(str(lst_dir()), wordlist_name)
     if not os.path.isfile(wl_path):
         return f"Wordlist not found: {wordlist_name}"
@@ -2536,9 +2540,12 @@ def _hashcat_crack(args, ctx=None):
                 f"Cracked: {plain}")),
             sp(plain)
         ),
-        on_done=lambda cracked: ctx.console.after(0, lambda: ctx.console.info(
-            f"Hashcat done. {len(cracked)} cracked.") if cracked
-            else ctx.console.info("Hashcat done. No passwords found.")),
+        on_done=lambda cracked, failed=False: ctx.console.after(0, lambda: (
+            ctx.console.error("Hashcat failed. Check the output above.")
+            if failed else (
+                ctx.console.info(f"Hashcat done. {len(cracked)} cracked.")
+                if cracked else
+                ctx.console.info("Hashcat done. No passwords found.")))),
     )
     engine.start()
     return (f"Hashcat started: mode={mode} wordlist={wordlist_name} "

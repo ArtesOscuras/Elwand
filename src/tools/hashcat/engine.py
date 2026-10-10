@@ -208,7 +208,7 @@ class HashcatEngine:
         if not binary:
             if self._on_output:
                 self._on_output("hashcat binary not found in PATH.\n", "error")
-            self._finish([])
+            self._finish([], failed=True)
             return
 
         self._clear_unreadable_kernels(binary)
@@ -255,7 +255,7 @@ class HashcatEngine:
             if self._on_output:
                 self._on_output(f"Failed to start hashcat: {e}\n", "error")
             self._cleanup_outfile()
-            self._finish([])
+            self._finish([], failed=True)
             return
 
         self._read_stream(self._proc)
@@ -267,9 +267,16 @@ class HashcatEngine:
 
         self._poll_outfile()
         self._cleanup_outfile()
+        # hashcat exit codes: 0 = cracked, 1 = exhausted (not found); anything
+        # else is a failure (bad mode/hash, device error, ...).
+        rc = self._proc.returncode
+        failed = not self._stop_flag.is_set() and rc not in (0, 1)
+        if failed:
+            self._emit(f"[!] hashcat failed (exit {rc}).\n", "error")
         if self._kernel_error and not self._cracked:
             self._emit(self._kernel_hint(binary), "error")
-        self._finish(self._cracked)
+            failed = True
+        self._finish(self._cracked, failed)
 
     def _read_stream(self, proc):
         """Read hashcat's output in chunks.
@@ -436,10 +443,10 @@ class HashcatEngine:
             self._on_progress(prog[0], prog[1], rec[0])
         return True
 
-    def _finish(self, cracked):
+    def _finish(self, cracked, failed=False):
         if (not self._saw_status_json and self._on_progress
                 and self._progress_total > 0):
             self._on_progress(self._progress_total, self._progress_total,
                               self._progress_recovered)
         if self._on_done:
-            self._on_done(cracked or [])
+            self._on_done(cracked or [], failed)

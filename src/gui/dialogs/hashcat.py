@@ -278,10 +278,16 @@ class _StatusPanel:
     def cracked(self, plain):
         self.log(f"[+] Cracked: {plain}  (saved to inventory)", "success")
 
-    def finish(self, cracked_list):
+    def finish(self, cracked_list, failed=False):
         self._est_end = None
         self._set_indeterminate(False)
         self.timing.config(text="")
+        if failed:
+            self.info.config(text="Status: Failed")
+            self.log("[!] Hashcat failed \u2014 see Details for the error.",
+                     "error")
+            self._state = "idle"
+            return
         if cracked_list:
             if self._state != "cracked":
                 self.info.config(text="Status: Cracked")
@@ -812,6 +818,11 @@ class HashcatDialog(tk.Toplevel):
         if not mode:
             self._mask_panel.log("[!] Hashcat mode is required.", "error")
             return
+        if not mode.isdigit():
+            self._mask_panel.log(
+                f"[!] Invalid hashcat mode: '{mode}' (must be a number).",
+                "error")
+            return
         hash_val = self._hash_val_var.get().strip()
         if not hash_val:
             self._mask_panel.log(
@@ -845,7 +856,7 @@ class HashcatDialog(tk.Toplevel):
             on_status=lambda st: self._ui_q.put(("status", "mask", st)),
             on_phase=lambda label: self._ui_q.put(("phase", "mask", label)),
             on_cracked=lambda hv, p: self._ui_q.put(("cracked", "mask", p)),
-            on_done=lambda c: self._ui_q.put(("done", "mask", c)),
+            on_done=lambda c, f=False: self._ui_q.put(("done", "mask", c, f)),
             on_progress=lambda d, t, r: self._ui_q.put(
                 ("progress", "mask", d, t, r)),
         )
@@ -1098,6 +1109,11 @@ class HashcatDialog(tk.Toplevel):
         if not mode:
             self._panel.log("[!] Hashcat mode is required.", "error")
             return
+        if not mode.isdigit():
+            self._panel.log(
+                f"[!] Invalid hashcat mode: '{mode}' (must be a number).",
+                "error")
+            return
         hash_val = self._hash_val_var.get().strip()
         if not hash_val:
             self._panel.log("[!] Hash value is required.", "error")
@@ -1135,7 +1151,7 @@ class HashcatDialog(tk.Toplevel):
             on_status=lambda st: self._ui_q.put(("status", "crack", st)),
             on_phase=lambda label: self._ui_q.put(("phase", "crack", label)),
             on_cracked=lambda hv, p: self._ui_q.put(("cracked", "crack", p)),
-            on_done=lambda c: self._ui_q.put(("done", "crack", c)),
+            on_done=lambda c, f=False: self._ui_q.put(("done", "crack", c, f)),
             on_progress=lambda d, t, r: self._ui_q.put(
                 ("progress", "crack", d, t, r)),
         )
@@ -1203,7 +1219,7 @@ class HashcatDialog(tk.Toplevel):
             except Exception:
                 pass
         elif kind == "done":
-            self._panel_for(item[1]).finish(item[2])
+            self._panel_for(item[1]).finish(item[2], item[3])
             self._engine = None
 
     def _stop(self):
