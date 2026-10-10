@@ -2,6 +2,7 @@ import json
 import os
 import queue
 import re
+import shlex
 import sqlite3
 import threading
 import time
@@ -11,6 +12,7 @@ from tkinter import ttk
 from src.gui import fonts, windowing, theme
 from src.machines import credential_db
 from src.tools.hashcat import HashcatEngine
+from src.tools.hashcat.engine import build_command, format_command
 from src.elwand_paths import hashcat_db as _hashcat_db
 
 BG = theme.BG
@@ -51,10 +53,10 @@ def _fmt_speed(hps):
 
 
 class _StatusPanel:
-    """Clean, Elwand-styled hashcat status panel.
+    """Elwand-styled hashcat status panel with a single output pane.
 
-    Draws a progress bar, live status/timing lines and a small event log.
-    The raw hashcat output lives behind a "Details" toggle.
+    Progress bar plus live status/timing/device lines, and one output area
+    showing hashcat's real output (Elwand messages are interleaved in it).
     """
 
     def __init__(self, parent, row):
@@ -63,7 +65,6 @@ class _StatusPanel:
         self._est_end = None
         self._state = "idle"
         self._last_end = 0
-        self._details_shown = False
         self._indeterminate = False
 
         self.progress_var = tk.IntVar(value=0)
@@ -89,72 +90,30 @@ class _StatusPanel:
                          padx=15, pady=(0, 2))
         row += 1
 
-        ev_frame = tk.Frame(parent, bg=BG_WIDGET)
-        ev_frame.grid(row=row, column=0, columnspan=2, sticky="nsew",
-                      padx=15, pady=(2, 2))
+        out_frame = tk.Frame(parent, bg=BG_WIDGET)
+        out_frame.grid(row=row, column=0, columnspan=2, sticky="nsew",
+                       padx=15, pady=(2, 2))
         parent.rowconfigure(row, weight=1)
-        ev_frame.columnconfigure(0, weight=1)
-        ev_frame.rowconfigure(0, weight=1)
-        self.events = tk.Text(
-            ev_frame, bg=BG_WIDGET, fg=FG, font=fonts.view_font(10), height=6,
+        out_frame.columnconfigure(0, weight=1)
+        out_frame.rowconfigure(0, weight=1)
+        self.output = tk.Text(
+            out_frame, bg=BG_WIDGET, fg=FG, font=fonts.view_font(9), height=16,
             state=tk.DISABLED, wrap=tk.WORD, cursor="", borderwidth=0,
             highlightthickness=0)
-        self.events.grid(row=0, column=0, sticky="nsew")
-        ev_sb = tk.Scrollbar(ev_frame, orient=tk.VERTICAL,
-                             command=self.events.yview)
-        ev_sb.configure(bg="#333333", troughcolor="#1a1a1a",
-                        activebackground="#555555", width=10, borderwidth=0,
-                        highlightthickness=0, elementborderwidth=0)
-        ev_sb.grid(row=0, column=1, sticky="ns")
-        self.events.configure(yscrollcommand=ev_sb.set)
-        for tag, col in (("success", SUCCESS), ("error", ERR_COLOR),
-                         ("info", INFO_COLOR), ("muted", FG_DIM)):
-            self.events.tag_configure(tag, foreground=col)
-        row += 1
-
-        self.details_btn = tk.Label(
-            parent, text="  Details  ", bg="#222222", fg=FG,
-            font=fonts.view_font(9), relief=tk.FLAT, bd=0, padx=10, pady=3,
-            cursor="")
-        self.details_btn.grid(row=row, column=0, sticky="w", padx=15,
-                              pady=(2, 2))
-        self.details_btn.bind("<Button-1>", lambda e: self.toggle_details())
-        self.details_btn.bind("<Enter>",
-                              lambda e: self.details_btn.config(bg="#333333"))
-        self.details_btn.bind("<Leave>",
-                              lambda e: self.details_btn.config(bg="#222222"))
-        row += 1
-
-        self._raw_row = row
-        self.raw_frame = tk.Frame(parent, bg=BG_WIDGET)
-        self.raw_frame.columnconfigure(0, weight=1)
-        self.raw_frame.rowconfigure(0, weight=1)
-        self.raw = tk.Text(
-            self.raw_frame, bg=BG_WIDGET, fg=FG_DIM, font=fonts.view_font(9),
-            height=10, state=tk.DISABLED, wrap=tk.NONE, cursor="",
-            borderwidth=0, highlightthickness=0)
-        self.raw.grid(row=0, column=0, sticky="nsew")
-        raw_sb = tk.Scrollbar(self.raw_frame, orient=tk.VERTICAL,
-                              command=self.raw.yview)
-        raw_sb.configure(bg="#333333", troughcolor="#1a1a1a",
+        self.output.grid(row=0, column=0, sticky="nsew")
+        out_sb = tk.Scrollbar(out_frame, orient=tk.VERTICAL,
+                              command=self.output.yview)
+        out_sb.configure(bg="#333333", troughcolor="#1a1a1a",
                          activebackground="#555555", width=10, borderwidth=0,
                          highlightthickness=0, elementborderwidth=0)
-        raw_sb.grid(row=0, column=1, sticky="ns")
-        self.raw.configure(yscrollcommand=raw_sb.set)
-        self.raw.tag_configure("error", foreground=ERR_COLOR)
+        out_sb.grid(row=0, column=1, sticky="ns")
+        self.output.configure(yscrollcommand=out_sb.set)
+        for tag, col in (("success", SUCCESS), ("error", ERR_COLOR),
+                         ("info", INFO_COLOR), ("muted", FG_DIM)):
+            self.output.tag_configure(tag, foreground=col)
         row += 1
 
         self.end_row = row
-
-    def toggle_details(self):
-        if self._details_shown:
-            self.raw_frame.grid_forget()
-            self.details_btn.config(text="  Details  ")
-        else:
-            self.raw_frame.grid(row=self._raw_row, column=0, columnspan=2,
-                                sticky="nsew", padx=15, pady=(2, 6))
-            self.details_btn.config(text="  Hide details  ")
-        self._details_shown = not self._details_shown
 
     def reset(self):
         self._set_indeterminate(False)
@@ -166,10 +125,9 @@ class _StatusPanel:
         self._est_end = None
         self._state = "idle"
         self._last_end = 0
-        for w in (self.events, self.raw):
-            w.configure(state=tk.NORMAL)
-            w.delete("1.0", tk.END)
-            w.configure(state=tk.DISABLED)
+        self.output.configure(state=tk.NORMAL)
+        self.output.delete("1.0", tk.END)
+        self.output.configure(state=tk.DISABLED)
 
     def _set_indeterminate(self, on):
         if on == self._indeterminate:
@@ -204,18 +162,19 @@ class _StatusPanel:
         self.tick()
 
     def log(self, text, tag=None):
-        self.events.configure(state=tk.NORMAL)
-        self.events.insert(tk.END, text + "\n", tag or ())
-        self.events.see(tk.END)
-        self.events.configure(state=tk.DISABLED)
+        self.output.configure(state=tk.NORMAL)
+        self.output.insert(tk.END, text + "\n", tag or ())
+        self.output.see(tk.END)
+        self.output.configure(state=tk.DISABLED)
 
     def log_raw(self, text):
-        self.raw.configure(state=tk.NORMAL)
-        at_bottom = self.raw.yview()[1] >= 1.0
-        self.raw.insert(tk.END, text, "error" if "error" in text.lower() else ())
+        self.output.configure(state=tk.NORMAL)
+        at_bottom = self.output.yview()[1] >= 1.0
+        self.output.insert(tk.END, text,
+                           "error" if "error" in text.lower() else ())
         if at_bottom:
-            self.raw.see(tk.END)
-        self.raw.configure(state=tk.DISABLED)
+            self.output.see(tk.END)
+        self.output.configure(state=tk.DISABLED)
 
     def set_status(self, st):
         self._state = st["state"]
@@ -284,7 +243,7 @@ class _StatusPanel:
         self.timing.config(text="")
         if failed:
             self.info.config(text="Status: Failed")
-            self.log("[!] Hashcat failed \u2014 see Details for the error.",
+            self.log("[!] Hashcat failed \u2014 see the output above.",
                      "error")
             self._state = "idle"
             return
@@ -318,13 +277,7 @@ class HashcatDialog(tk.Toplevel):
         self._closing = False
 
         self.title("Hashcat")
-        sh = self.winfo_screenheight()
-        h = min(windowing.px(680), sh - windowing.px(60))
-        w = windowing.px(800)
-        x = (self.winfo_screenwidth() - w) // 2
-        y = max(0, (sh - h) // 2 - 20)
-        self.geometry(f"{w}x{h}+{x}+{y}")
-        windowing.min_size(self, 700, 500)
+        windowing.size_dialog(self, 1100, 880, min_w=960, min_h=700)
         self.configure(bg=BG)
 
         self.transient(parent)
@@ -498,6 +451,57 @@ class HashcatDialog(tk.Toplevel):
         rules_browse_btn.bind("<Enter>", lambda e: rules_browse_btn.config(bg="#333333"))
         rules_browse_btn.bind("<Leave>", lambda e: rules_browse_btn.config(bg="#222222"))
         row += 1
+
+        tk.Label(
+            parent, text="Command", font=fonts.view_font_bold(11),
+            fg=FG, bg=BG,
+        ).grid(row=row, column=0, sticky="nw", padx=15, pady=(8, 2))
+
+        cmd_frame = tk.Frame(parent, bg=BG)
+        cmd_frame.grid(row=row, column=1, sticky="ew", padx=15, pady=(8, 2))
+        cmd_frame.columnconfigure(0, weight=1)
+
+        self._cmd_text = tk.Text(
+            cmd_frame, height=6, wrap=tk.WORD, bg=BG_WIDGET, fg=FG,
+            insertbackground=FG, font=fonts.view_font(9),
+            borderwidth=0, highlightthickness=1,
+            highlightbackground="#333333", highlightcolor="#333333",
+        )
+        self._cmd_text.grid(row=0, column=0, sticky="ew")
+        cmd_scroll = tk.Scrollbar(cmd_frame, orient=tk.VERTICAL,
+                                  command=self._cmd_text.yview)
+        cmd_scroll.configure(bg="#333333", troughcolor="#1a1a1a",
+                             activebackground="#555555", width=10, borderwidth=0,
+                             highlightthickness=0, elementborderwidth=0)
+        cmd_scroll.grid(row=0, column=1, sticky="ns")
+        self._cmd_text.configure(yscrollcommand=cmd_scroll.set)
+        self._cmd_text.bind("<Control-a>",
+                            lambda e: (self._cmd_text.tag_add("sel", "1.0", "end-1c"),
+                                       "break")[1])
+        row += 1
+
+        hint_row = tk.Frame(parent, bg=BG)
+        hint_row.grid(row=row, column=1, sticky="ew", padx=15, pady=(2, 0))
+        hint_row.columnconfigure(0, weight=1)
+        tk.Label(
+            hint_row,
+            text="Editable. The GUI rewrites it on changes; Elwand supplies "
+                 "--outfile for <TMP> to read results.",
+            font=fonts.view_font(8), fg=FG_DIM, bg=BG, anchor="w",
+        ).grid(row=0, column=0, sticky="w")
+        reset_btn = tk.Label(hint_row, text="  Reset  ", bg="#222222", fg=FG,
+                             font=fonts.view_font(9), relief=tk.FLAT, bd=0,
+                             padx=8, pady=2, cursor="")
+        reset_btn.grid(row=0, column=1, sticky="e")
+        reset_btn.bind("<Button-1>", lambda e: self._update_cmd_preview())
+        reset_btn.bind("<Enter>", lambda e: reset_btn.config(bg="#333333"))
+        reset_btn.bind("<Leave>", lambda e: reset_btn.config(bg="#222222"))
+        row += 1
+
+        for var in (self._mode_var, self._hash_val_var, self._wl_var,
+                    self._rules_var, self._hw_var):
+            var.trace_add("write", lambda *a: self._update_cmd_preview())
+        self._update_cmd_preview()
 
         tk.Label(
             parent, text="Status", font=fonts.view_font_bold(11),
@@ -712,6 +716,58 @@ class HashcatDialog(tk.Toplevel):
         row += 1
 
         tk.Label(
+            parent, text="Command", font=fonts.view_font_bold(11),
+            fg=FG, bg=BG,
+        ).grid(row=row, column=0, sticky="nw", padx=15, pady=(8, 2))
+
+        mcmd_frame = tk.Frame(parent, bg=BG)
+        mcmd_frame.grid(row=row, column=1, sticky="ew", padx=15, pady=(8, 2))
+        mcmd_frame.columnconfigure(0, weight=1)
+
+        self._mask_cmd_text = tk.Text(
+            mcmd_frame, height=6, wrap=tk.WORD, bg=BG_WIDGET, fg=FG,
+            insertbackground=FG, font=fonts.view_font(9),
+            borderwidth=0, highlightthickness=1,
+            highlightbackground="#333333", highlightcolor="#333333",
+        )
+        self._mask_cmd_text.grid(row=0, column=0, sticky="ew")
+        mcmd_scroll = tk.Scrollbar(mcmd_frame, orient=tk.VERTICAL,
+                                   command=self._mask_cmd_text.yview)
+        mcmd_scroll.configure(bg="#333333", troughcolor="#1a1a1a",
+                              activebackground="#555555", width=10,
+                              borderwidth=0, highlightthickness=0,
+                              elementborderwidth=0)
+        mcmd_scroll.grid(row=0, column=1, sticky="ns")
+        self._mask_cmd_text.configure(yscrollcommand=mcmd_scroll.set)
+        row += 1
+
+        mhint_row = tk.Frame(parent, bg=BG)
+        mhint_row.grid(row=row, column=1, sticky="ew", padx=15, pady=(2, 0))
+        mhint_row.columnconfigure(0, weight=1)
+        tk.Label(
+            mhint_row,
+            text="Editable. The GUI rewrites it on changes; Elwand supplies "
+                 "--outfile for <TMP> to read results.",
+            font=fonts.view_font(8), fg=FG_DIM, bg=BG, anchor="w",
+        ).grid(row=0, column=0, sticky="w")
+        mreset_btn = tk.Label(mhint_row, text="  Reset  ", bg="#222222", fg=FG,
+                              font=fonts.view_font(9), relief=tk.FLAT, bd=0,
+                              padx=8, pady=2, cursor="")
+        mreset_btn.grid(row=0, column=1, sticky="e")
+        mreset_btn.bind("<Button-1>",
+                        lambda e: self._update_mask_cmd_preview())
+        mreset_btn.bind("<Enter>", lambda e: mreset_btn.config(bg="#333333"))
+        mreset_btn.bind("<Leave>", lambda e: mreset_btn.config(bg="#222222"))
+        row += 1
+
+        for var in (self._mode_var, self._hash_val_var, self._hw_var,
+                    self._mask_var):
+            var.trace_add("write", lambda *a: self._update_mask_cmd_preview())
+        for var in self._mask_cs_vars.values():
+            var.trace_add("write", lambda *a: self._update_mask_cmd_preview())
+        self._update_mask_cmd_preview()
+
+        tk.Label(
             parent, text="Status", font=fonts.view_font_bold(11),
             fg=FG, bg=BG,
         ).grid(row=row, column=0, columnspan=2, sticky="w", padx=15, pady=(6, 0))
@@ -814,44 +870,35 @@ class HashcatDialog(tk.Toplevel):
                     pass
 
     def _start_mask(self):
-        mode = self._mode_var.get().strip()
-        if not mode:
-            self._mask_panel.log("[!] Hashcat mode is required.", "error")
+        text = (self._mask_cmd_text.get("1.0", tk.END).strip()
+                if getattr(self, "_mask_cmd_text", None) else "")
+        if not text:
+            self._mask_panel.log("[!] Command is empty.", "error")
             return
-        if not mode.isdigit():
+        try:
+            argv = shlex.split(text)
+        except ValueError as e:
+            self._mask_panel.log(f"[!] Invalid command: {e}", "error")
+            return
+        if any(a in ("<mode>", "<hash>", "<mask>") for a in argv):
             self._mask_panel.log(
-                f"[!] Invalid hashcat mode: '{mode}' (must be a number).",
+                "[!] Select a hash, mode and mask (or edit the command).",
                 "error")
             return
-        hash_val = self._hash_val_var.get().strip()
-        if not hash_val:
-            self._mask_panel.log(
-                "[!] No hash selected. Switch to the wordlist tab.", "error")
-            return
-        mask = self._mask_var.get().strip()
-        if not mask:
-            self._mask_panel.log("[!] Mask is required.", "error")
-            return
 
-        custom_charsets = {}
-        for key, var in self._mask_cs_vars.items():
-            val = var.get().strip()
-            if val:
-                custom_charsets[key] = val
+        charsets = {k: v.get().strip()
+                    for k, v in self._mask_cs_vars.items() if v.get().strip()}
 
         self._begin_run("mask")
-        self._mask_panel.start(f"hashcat -m {mode} -a 3 {mask}")
-
-        backend = self._hw_var.get()
-        if backend == "auto":
-            backend = None
+        self._mask_panel.start(
+            "  ".join(argv[:7]) + (" \u2026" if len(argv) > 7 else ""))
 
         engine = HashcatEngine(
-            mode=mode,
-            hash_value=hash_val,
-            mask=mask,
-            custom_charsets=custom_charsets,
-            backend=backend,
+            mode=self._mode_var.get().strip() or None,
+            hash_value=self._hash_val_var.get().strip() or None,
+            mask=self._mask_var.get().strip() or None,
+            custom_charsets=charsets,
+            command=argv,
             on_output=lambda t, c=None: self._ui_q.put(("raw", "mask", t)),
             on_status=lambda st: self._ui_q.put(("status", "mask", st)),
             on_phase=lambda label: self._ui_q.put(("phase", "mask", label)),
@@ -1081,9 +1128,14 @@ class HashcatDialog(tk.Toplevel):
 
     def _run_hw_detect(self):
         hw = HashcatEngine.detect_hardware()
-        self.after(0, lambda: self._on_hw_detected(hw))
+        try:
+            self.after(0, lambda: self._on_hw_detected(hw))
+        except tk.TclError:
+            pass
 
     def _on_hw_detected(self, hw):
+        if not self.winfo_exists():
+            return
         self._hw = hw
         self._hw_label.destroy()
 
@@ -1104,49 +1156,70 @@ class HashcatDialog(tk.Toplevel):
         if hasattr(self, "_mask_hw_placeholder"):
             self._build_mask_hw_buttons(hw)
 
-    def _start(self):
-        mode = self._mode_var.get().strip()
-        if not mode:
-            self._panel.log("[!] Hashcat mode is required.", "error")
+    def _update_cmd_preview(self):
+        if not getattr(self, "_cmd_text", None):
             return
-        if not mode.isdigit():
-            self._panel.log(
-                f"[!] Invalid hashcat mode: '{mode}' (must be a number).",
-                "error")
-            return
-        hash_val = self._hash_val_var.get().strip()
-        if not hash_val:
-            self._panel.log("[!] Hash value is required.", "error")
-            return
-        wl = self._wl_var.get().strip()
-        if not wl:
-            self._panel.log("[!] Wordlist is required.", "error")
-            return
-        if not os.path.isfile(wl):
-            self._panel.log(f"[!] Wordlist not found: {wl}", "error")
-            return
-
+        mode = self._mode_var.get().strip() or "<mode>"
+        hash_val = self._hash_val_var.get().strip() or "<hash>"
+        wl = self._wl_var.get().strip() or "<wordlist>"
         rules = self._rules_var.get().strip() or None
-        if rules and not os.path.isfile(rules):
-            self._panel.log(f"[!] Rules file not found: {rules}", "error")
-            return
-
-        self._begin_run("crack")
-        desc = f"hashcat -m {mode} (wordlist: {os.path.basename(wl)})"
-        if rules:
-            desc += f"  rules: {os.path.basename(rules)}"
-        self._panel.start(desc)
-
         backend = self._hw_var.get()
         if backend == "auto":
             backend = None
+        cmd = build_command(mode, hash_val, wordlist=wl, rules_file=rules,
+                            backend=backend, binary="hashcat",
+                            outfile="<TMP>", status_json=True)
+        try:
+            self._cmd_text.delete("1.0", tk.END)
+            self._cmd_text.insert("1.0", format_command(cmd))
+        except tk.TclError:
+            pass
+
+    def _update_mask_cmd_preview(self):
+        if not getattr(self, "_mask_cmd_text", None):
+            return
+        mode = self._mode_var.get().strip() or "<mode>"
+        hash_val = self._hash_val_var.get().strip() or "<hash>"
+        mask = self._mask_var.get().strip() or "<mask>"
+        charsets = {k: v.get().strip()
+                    for k, v in self._mask_cs_vars.items() if v.get().strip()}
+        backend = self._hw_var.get()
+        if backend == "auto":
+            backend = None
+        cmd = build_command(mode, hash_val, mask=mask,
+                            custom_charsets=charsets, backend=backend,
+                            binary="hashcat", outfile="<TMP>", status_json=True)
+        try:
+            self._mask_cmd_text.delete("1.0", tk.END)
+            self._mask_cmd_text.insert("1.0", format_command(cmd))
+        except tk.TclError:
+            pass
+
+    def _start(self):
+        text = (self._cmd_text.get("1.0", tk.END).strip()
+                if getattr(self, "_cmd_text", None) else "")
+        if not text:
+            self._panel.log("[!] Command is empty.", "error")
+            return
+        try:
+            argv = shlex.split(text)
+        except ValueError as e:
+            self._panel.log(f"[!] Invalid command: {e}", "error")
+            return
+        if any(a in ("<mode>", "<hash>", "<wordlist>") for a in argv):
+            self._panel.log(
+                "[!] Select hash, mode and wordlist (or edit the command).",
+                "error")
+            return
+
+        self._begin_run("crack")
+        self._panel.start("  ".join(argv[:7]) + (" \u2026" if len(argv) > 7 else ""))
 
         engine = HashcatEngine(
-            mode=mode,
-            hash_value=hash_val,
-            wordlist=wl,
-            rules_file=rules,
-            backend=backend,
+            mode=self._mode_var.get().strip() or None,
+            hash_value=self._hash_val_var.get().strip() or None,
+            wordlist=self._wl_var.get().strip() or None,
+            command=argv,
             on_output=lambda t, c=None: self._ui_q.put(("raw", "crack", t)),
             on_status=lambda st: self._ui_q.put(("status", "crack", st)),
             on_phase=lambda label: self._ui_q.put(("phase", "crack", label)),

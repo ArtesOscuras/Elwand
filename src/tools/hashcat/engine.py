@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import shlex
 import subprocess
 import tempfile
 import threading
@@ -60,19 +61,54 @@ def _supports_status_json(binary):
     return _STATUS_JSON_SUPPORTED
 
 
+def build_command(mode, hash_value, wordlist=None, mask=None, custom_charsets=None,
+                  rules_file=None, backend=None, binary="hashcat",
+                  outfile="<TMP>", status_json=True):
+    """Build the hashcat argv for an attack.
+
+    Single source of truth used both to run the attack and to preview the
+    command in the GUI. `outfile="<TMP>"` is a placeholder the caller replaces
+    with a real temp path (Elwand needs `--outfile` to read cracked hashes).
+    """
+    cmd = [binary, "-m", str(mode), hash_value]
+    if mask:
+        cmd += ["-a", "3", mask, "--increment"]
+        for key, charset in sorted((custom_charsets or {}).items()):
+            if charset:
+                cmd += [f"-{key}", charset]
+    elif wordlist:
+        cmd.append(wordlist)
+    if outfile:
+        cmd += ["--outfile", outfile, "--outfile-format", "2"]
+    cmd += ["--status", "--status-timer=1", "--potfile-disable"]
+    if status_json:
+        cmd.append("--status-json")
+    if backend:
+        cmd += ["-D", str(backend)]
+    if rules_file:
+        cmd += ["-r", rules_file]
+    return cmd
+
+
+def format_command(cmd):
+    """Quoted, shell-style rendering of an argv list (for display)."""
+    return " ".join(shlex.quote(str(t)) for t in cmd)
+
+
 class HashcatEngine:
-    def __init__(self, mode, hash_value, wordlist=None, mask=None,
+    def __init__(self, mode=None, hash_value=None, wordlist=None, mask=None,
                  custom_charsets=None, rules_file=None,
-                 backend=None,
+                 backend=None, command=None,
                  on_output=None, on_cracked=None, on_done=None,
                  on_progress=None, on_status=None, on_phase=None):
-        self._mode = str(mode)
+        self._mode = str(mode) if mode is not None else ""
         self._hash_value = hash_value
         self._wordlist = wordlist
         self._mask = mask
         self._custom_charsets = custom_charsets or {}
         self._rules_file = rules_file
         self._backend = backend
+        self._command = list(command) if command else None
         self._on_output = on_output
         self._on_cracked = on_cracked
         self._on_done = on_done
@@ -85,6 +121,7 @@ class HashcatEngine:
         self._progress_total = 0
         self._progress_recovered = 0
         self._outfile_path = None
+        self._outfile_owned = False
         self._outfile_seen = 0
         self._cracked = []
         self._kernel_error = False
@@ -174,9 +211,11 @@ class HashcatEngine:
             os.close(fd)
             os.unlink(path)
             self._outfile_path = path
+            self._outfile_owned = True
             return path
         except OSError:
             self._outfile_path = None
+            self._outfile_owned = False
             return None
 
     def _poll_outfile(self):
@@ -196,12 +235,12 @@ class HashcatEngine:
                     self._on_cracked(self._hash_value, plain)
 
     def _cleanup_outfile(self):
-        if self._outfile_path:
+        if self._outfile_path and self._outfile_owned:
             try:
                 os.unlink(self._outfile_path)
             except OSError:
                 pass
-            self._outfile_path = None
+        self._outfile_path = None
 
     def _run(self):
         binary = resolve("hashcat")
@@ -213,38 +252,54 @@ class HashcatEngine:
 
         self._clear_unreadable_kernels(binary)
 
-        cmd = [binary, "-m", self._mode, self._hash_value]
-
-        if self._mask:
-            cmd.extend(["-a", "3", self._mask, "--increment"])
-            for key, charset in sorted(self._custom_charsets.items()):
-                if charset:
-                    cmd.extend([f"-{key}", charset])
+        if self._command is not None:
+            cmd = list(self._command)
         else:
-            cmd.append(self._wordlist)
+            cmd = build_command(
+                self._mode, self._hash_value, wordlist=self._wordlist,
+                mask=self._mask, custom_charsets=self._custom_charsets,
+                rules_file=self._rules_file, backend=self._backend,
+                binary=binary, outfile="<TMP>",
+                status_json=_supports_status_json(binary))
 
-        outfile = self._make_outfile()
-        if outfile:
-            cmd.extend(["--outfile", outfile, "--outfile-format", "2"])
+        # Resolve the binary token (keep an explicit, existing path).
+        if cmd and not (os.path.isabs(cmd[0]) and os.path.isfile(cmd[0])):
+            cmd[0] = binary
+        elif not cmd:
+            cmd = [binary]
 
-        cmd.extend([
-            "--status", "--status-timer=1", "--potfile-disable",
-        ])
+        # Elwand needs --outfile to read cracked hashes: substitute the
+        # placeholder, or append the flags if the user removed them.
+        if "--outfile" in cmd:
+            i = cmd.index("--outfile")
+            val = cmd[i + 1] if i + 1 < len(cmd) else ""
+            if not val or val in ("<TMP>", "<tmp>"):
+                path = self._make_outfile()
+                if i + 1 < len(cmd):
+                    cmd[i + 1] = path
+                    self._outfile_path = path
+                else:
+                    cmd.append(path)
+                    self._outfile_path = path
+            else:
+                self._outfile_owned = False
+                self._outfile_path = val
+        else:
+            path = self._make_outfile()
+            cmd += ["--outfile", path, "--outfile-format", "2"]
+
+        # Ensure live status output.
+        if "--status" not in cmd:
+            cmd += ["--status", "--status-timer=1"]
+
+        # --status-json only if the binary supports it.
         if _supports_status_json(binary):
-            cmd.append("--status-json")
-        if self._backend:
-            cmd.extend(["-D", self._backend])
-        if self._rules_file:
-            cmd.extend(["-r", self._rules_file])
+            if "--status-json" not in cmd:
+                cmd.append("--status-json")
+        elif "--status-json" in cmd:
+            cmd = [c for c in cmd if c != "--status-json"]
 
-        if self._mask:
-            self._emit(
-                f"\n[>] hashcat -m {self._mode} -a 3 "
-                f"'{self._hash_value[:40]}...' {self._mask}\n", "info")
-        else:
-            self._emit(
-                f"\n[>] hashcat -m {self._mode} "
-                f"'{self._hash_value[:40]}...' {self._wordlist}\n", "info")
+        self._emit("\n[>] " + format_command(cmd) + "\n", "info")
 
         try:
             self._proc = subprocess.Popen(
