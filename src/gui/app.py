@@ -1373,47 +1373,29 @@ class App(tk.Tk):
         return [("dir", "dir"), ("vhost", "vhost"), ("dns", "dns")]
 
     def _autocomplete_fuzzer_arg4(self, prefix, arg2_value=None):
-        if arg2_value == "dir":
-            results = [("<port>", "")]
-            raw = self.console.input_var.get().strip()
-            parts = raw.split()
-            if len(parts) >= 4:
-                target = parts[3]
-                from src.machines import machine_db as _mdb
-                machine = store.get(target)
-                if not machine:
-                    if target.startswith("#") and target[1:].isdigit():
-                        machine = store.get_by_id(int(target[1:]))
-                    elif target.isdigit():
-                        machine = store.get_by_id(int(target))
-                if machine:
-                    ports = _mdb.load_tcp_ports(machine.id)
-                    for p in ports:
-                        results.append((str(p), str(p)))
-            return results
-        else:
-            from src.elwand_paths import lst_dir
-            results = []
-            try:
-                for fname in sorted(os.listdir(str(lst_dir()))):
-                    if os.path.isfile(os.path.join(str(lst_dir()), fname)):
-                        results.append((fname, fname))
-            except OSError:
-                pass
-            return results
+        """Wordlist argument (`use fuzzer <method> <target> <wordlist> [port]`)."""
+        return App._autocomplete_dictionary_noall(prefix)
 
     def _autocomplete_fuzzer_arg5(self, prefix, arg2_value=None):
-        if arg2_value == "dir":
-            from src.elwand_paths import lst_dir
-            results = []
-            try:
-                for fname in sorted(os.listdir(str(lst_dir()))):
-                    if os.path.isfile(os.path.join(str(lst_dir()), fname)):
-                        results.append((fname, fname))
-            except OSError:
-                pass
-            return results
-        return []
+        """Optional port argument (dir only), hinting the target's TCP ports."""
+        if arg2_value != "dir":
+            return []
+        results = [("<port>", "")]
+        raw = self.console._input_get().strip()
+        parts = raw.split()
+        if len(parts) >= 4:
+            target = parts[3]
+            from src.machines import machine_db as _mdb
+            machine = store.get(target)
+            if not machine:
+                if target.startswith("#") and target[1:].isdigit():
+                    machine = store.get_by_id(int(target[1:]))
+                elif target.isdigit():
+                    machine = store.get_by_id(int(target))
+            if machine:
+                for p in _mdb.load_tcp_ports(machine.id):
+                    results.append((str(p), str(p)))
+        return results
 
     @staticmethod
     def _hash_choices(include_all=False):
@@ -5354,20 +5336,17 @@ class App(tk.Tk):
             return
         target = args[1]
 
+        # Console fuzzing reports only meaningful status codes (no 400/401/403/405).
+        show_codes = {200, 201, 204, 301, 302, 307, 404, 500, 502, 503}
+
         if method == "dir":
             port = 80
             wordlist = None
-            if len(args) >= 4:
-                if args[2].isdigit():
-                    port = int(args[2])
-                    wordlist = args[3]
-                else:
-                    wordlist = args[2]
-            elif len(args) == 3:
-                wordlist = args[2]
-            else:
-                self.console.body("Usage: use fuzzer dir <target> <wordlist> [port]")
-                return
+            for a in args[2:]:
+                if a.isdigit():
+                    port = int(a)
+                elif wordlist is None:
+                    wordlist = a
             if not wordlist:
                 self.console.body("Usage: use fuzzer dir <target> <wordlist> [port]")
                 return
@@ -5379,7 +5358,6 @@ class App(tk.Tk):
             ip = self._resolve_to_ip(target)
             display_target = ip or target
             url_template = f"http://{display_target}:{port}/FUZZ"
-            show_codes = {200, 201, 204, 301, 302, 307, 400, 401, 403, 405, 500, 502, 503}
             def _emit_dir(text, color=None):
                 stripped = text.rstrip("\n")
                 c = {"success": "success", "error": "error", "info": "info"}.get(color)
@@ -5410,7 +5388,6 @@ class App(tk.Tk):
                 self.console.error(f"Wordlist not found: {wordlist}")
                 return
             ip = self._resolve_to_ip(target)
-            show_codes = {200, 201, 204, 301, 302, 307, 400, 401, 403, 405, 500, 502, 503}
             def _emit_vhost(text, color=None):
                 stripped = text.rstrip("\n")
                 c = {"success": "success", "error": "error", "info": "info"}.get(color)
@@ -5440,7 +5417,6 @@ class App(tk.Tk):
             if not os.path.isfile(wl_path):
                 self.console.error(f"Wordlist not found: {wordlist}")
                 return
-            show_codes = {200, 201, 204, 301, 302, 307, 400, 401, 403, 405, 500, 502, 503}
             def _emit_dns(text, color=None):
                 stripped = text.rstrip("\n")
                 c = {"success": "success", "error": "error", "info": "info"}.get(color)
