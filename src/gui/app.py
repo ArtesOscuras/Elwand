@@ -921,6 +921,7 @@ class App(tk.Tk):
     def _register_commands(self):
         self.console.set_mode_cycle_callback(self._cycle_mode)
         self.console.set_escape_stop_callback(self._escape_stop_llm)
+        self.console.set_clear_callback(self._save_session)
         self.console.register_command("view", self._cmd_view, "Switch or list views")
         self.console.set_subcommands("view", ["list", "wifi", "tools", "inventory", "machine", "domain", "shell", "credential", "hash", "user", "passwords", "people", "evidence", "process", "services", "dictionary", "rule", "poc", "report", "handshake"])
         self.console.register_command("use", self._cmd_use, "Use a tool")

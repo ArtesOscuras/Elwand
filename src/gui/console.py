@@ -56,6 +56,7 @@ class Console(tk.Frame):
         self._mode_commands = None
         self._mode_cycle_cb = None
         self._escape_stop_cb = None
+        self._clear_cb = None
         self._prompt_hovered = False
         self._focus_callback = None
         self._is_system = False
@@ -271,6 +272,9 @@ class Console(tk.Frame):
 
     def set_escape_stop_callback(self, callback):
         self._escape_stop_cb = callback
+
+    def set_clear_callback(self, callback):
+        self._clear_cb = callback
 
     _SPINNER_CHARS = ["\u280b", "\u2819", "\u2839", "\u2838", "\u283c", "\u2834", "\u2826", "\u2827", "\u2807", "\u280f"]
 
@@ -632,6 +636,11 @@ class Console(tk.Frame):
         self._live_active = False
         self.reset_markdown_state()
         self.output_area.config(state=tk.DISABLED)
+        if self._clear_cb:
+            try:
+                self._clear_cb()
+            except Exception:
+                pass
 
     def _on_key_press(self, event):
         if event.char == "!" and not self._is_system:
