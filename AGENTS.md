@@ -402,6 +402,34 @@ General rules:
 
 ---
 
+## Domains, Directories & HTTP/HTTPS Protocol (`src/machines/*_db.py`, `src/gui/views/*_detail.py`)
+
+Each domain records the **protocol** it serves over (`http`/`https`). Scheme helpers live in `src/webscheme.py`: `HTTPS_PORTS`, `scheme_for_port(port)`, and `detect_scheme(host)` (probes HTTPS then HTTP via `urlopen`, ignores certificates, 5s timeout; returns `"https"`/`"http"`/`None`).
+
+**Persistence (idempotent column migration):**
+* `domain_db.init_or_update(..., protocol=None)` — `domain_info` has a `protocol` column; a later update only replaces it when a non-null value is passed (`COALESCE`). `load_domain_info` returns it.
+* `machine_db.save_domain(machine_id, domain, source="", protocol="")` / `load_domains` — the machine `domains` table also carries `protocol`; `load_domains` returns `(domain, source, protocol)`.
+* Both add the `protocol` column on open when a legacy DB lacks it (`_migrate_domain_info` / `_migrate_domains`); old rows stay `NULL` (fall back to the heuristic).
+
+**Who sets it:** `add domain` (`App._run_domain`) resolves DNS then **probes HTTPS/HTTP** and stores the result; the fuzzer GUI and the webrecorder pass `parsed.scheme`; whatweb/webscan infer from the port (`scheme_for_port`); the agent `add_domain` tool accepts an optional `protocol`; SMB / `use` / `view` paths have no HTTP context and pass `None`.
+
+**Where it shows:** `DomainDetailView` (a `Protocol:` row), `MachineDetailView` (each domain as `name (https, source)`), and the agent `check_domain` output.
+
+### Directories as a tree (`src/gui/views/dirtree.py`)
+
+`MachineDetailView` and `DomainDetailView` render the stored `directories` paths as an alphabetical ASCII tree (not a flat list). `dirtree.py` (pure Python; `insert_clickable_tree` lazily imports tkinter) provides:
+* `normalize_path` — leading `/`, collapse `//`, strip trailing `/`.
+* `render_tree(paths)` — nested tree, **sorted case-insensitively per level**, box-drawing connectors; **implied parents are created** (a stored `/admin/login` yields an `admin` node). Root line is `/`.
+* `base_url(host, ports, preferred=None)` — `scheme://host[:port]`, preferring a domain's stored `protocol`; otherwise HTTPS inferred from `_HTTPS_PORTS`/web-service ports; standard ports (80/443) omitted, non-standard kept.
+
+**Click to copy:** clicking any node (root, implied parents, leaves) copies `base_url + node_path` to the clipboard (`_copy_to_clipboard`), with hover underline and a brief green flash. Bindings use generated `dircopy_<n>` tags.
+
+### Fuzzer URL protocol (`src/gui/dialogs/fuzz.py`)
+
+Opening the fuzzer fills the directory-tab URL with the target's real protocol instead of always `http://`: `_scheme_for_target` uses the domain's stored `protocol`, or (for a machine IP) the machine's domains / `web_services` ports. When unknown it defaults to `http://` and probes in the background — **debounced 400 ms**, only for domains, and the worker **never touches Tk** (it writes a cache; a main-thread `_poll_probe` applies the result). The pending probe is cancelled on close.
+
+---
+
 ## Settings Persistence (`src/settings.py`)
 
 User preferences (console font size, view zoom level) are persisted to `~/.local/share/elwand/settings.json`.
@@ -831,7 +859,7 @@ Tools are defined as a list of OpenAI function-calling schemas in the `TOOLS` va
 | `add_user` | Add a user to inventory (`username`, `utype`, `machine`, `domain`, `origin`) |
 | `delete_user` | Delete a user by username |
 | `add_machine` | Add a machine (IP) to network inventory |
-| `add_domain` | Add a domain to inventory |
+| `add_domain` | Add a domain to inventory (`domain`, optional `protocol` http/https) |
 | `add_subdomain` | Add a subdomain to an existing domain (`domain`, `subdomain`) |
 | `add_credential` | Add credential (username + password or 32-char NT hash). Auto-detects NT hash vs plaintext; computes NTLM hash for plaintext passwords |
 | `add_hash` | Add hash entry to inventory (`hash_type`, `hash_value`, `hascat_mode` optional) |
