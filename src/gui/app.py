@@ -4265,6 +4265,7 @@ class App(tk.Tk):
                 self._enter_consultor_mode()
         finally:
             self._silent_mode_cycle = False
+        self._save_session()
 
     def _enter_consultor_mode(self):
         self._consultor_mode = True
@@ -6262,6 +6263,7 @@ class App(tk.Tk):
         return t
 
     def _on_close(self):
+        self._save_session()
         self._closing = True
         self._agent_mode = False
         self._consultor_mode = False
