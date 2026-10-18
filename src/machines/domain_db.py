@@ -24,7 +24,16 @@ def _get_path(domain):
     return os.path.join(_DB_DIR, f"dom_{safe}.dbs")
 
 
-def init_or_update(domain, machine_id, machine_ip, source=""):
+def _migrate_domain_info(conn):
+    try:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(domain_info)").fetchall()]
+        if cols and "protocol" not in cols:
+            conn.execute("ALTER TABLE domain_info ADD COLUMN protocol TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+
+def init_or_update(domain, machine_id, machine_ip, source="", protocol=None):
     _init_db_dir()
     path = _get_path(domain)
     now = datetime.now().isoformat()
@@ -35,9 +44,11 @@ def init_or_update(domain, machine_id, machine_ip, source=""):
                 CREATE TABLE IF NOT EXISTS domain_info (
                     domain TEXT,
                     first_seen TEXT,
-                    last_seen TEXT
+                    last_seen TEXT,
+                    protocol TEXT
                 )
             """)
+            _migrate_domain_info(conn)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS domain_machines (
                     machine_id INTEGER,
@@ -48,13 +59,14 @@ def init_or_update(domain, machine_id, machine_ip, source=""):
             """)
             if not exists:
                 conn.execute(
-                    "INSERT INTO domain_info VALUES (?, ?, ?)",
-                    (domain, now, now),
+                    "INSERT INTO domain_info VALUES (?, ?, ?, ?)",
+                    (domain, now, now, protocol),
                 )
             else:
                 conn.execute(
-                    "UPDATE domain_info SET last_seen = ? WHERE domain = ?",
-                    (now, domain),
+                    "UPDATE domain_info SET last_seen = ?, "
+                    "protocol = COALESCE(?, protocol) WHERE domain = ?",
+                    (now, protocol, domain),
                 )
             existing_machine = conn.execute(
                 "SELECT 1 FROM domain_machines WHERE machine_id = ?", (machine_id,)
@@ -75,11 +87,21 @@ def load_domain_info(domain):
         return None
     try:
         with sqlite3.connect(path) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS domain_info (
+                    domain TEXT,
+                    first_seen TEXT,
+                    last_seen TEXT,
+                    protocol TEXT
+                )
+            """)
+            _migrate_domain_info(conn)
             row = conn.execute(
-                "SELECT domain, first_seen, last_seen FROM domain_info"
+                "SELECT domain, first_seen, last_seen, protocol FROM domain_info"
             ).fetchone()
             if row:
-                return {"domain": row[0], "first_seen": row[1], "last_seen": row[2]}
+                return {"domain": row[0], "first_seen": row[1],
+                        "last_seen": row[2], "protocol": row[3]}
     except (sqlite3.DatabaseError, sqlite3.OperationalError):
         pass
     return None

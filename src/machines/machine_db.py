@@ -20,6 +20,15 @@ def _get_path(machine_id):
     return os.path.join(_DB_DIR, f"machine_{machine_id}.dbs")
 
 
+def _migrate_domains(conn):
+    try:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(domains)").fetchall()]
+        if cols and "protocol" not in cols:
+            conn.execute("ALTER TABLE domains ADD COLUMN protocol TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+
 def save_machine_info(machine):
     _init_db_dir()
     path = _get_path(machine.id)
@@ -291,7 +300,7 @@ def load_web_services(machine_id):
         return []
 
 
-def save_domain(machine_id, domain, source=""):
+def save_domain(machine_id, domain, source="", protocol=""):
     _init_db_dir()
     path = _get_path(machine_id)
     now = datetime.now().isoformat()
@@ -301,12 +310,14 @@ def save_domain(machine_id, domain, source=""):
                 CREATE TABLE IF NOT EXISTS domains (
                     domain TEXT,
                     source TEXT,
-                    discovered_at TEXT
+                    discovered_at TEXT,
+                    protocol TEXT
                 )
             """)
+            _migrate_domains(conn)
             conn.execute(
-                "INSERT OR IGNORE INTO domains VALUES (?, ?, ?)",
-                (domain, source, now),
+                "INSERT OR IGNORE INTO domains VALUES (?, ?, ?, ?)",
+                (domain, source, now, protocol),
             )
     except (PermissionError, OSError, sqlite3.OperationalError):
         pass
@@ -323,13 +334,15 @@ def load_domains(machine_id):
                 CREATE TABLE IF NOT EXISTS domains (
                     domain TEXT,
                     source TEXT,
-                    discovered_at TEXT
+                    discovered_at TEXT,
+                    protocol TEXT
                 )
             """)
+            _migrate_domains(conn)
             rows = conn.execute(
-                "SELECT domain, source FROM domains ORDER BY discovered_at"
+                "SELECT domain, source, protocol FROM domains ORDER BY discovered_at"
             ).fetchall()
-            return [(r[0], r[1]) for r in rows]
+            return [(r[0], r[1], r[2]) for r in rows]
     except (sqlite3.DatabaseError, sqlite3.OperationalError):
         return []
 

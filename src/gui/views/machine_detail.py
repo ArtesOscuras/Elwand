@@ -1,6 +1,7 @@
 from src.gui import fonts, windowing, theme
 import tkinter as tk
 from .base import BaseView
+from .dirtree import base_url, insert_clickable_tree
 from src.machines import store
 from src.machines import machine_db
 
@@ -141,7 +142,7 @@ class MachineDetailView(BaseView):
         domains = machine_db.load_domains(m.id)
         if domains:
             self.text.insert(tk.END, f"\nDomains:\n", "info")
-            for d, src in domains:
+            for d, src, proto in domains:
                 tag = f"dom_{d}"
                 self.text.tag_configure(tag, underline=False)
                 self.text.insert(tk.END, f"  {d}", ("bright", tag))
@@ -149,8 +150,9 @@ class MachineDetailView(BaseView):
                     self._on_domain_click and self._on_domain_click(dm)))
                 self.text.tag_bind(tag, "<Enter>", lambda e, t=tag: self.text.tag_configure(t, underline=True))
                 self.text.tag_bind(tag, "<Leave>", lambda e, t=tag: self.text.tag_configure(t, underline=False))
-                if src:
-                    self.text.insert(tk.END, f" ({src})", "muted")
+                meta = ", ".join(x for x in (proto, src) if x)
+                if meta:
+                    self.text.insert(tk.END, f" ({meta})", "muted")
                 self.text.insert(tk.END, "\n")
 
         banners = machine_db.load_banners(m.id)
@@ -203,14 +205,26 @@ class MachineDetailView(BaseView):
         directories = machine_db.load_directories(m.id)
         if directories:
             self.text.insert(tk.END, f"\nDirectories ({len(directories)}):\n", "info")
-            for path, ts in directories:
-                self.text.insert(tk.END, f"  {path}\n", "bright")
+            host = m.ip or m.hostname or ""
+            protocols = {p for _, _, p in domains if p}
+            preferred = protocols.pop() if len(protocols) == 1 else None
+            insert_clickable_tree(
+                self.text, [p for p, _ in directories],
+                base_url(host, [p for p, _ in web], preferred=preferred),
+                self._copy_to_clipboard)
 
         last_line = self.text.index("end-1c")
         total = int(last_line.split(".")[0]) if last_line else 1
         fraction = line_num / max(total, 1)
         self.text.yview_moveto(min(fraction, 1.0))
         self.text.configure(state=tk.DISABLED)
+
+    def _copy_to_clipboard(self, url):
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(url)
+        except tk.TclError:
+            pass
 
     def _show_banner(self, port):
         banners = machine_db.load_banners(self._machine.id)

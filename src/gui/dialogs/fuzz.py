@@ -4,6 +4,7 @@ import random
 import re
 import socket
 import string
+import threading
 import tkinter as tk
 import urllib.request
 import ssl
@@ -15,6 +16,7 @@ from src.tools.fuzz.engine import ALL_CODES
 from src.machines import store
 from src.machines import machine_db
 from src.machines import domain_db
+from src.webscheme import HTTPS_PORTS
 
 BG = "#111111"
 BG_WIDGET = "#000000"
@@ -183,22 +185,11 @@ class FuzzDialog(tk.Toplevel):
         tab = self._tab_dir
 
         self._url_var = tk.StringVar()
+        self._scheme_cache = {}
+        self._probing = set()
+        self._probe_job = None
 
-        def _on_target_change(value):
-            if not value:
-                return
-            current = self._url_var.get()
-            if "://" in current:
-                prefix, rest = current.split("://", 1)
-                if "/" in rest:
-                    _, path = rest.split("/", 1)
-                else:
-                    path = "FUZZ"
-                self._url_var.set(f"{prefix}://{value}/{path}")
-            else:
-                self._url_var.set(f"http://{value}/FUZZ")
-
-        self._target_dir = _TargetSection(tab, 0, mode="both", on_select=_on_target_change)
+        self._target_dir = _TargetSection(tab, 0, mode="both", on_select=self._on_target_change)
 
         tk.Label(
             tab, text="URL", font=fonts.view_font_bold(11),
@@ -258,6 +249,109 @@ class FuzzDialog(tk.Toplevel):
         theme.Toggle(tab, "Wildcard detection",
                      variable=self._wildcard_dir_var).grid(
             row=row + 1, column=1, sticky="w", padx=15, pady=(10, 0))
+
+    def _on_target_change(self, value):
+        """Fill the URL, using the target's known http/https protocol."""
+        if not value:
+            return
+        host = self._host_for_url(value)
+        path = self._url_path()
+        scheme = self._scheme_for_target(value)
+        if scheme:
+            self._url_var.set(f"{scheme}://{host}/{path}")
+            return
+        self._url_var.set(f"http://{host}/{path}")
+        if not self._is_ip(value):
+            self._schedule_probe(value)
+
+    def _url_path(self):
+        current = self._url_var.get()
+        if "://" in current:
+            rest = current.split("://", 1)[1]
+            if "/" in rest:
+                return rest.split("/", 1)[1]
+        return "FUZZ"
+
+    @staticmethod
+    def _host_for_url(value):
+        if ":" in value and not value.startswith("["):
+            return f"[{value}]"
+        return value
+
+    @staticmethod
+    def _is_ip(value):
+        return bool(re.match(r"^\d+\.\d+\.\d+\.\d+$", value)) or ":" in value
+
+    def _scheme_for_target(self, value):
+        """Stored protocol for a domain, or inferred from machine data."""
+        try:
+            if self._is_ip(value):
+                m = store.get(value)
+                if m:
+                    protocols = {p for _, _, p in machine_db.load_domains(m.id) if p}
+                    if len(protocols) == 1:
+                        return protocols.pop()
+                    ports = [p for p, _ in machine_db.load_web_services(m.id)]
+                    if ports:
+                        return "https" if any(p in HTTPS_PORTS for p in ports) else "http"
+                return None
+            if domain_db.exists(value):
+                info = domain_db.load_domain_info(value)
+                if info and info.get("protocol"):
+                    return info["protocol"]
+        except Exception:
+            pass
+        return None
+
+    def _schedule_probe(self, value):
+        if self._probe_job is not None:
+            try:
+                self.after_cancel(self._probe_job)
+            except (tk.TclError, ValueError):
+                pass
+            self._probe_job = None
+        self._probe_job = self.after(400, lambda: self._start_probe(value))
+
+    def _start_probe(self, value):
+        self._probe_job = None
+        if value in self._scheme_cache:
+            cached = self._scheme_cache[value]
+            if cached:
+                self._url_var.set(f"{cached}://{self._host_for_url(value)}/{self._url_path()}")
+            return
+        if value in self._probing:
+            return
+        self._probing.add(value)
+        threading.Thread(target=self._probe_scheme, args=(value,), daemon=True).start()
+        self._poll_probe(value, 0)
+
+    def _probe_scheme(self, value):
+        from src.webscheme import detect_scheme
+        self._scheme_cache[value] = detect_scheme(value)
+
+    def _poll_probe(self, value, tries):
+        """Main-thread poll; only touches Tk from here, never from the worker."""
+        try:
+            if not self.winfo_exists():
+                return
+        except tk.TclError:
+            return
+        if value in self._scheme_cache:
+            self._probing.discard(value)
+            scheme = self._scheme_cache[value]
+            if scheme:
+                sel = self._target_dir.selected()
+                if sel and sel[1] == value:
+                    self._url_var.set(
+                        f"{scheme}://{self._host_for_url(value)}/{self._url_path()}")
+            return
+        if tries >= 200:
+            self._probing.discard(value)
+            return
+        try:
+            self.after(100, lambda: self._poll_probe(value, tries + 1))
+        except tk.TclError:
+            pass
 
     def _build_vhost_tab(self):
         tab = self._tab_vhost
@@ -655,8 +749,8 @@ class FuzzDialog(tk.Toplevel):
                             machine = store.add_or_update(ip=ip, method="manual")
                             machine.device_type = "device unknown"
                             machine_db.save_machine_info(machine)
-                        domain_db.init_or_update(host, machine.id, machine.ip, "fuzz")
-                        machine_db.save_domain(machine.id, host, "fuzz")
+                        domain_db.init_or_update(host, machine.id, machine.ip, "fuzz", parsed.scheme)
+                        machine_db.save_domain(machine.id, host, "fuzz", parsed.scheme)
                 domain_db.save_directory(host, path)
                 self._write_output(f"  [+] {path} → domain {host}\n", "success")
         self._write_output("[*] Done.\n", "info")
@@ -714,5 +808,11 @@ class FuzzDialog(tk.Toplevel):
         return None
 
     def _on_close(self):
+        if self._probe_job is not None:
+            try:
+                self.after_cancel(self._probe_job)
+            except (tk.TclError, ValueError):
+                pass
+            self._probe_job = None
         self._stop()
         self.destroy()

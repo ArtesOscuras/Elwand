@@ -1,6 +1,7 @@
 from src.gui import fonts
 import tkinter as tk
 from .base import BaseView
+from .dirtree import base_url, insert_clickable_tree
 from src.machines import domain_db
 
 MUTED = "#888888"
@@ -110,6 +111,7 @@ class DomainDetailView(BaseView):
 
         first = info.get("first_seen", "") if info else ""
         last = info.get("last_seen", "") if info else ""
+        protocol = info.get("protocol", "") if info else ""
         if first and "T" in first:
             first = first[:19].replace("T", " ")
         if last and "T" in last:
@@ -117,6 +119,7 @@ class DomainDetailView(BaseView):
 
         rows = [
             ("Domain", self._domain),
+            ("Protocol", protocol),
             ("First seen", first),
             ("Last seen", last),
         ]
@@ -160,8 +163,10 @@ class DomainDetailView(BaseView):
         directories = domain_db.load_directories(self._domain)
         if directories:
             self.text.insert(tk.END, f"\nDirectories ({len(directories)}):\n", "info")
-            for path, ts in directories:
-                self.text.insert(tk.END, f"  {path}\n", "bright")
+            insert_clickable_tree(
+                self.text, [p for p, _ in directories],
+                base_url(self._domain, [p for p, _ in web], preferred=protocol),
+                self._copy_to_clipboard)
 
         web = domain_db.load_web_services(self._domain)
         if web:
@@ -188,3 +193,10 @@ class DomainDetailView(BaseView):
             self.text.insert(tk.END, "\nMachines: (none)\n", "muted")
 
         self.text.configure(state=tk.DISABLED)
+
+    def _copy_to_clipboard(self, url):
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(url)
+        except tk.TclError:
+            pass

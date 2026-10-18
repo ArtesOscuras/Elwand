@@ -27,6 +27,7 @@ from src.tools.scanner.identifier import identify_device, get_gateway_ip, extrac
 from src.shells import ShellListener, shell_db
 from src import event_bus
 from src import process_registry
+from src.webscheme import scheme_for_port
 
 import datetime as _datetime
 
@@ -3824,7 +3825,7 @@ class App(tk.Tk):
                 machine_db.save_machine_info(machine)
         else:
             if not domain_db.exists(target):
-                domain_db.init_or_update(target, 0, "0.0.0.0", "manual")
+                domain_db.init_or_update(target, 0, "0.0.0.0", "manual", scheme_for_port(port))
             domain_name = target
             try:
                 info = socket.getaddrinfo(domain_name, None, socket.AF_INET, socket.SOCK_STREAM)
@@ -3836,7 +3837,8 @@ class App(tk.Tk):
                 machine = store.add_or_update(ip=ip, method="manual")
                 machine.device_type = "device unknown"
                 machine_db.save_machine_info(machine)
-            domain_db.init_or_update(domain_name, machine.id, machine.ip, "whatweb")
+            domain_db.init_or_update(domain_name, machine.id, machine.ip, "whatweb",
+                                     scheme_for_port(port))
 
         if not machine:
             self.console.warning(f"No machine found for: {target}")
@@ -3902,8 +3904,9 @@ class App(tk.Tk):
                     domain_db.save_web_service(domain_name, port, stdout)
                 domains = _extract_domains_from_whatweb(stdout)
                 for d in domains:
-                    domain_db.init_or_update(d, machine.id, machine.ip, "whatweb")
-                    machine_db.save_domain(machine.id, d, "whatweb")
+                    domain_db.init_or_update(d, machine.id, machine.ip, "whatweb",
+                                             scheme_for_port(port))
+                    machine_db.save_domain(machine.id, d, "whatweb", scheme_for_port(port))
                 self.console.after(0, lambda: self.console.info(
                     f"Web scan {target}:{port} done (whatweb)"
                 ))
@@ -5161,21 +5164,32 @@ class App(tk.Tk):
             self.console.after(0, lambda: self.console.warning(f"{domain} could not be resolved"))
             return
 
+        from src.webscheme import detect_scheme
+        self.console.after(0, lambda: self.console.info(f"Checking HTTP/HTTPS on {domain}..."))
+        protocol = detect_scheme(domain)
+        if protocol:
+            self.console.after(0, lambda p=protocol: self.console.info(
+                f"{domain} responds over {p.upper()}"))
+        else:
+            self.console.after(0, lambda: self.console.warning(
+                f"{domain} did not respond over HTTP or HTTPS"))
+
+        suffix = f"  [{protocol}]" if protocol else ""
         machine = store.get(ip)
         if machine:
-            machine_db.save_domain(machine.id, domain, "manual")
-            domain_db.init_or_update(domain, machine.id, machine.ip, "manual")
+            machine_db.save_domain(machine.id, domain, "manual", protocol or "")
+            domain_db.init_or_update(domain, machine.id, machine.ip, "manual", protocol)
             self.console.after(0, lambda: self.console.success(
-                f"{domain} → {ip}  (added to machine #{machine.id})"
+                f"{domain} → {ip}  (added to machine #{machine.id}){suffix}"
             ))
         else:
             machine = store.add_or_update(ip=ip, method="manual")
             machine.device_type = "device unknown"
             machine_db.save_machine_info(machine)
-            machine_db.save_domain(machine.id, domain, "manual")
-            domain_db.init_or_update(domain, machine.id, machine.ip, "manual")
+            machine_db.save_domain(machine.id, domain, "manual", protocol or "")
+            domain_db.init_or_update(domain, machine.id, machine.ip, "manual", protocol)
             self.console.after(0, lambda: self.console.success(
-                f"{domain} → {ip}  (new machine #{machine.id})"
+                f"{domain} → {ip}  (new machine #{machine.id}){suffix}"
             ))
 
     def _cmd_add_machine(self, args):

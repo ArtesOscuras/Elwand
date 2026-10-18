@@ -98,6 +98,8 @@ TOOLS = [
                 "type": "object",
                 "properties": {
                     "domain": {"type": "string", "description": "Domain name"},
+                    "protocol": {"type": "string", "enum": ["http", "https"],
+                                 "description": "Protocol the domain serves over (optional)."},
                 },
                 "required": ["domain"],
             },
@@ -1205,7 +1207,10 @@ def _add_machine(args, ctx=None):
 def _add_domain(args, ctx=None):
     from src.machines import domain_db
     domain = args.get("domain", "")
-    domain_db.init_or_update(domain, 0, "", "agent")
+    protocol = args.get("protocol") or None
+    if protocol not in ("http", "https"):
+        protocol = None
+    domain_db.init_or_update(domain, 0, "", "agent", protocol)
     return f"Domain '{domain}' added."
 
 
@@ -1302,7 +1307,11 @@ def _check_machine(args, ctx=None):
     try:
         domains = machine_db.load_domains(m.id)
         if domains:
-            parts = [f"{d} ({s})" if s else d for d, s in domains]
+            def _fmt(d):
+                name, src, proto = d[0], d[1], (d[2] if len(d) > 2 else "")
+                meta = ", ".join(x for x in (proto, src) if x)
+                return f"{name} ({meta})" if meta else name
+            parts = [_fmt(d) for d in domains]
             lines.append(f"  Associated domains ({len(domains)}): {', '.join(parts)}")
     except Exception:
         pass
@@ -1345,6 +1354,8 @@ def _check_domain(args, ctx=None):
 
     info = domain_db.load_domain_info(domain)
     if info:
+        if info.get("protocol"):
+            lines.append(f"  Protocol: {info['protocol']}")
         if info.get("first_seen"):
             lines.append(f"  First seen: {info['first_seen']}")
         if info.get("last_seen"):

@@ -543,9 +543,10 @@ class Recorder:
                 else:
                     machine = None
                 domain_db.init_or_update(host, machine.id if machine else 0,
-                                         machine.ip if machine else "", "webrecorder")
+                                         machine.ip if machine else "", "webrecorder",
+                                         parsed.scheme)
                 if machine:
-                    machine_db.save_domain(machine.id, host, "webrecorder")
+                    machine_db.save_domain(machine.id, host, "webrecorder", parsed.scheme)
             domain_db.save_directory(host, path)
 
     @staticmethod
