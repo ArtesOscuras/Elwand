@@ -1,0 +1,5 @@
+include AGENTS.md
+include THIRD_PARTY_NOTICES.md
+recursive-include src/data/rt2800 *
+prune src/data/rt2800/source/port/build
+exclude src/data/rt2800/source/port/rt2800d

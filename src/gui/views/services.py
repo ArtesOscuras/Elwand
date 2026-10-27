@@ -35,10 +35,12 @@ def _services():
     from src.tools.scanner import wifi_monitor
     svcs = [dict(s) for s in _STATIC_SERVICES]
     for iface in wifi_monitor.wifi_interfaces():
+        usb = wifi_monitor.is_usb_iface(iface)
         svcs.append({
             "key": f"wifi:{iface}",
             "name": f"{iface} Monitor mode",
-            "desc": "Captures nearby networks and client probes",
+            "desc": ("USB RT2800: capture + injection" if usb else
+                     "Captures nearby networks and client probes"),
             "icon": "wifi.png",
         })
     return svcs

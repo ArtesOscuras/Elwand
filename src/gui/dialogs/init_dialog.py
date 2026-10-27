@@ -71,6 +71,26 @@ def _checks():
     yield _check("tcpdump", "tcpdump", lambda: _resolve_binary("tcpdump")[0], kind="binary", critical=False)
     yield _check("browsers", "Chromium browser", lambda: _browser_check()[0], kind="binary", critical=False)
 
+    # --- Hardware (only shown when an RT2800 USB adapter is connected) ---
+    if _info.get("platform") == "darwin":
+        try:
+            from src.tools.scanner import wifi_rt2800
+            adapters = wifi_rt2800.adapters()
+        except Exception:
+            adapters = []
+        for a in adapters:
+            detail = f"{a['name']} ({a['vid']}:{a['pid']})"
+            if not a.get("usable"):
+                detail += " — driver not available"
+            yield {
+                "key": f"wifi_rt2800:{a['name']}",
+                "label": f"USB Wi-Fi {a.get('chip') or 'RT2800'}",
+                "fn": lambda a=a: bool(a.get("usable")),
+                "kind": "hardware",
+                "critical": False,
+                "detail": detail,
+            }
+
     # --- Wordlists ---
     yield _check("rockyou", "rockyou.txt wordlist",
                  lambda: _has_rockyou(),

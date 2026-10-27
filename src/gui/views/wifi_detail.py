@@ -188,6 +188,10 @@ class WifiDetailView(BaseView):
                     self._insert_probe(p)
             else:
                 self.text.insert(tk.END, "  No probes captured yet.\n", "muted")
+        elif any(wifi_monitor.is_usb_iface(d) for d in
+                 (net.get("devices") or [net.get("device") or ""])):
+            self.text.insert(tk.END, "  RT2800 USB capture available "
+                                      "(enable monitor mode).\n", "muted")
         elif wifi_monitor.is_macos():
             self.text.insert(tk.END, "  Probe capture requires root permissions in Mac OS.\n", "muted")
         elif not wifi_monitor.capture_supported():

@@ -206,7 +206,7 @@ class WifiView(BaseView):
         if wifi_monitor.is_iface_enabled(iface):
             wifi_monitor.disable_iface(iface)
         else:
-            if not wifi_monitor.capture_supported():
+            if not wifi_monitor.capture_supported(iface):
                 return
             wifi_monitor.enable_iface(iface)
         self._last_hash = None
@@ -252,7 +252,8 @@ class WifiView(BaseView):
 
     def _fb_run(self):
         try:
-            self._fb_nets = wifi_monitor.scan_networks_fallback(None)
+            scan_iface = self._selected_iface if wifi_monitor.is_macos() else None
+            self._fb_nets = wifi_monitor.scan_networks_fallback(scan_iface)
         except Exception:
             self._fb_nets = []
         self._fb_scanning = False

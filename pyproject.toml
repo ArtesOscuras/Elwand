@@ -25,8 +25,11 @@ dependencies = [
 [project.scripts]
 elwand = "src.cli:main"
 
+[tool.setuptools]
+include-package-data = true
+
 [tool.setuptools.packages.find]
 include = ["src*"]
 
 [tool.setuptools.package-data]
-src = ["fonts/*", "icons/*", "data/*", "lst/*", "rules/*"]
+src = ["fonts/*", "icons/*", "data/*", "data/rt2800/*", "lst/*", "rules/*"]

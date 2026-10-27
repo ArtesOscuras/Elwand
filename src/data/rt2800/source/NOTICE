@@ -1,0 +1,27 @@
+RT2800 USB userspace driver source
+=================================
+
+This is the complete source of the `rt2800d` helper shipped with Elwand.
+
+It is derived from the Linux `rt2x00` / `rt2800usb` driver (GPL-2.0) and a
+macOS userspace port. Elwand modifications add JSON scanning, radiotap/pcap
+capture, explicit CSA injection, deauth capture, DTIM-synchronized deauth and
+the macOS/Elwand integration.
+
+License: see `COPYING` (GPL-2.0). Some host files also offer BSD-3-Clause as
+indicated by their SPDX headers.
+
+Firmware: `rt2x00/rt2870.bin` is Ralink/MediaTek firmware; see
+`LICENSES/ralink-firmware.txt`.
+
+Build (from the Elwand repository root):
+
+    make -C src/data/rt2800/source/port install
+
+The runtime helper and its runtime firmware are installed by that command into
+the parent directory (`src/data/rt2800/`). `BUILD_INFO` there records the
+binary SHA-256 and build command.
+
+The source is included in the Elwand wheel and sdist. If a third-party
+redistribution removes it, the corresponding source is available from the
+Elwand repository or from the maintainer on request.

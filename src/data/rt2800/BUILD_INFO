@@ -1,0 +1,9 @@
+driver: rt2800d
+binary: src/data/rt2800/rt2800d
+source: src/data/rt2800/source
+source_license: GPL-2.0 (see source/COPYING)
+firmware: rt2870.bin (see ralink-firmware.txt)
+architecture: arm64
+built_utc: 2026-10-27T09:17:08Z
+build_command: make -C src/data/rt2800/source/port install
+binary_sha256: 590c9644ebda41c731f6488a65e6f2076d09738d3aecd5d7ae9bfd60917bef56

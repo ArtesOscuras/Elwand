@@ -1,0 +1,50 @@
+Elwand RT2800 USB helper
+========================
+
+This directory contains the runtime helper `rt2800d`, its firmware and the
+corresponding source code.
+
+Source code
+-----------
+The complete source for `rt2800d` ships with Elwand in:
+
+    src/data/rt2800/source/
+
+It is also part of the source distribution (`sdist`) and the installed package
+(`site-packages/src/data/rt2800/source/`). If a redistribution omits it, the
+corresponding source can be obtained from the Elwand repository or from the
+maintainer on request.
+
+License
+-------
+`rt2800d` is a separate executable derived from the Linux `rt2x00` /
+`rt2800usb` driver (GPL-2.0) and a macOS userspace port. The full license text
+is in `COPYING` (GPL-2.0) and in `source/COPYING`. Some host files carry an
+SPDX dual license (GPL-2.0 OR BSD-3-Clause) as stated in their file headers.
+
+The Elwand Python application invokes `rt2800d` as a separate process; it is
+not linked into the Python interpreter.
+
+Firmware
+--------
+`rt2870.bin` is Ralink/MediaTek firmware redistributed under the terms in
+`ralink-firmware.txt` and `source/LICENSES/ralink-firmware.txt`.
+
+Build
+-----
+    make -C src/data/rt2800/source/port install
+
+This requires macOS, Xcode Command Line Tools (clang) and the IOKit /
+CoreFoundation frameworks. The shipped binary is built for Apple Silicon
+(arm64); the source is provided so other architectures can rebuild it.
+
+Build provenance
+----------------
+See `BUILD_INFO` for the source location, binary SHA-256, build command and
+architecture of the shipped helper.
+
+Third-party names
+-----------------
+Ralink, MediaTek, Apple, macOS, Wi-Fi and other names are trademarks of their
+respective owners. This helper is an independent userspace implementation and
+is not endorsed by or affiliated with those owners.

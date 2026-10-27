@@ -60,3 +60,10 @@ This avoids having to run Elwand as root.
 Wordlists, databases, credentials, evidence files... are stored at:
 
 - `~/.local/share/elwand/` (default)
+
+## Bundled third-party components
+
+Elwand includes the complete source and a prebuilt binary for the RT2800 USB
+helper (`rt2800d`, GPL-2.0) and its Ralink firmware. See
+`THIRD_PARTY_NOTICES.md` and `src/data/rt2800/NOTICE` for licenses,
+provenance, source location and build instructions.

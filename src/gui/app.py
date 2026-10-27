@@ -818,11 +818,15 @@ class App(tk.Tk):
             from src.tools.scanner import wifi_monitor
             iface = key.split(":", 1)[1]
             if enable:
-                if not wifi_monitor.capture_supported():
-                    self.console.info(
-                        "WiFi capture not available on this platform "
-                        "(Linux: needs a monitor adapter; macOS: needs root "
-                        "and tcpdump).")
+                if not wifi_monitor.capture_supported(iface):
+                    if wifi_monitor.is_usb_iface(iface):
+                        self.console.info(
+                            "RT2800 USB adapter/driver not available.")
+                    else:
+                        self.console.info(
+                            "WiFi capture not available on this platform "
+                            "(Linux: needs a monitor adapter; macOS: needs "
+                            "root and tcpdump).")
                     return
                 wifi_monitor.enable_iface(iface)
                 self.console.info(f"Monitor mode ON on {iface}")

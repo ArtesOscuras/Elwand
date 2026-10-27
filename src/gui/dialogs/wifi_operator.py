@@ -565,10 +565,15 @@ class WifiOperatorDialog(tk.Toplevel):
                 self._log("[!] Select a client, or switch to Broadcast.",
                           "error")
                 return
+        iface = self._iface
+        from src.tools.scanner import wifi_monitor as wm
+        if not iface or not wm.injection_supported(iface):
+            self._log("[!] Frame injection is not available on this interface. "
+                      "Select the RT2800 USB adapter.", "error")
+            return
         self._busy = True
         self._deauth_btn.config(text="Deauthing...")
         bssid = net["bssid"]
-        iface = self._iface
         opts = {
             "count": self._deauth_param("count", int),
             "reason": self._deauth_param("reason", int),
@@ -586,7 +591,7 @@ class WifiOperatorDialog(tk.Toplevel):
             f"{opts['reason']}) to {target} ...")
         if iface:
             wm.reserve_iface(iface)
-            wm.wait_iface_released(iface, timeout=6.0)
+            wm.wait_iface_released(iface, timeout=20.0)
         ok, msg = False, "Deauth failed."
         try:
             ok, msg = wm.deauth(bssid, client=client, iface=iface, **opts)
@@ -662,6 +667,11 @@ class WifiOperatorDialog(tk.Toplevel):
         if not iface:
             self._log("[!] No monitor interface available.", "error", "csa")
             return
+        from src.tools.scanner import wifi_monitor as wm
+        if not wm.injection_supported(iface):
+            self._log("[!] CSA injection is not available on this interface. "
+                      "Select the RT2800 USB adapter.", "error", "csa")
+            return
         client = self._client_key if self._mode == "single" else None
         if self._mode == "single" and not client:
             self._log("[!] Select a client, or switch to Broadcast.",
@@ -713,7 +723,7 @@ class WifiOperatorDialog(tk.Toplevel):
         from src.tools.scanner import csa_attack
         try:
             wm.reserve_iface(iface)
-            if not wm.wait_iface_released(iface, timeout=6.0):
+            if not wm.wait_iface_released(iface, timeout=20.0):
                 self._log_csa("[!] Interface did not become free; continuing "
                               "anyway.", "error")
             summary = csa_attack.csa_pulse(

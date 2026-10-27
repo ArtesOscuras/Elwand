@@ -607,15 +607,16 @@ Without `--status-json` support it falls back to regex parsing (`Progress` / `Re
 
 ## WiFi Monitor (`src/tools/scanner/wifi_monitor.py`)
 
-The WiFi subsystem is **platform-split**: Linux does full passive monitoring + injection; macOS can do **monitor RX (capture)** and scanning, but **no injection**.
+The WiFi subsystem is **platform-split**: Linux supports monitor capture + injection; macOS supports built-in monitor RX/scan (no injection) plus optional RT2800 USB capture + injection through the bundled userspace driver.
 
 **Platform detection** is centralized in `src/info.py` (populated by `init_dialog` at startup). `wifi_monitor` reads `_info.get("platform") or sys.platform` once at import into `_IS_MACOS` / `_IS_LINUX`. Do not duplicate `sys.platform` checks; use `is_macos()` / `is_linux()` and the capability helpers below.
 
 **Capabilities (do NOT use a single flag):**
-* `capture_supported()` — monitor-mode RX. Linux: always. macOS: only if `tcpdump` exists.
-* `injection_supported()` — frame injection / deauth / CSA. Linux only.
-* `monitor_supported()` is kept as an alias of `capture_supported()` (backward compat).
-* Gate **capture** features (networks/probes/handshakes, and `lock_channel`) on `capture_supported()`; gate **attack** features (Deauther, CSA Spoof) on `injection_supported()`.
+* `capture_supported(iface=None)` — monitor-mode RX. Linux: always. macOS: built-in if `tcpdump` exists; RT2800 USB if the bundled driver/adapter is available.
+* `injection_supported(iface=None)` — frame injection / deauth / CSA. Linux: yes. macOS: only the RT2800 USB interface.
+* `monitor_supported(iface=None)` is kept as an alias of `capture_supported()` (backward compat).
+* The no-argument form is a backward-compatible "any interface" check; when an interface is selected, pass it.
+* Gate **capture** features (networks/probes/handshakes, and `lock_channel`) on `capture_supported(iface)`; gate **attack** features (Deauther, CSA Spoof) on `injection_supported(iface)`.
 
 **Per-interface monitor (user-activated, no auto-start):**
 * The monitor is **never started automatically** at app boot. Each interface is enabled/disabled explicitly by the user.
@@ -631,25 +632,109 @@ The WiFi subsystem is **platform-split**: Linux does full passive monitoring + i
 * Handshake files (`.pcap`, `.hc22000`) are written to `handshakes_dir()`.
 
 **macOS:**
-* Backend lives in `src/tools/scanner/wifi_macos.py`, imported lazily only on darwin. `scan()` uses CoreWLAN via `pyobjc-framework-CoreWLAN` (conditional dependency, installed only when `sys_platform == 'darwin'`) and returns the **same normalized dict shape** as Linux.
-* **Monitor RX works** on the built-in Apple Silicon radio (no injection). It is done with `tcpdump -I -i <iface> -y IEEE802_11_RADIO -U -w -` (requires **root**/BPF and the interface to be **disassociated**, since monitor mode cannot run while associated). `wifi_macos.capture_loop()` parses the pcap stream and feeds `wifi_monitor._process()` — so networks, client probes and handshakes are collected exactly like on Linux.
-* **Channel hopping works via CoreWLAN** (public API). `wifi_macos.set_channel(iface, chan)` uses `CWInterface.setWLANChannel:error:` (the API `airport` used) and always picks the **20 MHz** variant (beacons are 20 MHz wide; 40/80 MHz variants miss them). `wifi_macos.supported_channels(iface)` returns the radio's own channel list (2.4 + 5 GHz incl. DFS). **The radio latches onto the band it is on when `tcpdump` starts** (start it on 5 GHz and it only captures 5 GHz, even while changing channel), so `capture_loop()` runs **one `tcpdump` per band** — it binds each session by setting that band's first channel, then `_hop_band()` cycles the band's channels for `len(band) * HOP_DWELL + 5` s. `HOP_DWELL = 0.6` and the extra **+5 s slack** matter: `set_channel()` adds overhead, so a band pass takes longer than `len(band) * HOP_DWELL`, and without the slack the last channels of the band (e.g. 5 GHz ch161 / Pixel_4431) were cut off before the capture was stopped and their beacons were missed. `setWLANChannel` refuses to change the channel while the interface is associated, which is exactly the monitor-mode state. **Do not** try `dumpcap -k` (prints "Setting 802.11 channels is not supported on this platform") or `ifconfig <iface> channel` ("bad value") — they do not work on macOS 26; CoreWLAN is the only working path. Requires `pyobjc-framework-CoreWLAN` (already a darwin dependency) and root. The user can **lock a channel** (`wifi_monitor.lock_channel`): `capture_loop()` then opens a single `tcpdump` session on that channel and `_hop_band()` parks on it instead of cycling. Because the radio latches its band, a lock is honoured on both platforms, and the session is immediately recreated when the lock changes or is released (detected by `_pump()`/`_hop_band()` comparing `wifi_monitor._locked_channel`), so switching to a channel on the other band rebinds correctly. This lets a user park the radio on an AP's channel to catch a 4-way handshake — but macOS cannot inject, so the handshake only appears if a client naturally (re)connects.
+* The **built-in** backend lives in `src/tools/scanner/wifi_macos.py`, imported lazily only on darwin. `scan()` uses CoreWLAN via `pyobjc-framework-CoreWLAN` (conditional dependency, installed only when `sys_platform == 'darwin'`) and returns the **same normalized dict shape** as Linux. The USB RT2800 backend is separate (`wifi_rt2800.py`, below).
+* **Built-in monitor RX works** on the Apple Silicon radio (no injection; use RT2800 USB for Deauther/CSA). It is done with `tcpdump -I -i <iface> -y IEEE802_11_RADIO -U -w -` (requires **root**/BPF and the interface to be **disassociated**, since monitor mode cannot run while associated). `wifi_macos.capture_loop()` parses the pcap stream and feeds `wifi_monitor._process()` — so networks, client probes and handshakes are collected exactly like on Linux.
+* **Channel hopping works via CoreWLAN** (public API). `wifi_macos.set_channel(iface, chan)` uses `CWInterface.setWLANChannel:error:` (the API `airport` used) and always picks the **20 MHz** variant (beacons are 20 MHz wide; 40/80 MHz variants miss them). `wifi_macos.supported_channels(iface)` returns the radio's own channel list (2.4 + 5 GHz incl. DFS). **The radio latches onto the band it is on when `tcpdump` starts** (start it on 5 GHz and it only captures 5 GHz, even while changing channel), so `capture_loop()` runs **one `tcpdump` per band** — it binds each session by setting that band's first channel, then `_hop_band()` cycles the band's channels for `len(band) * HOP_DWELL + 5` s. `HOP_DWELL = 0.6` and the extra **+5 s slack** matter: `set_channel()` adds overhead, so a band pass takes longer than `len(band) * HOP_DWELL`, and without the slack the last channels of the band (e.g. 5 GHz ch161 / Pixel_4431) were cut off before the capture was stopped and their beacons were missed. `setWLANChannel` refuses to change the channel while the interface is associated, which is exactly the monitor-mode state. **Do not** try `dumpcap -k` (prints "Setting 802.11 channels is not supported on this platform") or `ifconfig <iface> channel` ("bad value") — they do not work on macOS 26; CoreWLAN is the only working path. Requires `pyobjc-framework-CoreWLAN` (already a darwin dependency) and root. The user can **lock a channel** (`wifi_monitor.lock_channel`): `capture_loop()` then opens a single `tcpdump` session on that channel and `_hop_band()` parks on it instead of cycling. Because the radio latches its band, a lock is honoured on both platforms, and the session is immediately recreated when the lock changes or is released (detected by `_pump()`/`_hop_band()` comparing `wifi_monitor._locked_channel`), so switching to a channel on the other band rebinds correctly. This lets a user park the radio on an AP's channel to catch a 4-way handshake — but the built-in radio cannot inject, so the handshake only appears if a client naturally (re)connects; use the RT2800 USB backend for Deauther/CSA.
 * The old `airport` CLI was removed by Apple (only `airportd.sb` remains); `tcpdump -I` + CoreWLAN `setWLANChannel` replace it.
-* Non-root: no capture → `WifiView` falls back to the CoreWLAN scan (scan-only). `WifiDetailView` shows "Probe capture requires root permissions in Mac OS."
-* Note: CoreWLAN scanning needs **Location Services** granted to the terminal; running as **root** (sudo) loses that grant and returns empty SSIDs — run Elwand as the normal user for scanning, or as root for monitor capture.
+* Built-in non-root: no capture → `WifiView` falls back to the CoreWLAN scan (scan-only); `WifiDetailView` explains that built-in probe capture needs root. The **RT2800 USB** backend does **not** need root for capture/injection.
+* Note: CoreWLAN scanning needs **Location Services** granted to the terminal; running as **root** (sudo) loses that grant and returns empty SSIDs — run Elwand as the normal user for built-in scanning, or as root for built-in monitor capture. The RT2800 USB scan does not use CoreWLAN/Location Services.
 * `iface` discovery falls back to parsing `networksetup -listallhardwareports` if CoreWLAN is unavailable.
-* No PMF field via CoreWLAN.
+* No PMF field via CoreWLAN; the RT2800 USB scan reports `pmf` (`no`/`capable`/`required`).
+
+### RT2800 USB backend (macOS)
+
+Elwand bundles a userspace driver for Ralink/MediaTek RT2800 USB adapters
+(`148f:3572` RT5592 is the validated reference). It enables monitor RX,
+network/probe/handshake capture and frame injection (Deauther + CSA) on macOS
+without a kext.
+
+* **Source of truth for the driver:** `src/data/rt2800/source/` (GPLv2 +
+  Ralink firmware license). The complete source ships in both the wheel and
+  the sdist; `NOTICE` and `BUILD_INFO` in `src/data/rt2800/` record the
+  license, provenance and binary SHA-256, and root `THIRD_PARTY_NOTICES.md`
+  documents the GPLv2 driver and Ralink firmware. Build and refresh the shipped
+  binary with `make -C src/data/rt2800/source/port install`. The runtime
+  binary/firmware/licenses are shipped in `src/data/rt2800/` and copied to
+  `~/.local/share/elwand/rt2800/` by `elwand_paths.rt2800_dir()` (the source
+  directory is not copied to the runtime data dir).
+* **Backend:** `src/tools/scanner/wifi_rt2800.py`, imported lazily only on
+  darwin. It exposes the synthetic interface `rt2800usb0`; macOS has no real
+  `enX` interface for this dongle.
+* **Detection:** `ioreg -p IOUSB -l -w 0` filtered by
+  `src/data/rt2800/usb_ids.json`. The init dialog shows a **HARDWARE** check
+  (`USB Wi-Fi <chip>`) only when an adapter is present; if the driver is
+  missing it is shown as a warning, never as a hidden failure. No adapter =
+  no section/line.
+* **Capabilities are per interface:** `capture_supported(iface)` and
+  `injection_supported(iface)`. Built-in macOS = capture only; RT2800 USB =
+  capture + injection; Linux = unchanged. `is_usb_iface(iface)` identifies the
+  synthetic interface.
+* **Driver contract:** stdout is machine data only, diagnostics go to stderr.
+  Commands used by Elwand:
+  * `rt2800d scan --json`
+  * `rt2800d monitor <channel> <seconds> --pcap [--hop]` (radiotap/pcap on
+    stdout; `seconds=0` runs until terminated)
+  * `rt2800d deauth <channel> <bssid> <client> [count] [reason]
+    [--pcap --capture-seconds N] [--dtim-sync]` (pcap mode also captures
+    the reauthentication handshake; DTIM sync targets power-save clients)
+  * `rt2800d csa <channel> <bssid> <new_channel> [client] [count] [switch_count]`
+    (beacon-based CSA; `RT_CSA_ACTION=1` selects the action frame)
+* **Timing:** USB Deauther/CSA are **beacon/DTIM-synced** (the driver waits for
+  the AP's beacons). The Linux-only `interval`/`rate` and the USB-ignored
+  `csa_interval`/`tx_rate` knobs do not change the USB timing; `count`,
+  `reason`, `attack_window`, `observe_window` and `switch_count` still apply.
+* **Lifecycle:** the USB adapter is exclusive. All driver operations are
+  serialized through `wifi_rt2800._op_begin()`/`_claim_capture()`; scans during
+  capture/attack return cached data instead of opening the USB device. Never
+  call `rt2800d` directly from a UI/worker; go through the backend.
+  `WifiMonitorService` starts one `rt2800d monitor` per enabled interface;
+  `reserve_iface()` + `wait_iface_released()`/`wifi_rt2800.wait_idle()` stop
+  that process before Deauth/CSA. `wifi_monitor.shutdown()`/
+  `wifi_rt2800.cleanup()` terminate it. The backend retries/backoffs on
+  `0xe00002c5` (device busy); if it persists, close other Elwand/rt2800d
+  instances and unplug/replug the adapter. `deauth()` warns when the selected
+  client has not been observed recently; keep it awake/connected and verify
+  its current MAC (phones may randomize it).
+* **Multi-BSSID:** the same SSID (e.g. BTT_LPX) can be exposed on 2.4 GHz and
+  5 GHz with different BSSIDs/channels. Deauth/CSA use the selected BSSID's
+  channel; the Deauther backend also adds other BSSIDs where the client was
+  observed and other BSSIDs of the selected ESSID. Select the BSSID under which
+  the client appears in the WifiOperator client list.
+* **Power save / broadcast:** targeted USB deauth is beacon/DTIM-synced so
+  sleeping clients are hit when they wake. Broadcast deauth affects every
+  client on the BSSID; prefer a client MAC when the link carries the test
+  environment's internet path.
+* **Services/WifiView/WifiOperator:** `rt2800usb0` appears automatically in
+  the WiFi interface list and Services toggle. WifiOperator accepts it for
+  Deauther/CSA; the built-in macOS radio rejects injection with a clear
+  message.
+* **Packaging:** keep `"data/rt2800/*"` in `pyproject.toml` package-data and
+  `include-package-data = true` plus the `MANIFEST.in` recursive include so
+  the source ships in both wheel and sdist. `rt2800_dir()` copies only the
+  top-level runtime files to the user data dir, never `source/`. Development
+  overrides: `ELWAND_RT2800_BIN` and `ELWAND_RT2800_FW_DIR`.
+* **Do not** import `wifi_rt2800` on Linux; every caller is behind
+  `_IS_MACOS`/`is_usb_iface()` and the module is imported lazily.
+* **Validation:** build the driver, run `scan --json` and `monitor --pcap` on
+  the target channel, then Deauther/CSA from WifiOperator against an authorized
+  lab network (BTT_LPX). The Pixel hotspot advertises PMF and is not a deauth
+  target. For packaging, build the wheel/sdist and verify they contain
+  `src/data/rt2800/source`, `NOTICE`, `BUILD_INFO`, the runtime binary/firmware
+  and **not** `source/port/build`/`source/port/rt2800d`; reinstall with
+  `pipx install --force .` and confirm the source is present in `site-packages`.
 
 ### Wifi Operator (`src/gui/dialogs/wifi_operator.py`)
 
 The dialog has two tabs (Deauther / CSA Spoof), each with an interface selector, a network list, a client list, and a **parameter frame**:
 
-* **CSA Spoof** reads its fields from `csa_attack.DEFAULTS` (`target_chan`, `attack_window`, `observe_window`, `count`, `csa_interval`, `tx_rate`, `duration`) plus an "All networks with this ESSID" toggle.
-* **Deauther** reads from `wifi_monitor.DEAUTH_DEFAULTS` (`count`, `reason`, `interval`, `rate`) — the same defaults `deauth()` has always used. `deauth(bssid, client=None, iface=None, count=64, reason=7, interval=0.005, rate=2)` passes them to `_send_deauth()` (radiotap Rate + inter-frame interval). Reason is a plain numeric `Entry`.
+* **CSA Spoof** reads its fields from `csa_attack.DEFAULTS` (`target_chan`, `attack_window`, `observe_window`, `count`, `csa_interval`, `tx_rate`, `duration`) plus an "All networks with this ESSID" toggle. On RT2800 USB it routes to `wifi_rt2800.csa_pulse`.
+* **Deauther** reads from `wifi_monitor.DEAUTH_DEFAULTS` (`count`, `reason`, `interval`, `rate`) — the same defaults `deauth()` has always used. On Linux `deauth(bssid, client=None, iface=None, count=64, reason=7, interval=0.005, rate=2)` passes them to `_send_deauth()` (radiotap Rate + inter-frame interval). On RT2800 USB it uses the driver's beacon/DTIM-synced targeted deauth and pcap handshake capture. Reason is a plain numeric `Entry`.
+* **RT2800 USB targeting:** select the BSSID under which the client appears; the backend expands to other BSSIDs of the same ESSID and sends unicast only to the selected client. Use **Single target**, not Broadcast, when the link carries the test environment's internet path.
 
 ### Handshakes (capture → hash → extract)
 
 * The monitor writes `<SSID>_<BSSID>.pcap` (frames) and appends a hashcat 22000 line to `<SSID>_<BSSID>.hc22000` when a 4-way handshake completes. It registers the **raw `WPA*02*…` line** (not the file path) in the `hashes` table (`type="WPA handshake"`, `hascat_mode="22000"`); the same BSSID seen again updates that row with the latest line.
+* The RT2800 USB Deauther runs `rt2800d deauth --pcap` and feeds that radiotap pcap through the same `_process` pipeline, so the client's reauthentication handshake is written exactly like monitor traffic.
 * `credential_db.repair_handshake_hashes()` (called once at startup) rewrites legacy rows that stored the `.hc22000` path with the last line of that file.
 * `wifi_monitor.extract_handshakes_from_pcap(path)` parses a `.pcap` and returns the handshakes it holds (`{bssid, client, ssid, keyver, messages, message_pair, line}`); the ESSID comes from the live networks, the sibling `.hc22000`, or the filename.
 * The **Handshakes view** lists `.pcap` files. Clicking a name opens `ExtractHashDialog` with that pcap preselected; the **Extract hash** button opens it with the first pcap. The dialog derives the 22000 line, lets the user select a handshake, and saves it (`origin="manual extract"`).
@@ -657,8 +742,8 @@ The dialog has two tabs (Deauther / CSA Spoof), each with an interface selector,
 
 **Rules for changes:**
 * Never let macOS code run on Linux or vice versa — every platform branch must early-return.
-* New scan fields must be added to both backends with identical keys.
-* Keep `wifi_macos` free of tkinter and of module-level CoreWLAN imports (so Linux never touches it).
+* New scan fields must be added to **all** backends (Linux, built-in macOS, RT2800 USB) with identical keys.
+* Keep `wifi_macos` free of tkinter and of module-level CoreWLAN imports (so Linux never touches it). Keep `wifi_rt2800` free of tkinter/CoreWLAN and import it lazily only on darwin.
 
 ---
 

@@ -137,8 +137,13 @@ def csa_pulse(iface, bssid=None, client=None, ssid="", channel=0,
                "cycles": 0, "eapol": 0, "handshakes": 0, "target_seen": False,
                "hc22000": "", "targets": [b for b, _ in tg]}
 
-    if not wm.injection_supported():
-        summary["reason"] = "Frame injection is Linux-only."
+    if wm.is_macos() and wm.is_usb_iface(iface):
+        from src.tools.scanner import wifi_rt2800
+        return wifi_rt2800.csa_pulse(
+            iface, bssid=bssid, client=client, ssid=ssid, channel=channel,
+            targets=targets, on_log=on_log, stop_event=stop_event, **opt)
+    if not wm.injection_supported(iface):
+        summary["reason"] = "Frame injection is not available on this interface."
         return summary
     if not tg:
         summary["reason"] = "No target BSSID."

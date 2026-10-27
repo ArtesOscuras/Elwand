@@ -104,6 +104,22 @@ def is_linux():
     return _IS_LINUX
 
 
+def is_usb_iface(iface):
+    """True for the synthetic RT2800 USB interface (macOS only)."""
+    if not _IS_MACOS or not iface:
+        return False
+    try:
+        from . import wifi_rt2800
+        return wifi_rt2800.is_iface(iface)
+    except Exception:
+        return False
+
+
+def _usb_backend():
+    from . import wifi_rt2800
+    return wifi_rt2800
+
+
 def tcpdump_path():
     """Locate the tcpdump binary (used for macOS monitor RX)."""
     for p in (shutil.which("tcpdump"), "/usr/sbin/tcpdump",
@@ -113,27 +129,47 @@ def tcpdump_path():
     return None
 
 
-def capture_supported():
+def capture_supported(iface=None):
     """Monitor-mode *receive* (capture) is available.
 
-    Linux: yes. macOS: only if tcpdump exists (it drives monitor mode via the
-    Apple80211 ioctl). The built-in Apple Silicon radio supports monitor RX
-    (no injection)."""
+    Linux: yes. macOS: built-in radio via tcpdump, RT2800 USB via rt2800d."""
     if _IS_LINUX:
         return True
     if _IS_MACOS:
-        return tcpdump_path() is not None
+        if iface and is_usb_iface(iface):
+            try:
+                return _usb_backend().capture_supported()
+            except Exception:
+                return False
+        if iface:
+            return tcpdump_path() is not None
+        try:
+            usb = _usb_backend().capture_supported()
+        except Exception:
+            usb = False
+        return tcpdump_path() is not None or usb
     return False
 
 
-def injection_supported():
-    """Frame injection / deauth is Linux-only."""
-    return _IS_LINUX
+def injection_supported(iface=None):
+    """Frame injection / deauth / CSA.
+
+    Linux: yes. macOS: only through the RT2800 USB adapter."""
+    if _IS_LINUX:
+        return True
+    if _IS_MACOS:
+        if iface and not is_usb_iface(iface):
+            return False
+        try:
+            return _usb_backend().injection_supported()
+        except Exception:
+            return False
+    return False
 
 
-def monitor_supported():
+def monitor_supported(iface=None):
     # Kept for backward compatibility: means "capture (monitor RX)".
-    return capture_supported()
+    return capture_supported(iface)
 
 
 def _macos_backend():
@@ -143,10 +179,16 @@ def _macos_backend():
 
 def wifi_interfaces():
     if _IS_MACOS:
+        names = []
         try:
-            return _macos_backend().interfaces()
+            names.extend(_macos_backend().interfaces())
         except Exception:
-            return []
+            pass
+        try:
+            names.extend(_usb_backend().interfaces())
+        except Exception:
+            pass
+        return list(dict.fromkeys(names))
     names = []
     if _which("nmcli"):
         ok, out, _ = _run(["nmcli", "-t", "-f", "DEVICE,TYPE,STATE", "device", "status"])
@@ -957,13 +999,61 @@ def _scan_nmcli(iface=None):
     return nets
 
 
+def _merge_nets(nets):
+    merged = {}
+    for n in nets:
+        key = (n.get("bssid") or n.get("ssid") or "").upper()
+        if not key:
+            continue
+        cur = merged.get(key)
+        if cur is None:
+            cur = dict(n)
+            cur["devices"] = list(n.get("devices") or [])
+            merged[key] = cur
+            continue
+        if n.get("signal", 0) > cur.get("signal", 0):
+            cur["signal"] = n.get("signal", 0)
+            cur["signal_dbm"] = n.get("signal_dbm")
+        if cur.get("pmf") in (None, "", "no") and n.get("pmf"):
+            cur["pmf"] = n["pmf"]
+        if not cur.get("security") and n.get("security"):
+            cur["security"] = n["security"]
+        if n.get("signal_dbm") is not None and cur.get("signal_dbm") is None:
+            cur["signal_dbm"] = n["signal_dbm"]
+        devices = set(cur.get("devices") or [])
+        devices.update(n.get("devices") or [])
+        cur["devices"] = sorted(devices)
+        cur["device"] = ", ".join(cur["devices"])
+        cur["last_seen"] = max(cur.get("last_seen", 0), n.get("last_seen", 0))
+    return list(merged.values())
+
+
 def scan_networks(iface=None):
     if _IS_MACOS:
+        if iface and is_usb_iface(iface):
+            try:
+                return _usb_backend().scan(iface)
+            except Exception as e:
+                _emit_error(f"RT2800 scan error: {e}")
+                return []
+        if iface:
+            try:
+                return _macos_backend().scan(iface)
+            except Exception as e:
+                _emit_error(f"WiFi scan error: {e}")
+                return []
+        nets = []
         try:
-            return _macos_backend().scan(iface)
+            nets.extend(_macos_backend().scan(None))
         except Exception as e:
             _emit_error(f"WiFi scan error: {e}")
-            return []
+        try:
+            usb = _usb_backend()
+            if usb.available():
+                nets.extend(usb.scan(None))
+        except Exception:
+            pass
+        return _merge_nets(nets)
     return _scan_nmcli(iface)
 
 
@@ -1065,8 +1155,13 @@ def release_iface(iface):
     get_service().release(iface)
 
 
-def wait_iface_released(iface, timeout=6.0):
-    """Block until the monitor worker has put iface back to managed mode."""
+def wait_iface_released(iface, timeout=20.0):
+    """Block until the monitor worker has released the interface."""
+    if _IS_MACOS:
+        if is_usb_iface(iface):
+            from . import wifi_rt2800
+            return wifi_rt2800.wait_idle(iface, timeout=timeout)
+        return True
     end = time.time() + timeout
     while time.time() < end:
         if _iface_type(iface) != "monitor":
@@ -1089,14 +1184,25 @@ def _send_deauth(iface, addr1, addr2, addr3, count, reason,
 
 
 def deauth(bssid, client=None, iface=None, count=DEAUTH_COUNT,
-           reason=DEAUTH_REASON, interval=DEAUTH_INTERVAL, rate=DEAUTH_RATE):
+           reason=DEAUTH_REASON, interval=DEAUTH_INTERVAL, rate=DEAUTH_RATE,
+           channel=None, capture_seconds=8):
     """Send a burst of deauthentication frames from an AP to a client.
 
-    Linux only. Works whether or not the monitor service is running: if the
-    target interface is not already in monitor mode it is put there for the
-    burst and restored afterwards, so it is NOT sniffing while injecting.
+    Linux uses scapy. macOS uses the RT2800 USB driver (beacon-synced, and it
+    also captures the reauthentication handshake). On Linux, works whether or
+    not the monitor service is running: if the target interface is not already
+    in monitor mode it is put there for the burst and restored afterwards.
     Returns (ok, message)."""
-    if not injection_supported():
+    if _IS_MACOS:
+        if is_usb_iface(iface):
+            from . import wifi_rt2800
+            return wifi_rt2800.deauth(
+                bssid, client=client, iface=iface, count=count,
+                reason=reason, interval=interval, rate=rate,
+                channel=channel, capture_seconds=capture_seconds)
+        return False, ("Deauth is not supported on the built-in macOS radio; "
+                       "select the RT2800 USB adapter.")
+    if not injection_supported(iface):
         return False, "Deauth is not supported on this platform (scan-only)."
     bssid = _mac(bssid)
     if not bssid:
@@ -1165,6 +1271,12 @@ class WifiMonitorService:
 
     def stop(self):
         self._running = False
+        with self._lock:
+            workers = list(self._workers.values())
+            self._workers.clear()
+            self._ifaces = []
+        for w in workers:
+            w["stop"].set()
 
     @property
     def is_running(self):
@@ -1253,8 +1365,12 @@ class WifiMonitorService:
     def _worker(self, iface, stop_event):
         if _IS_MACOS:
             try:
-                from . import wifi_macos
-                wifi_macos.capture_loop(iface, stop_event)
+                if is_usb_iface(iface):
+                    from . import wifi_rt2800
+                    wifi_rt2800.capture_loop(iface, stop_event)
+                else:
+                    from . import wifi_macos
+                    wifi_macos.capture_loop(iface, stop_event)
             except Exception as e:
                 _emit_error(f"WiFi capture error: {e}")
             return
@@ -1407,6 +1523,11 @@ def shutdown():
         try:
             from . import wifi_macos
             wifi_macos.cleanup_capture()
+        except Exception:
+            pass
+        try:
+            from . import wifi_rt2800
+            wifi_rt2800.cleanup()
         except Exception:
             pass
     else:

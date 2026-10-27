@@ -8,6 +8,7 @@ _PKG = files("src")
 _DATA_HOME_NAME = "elwand"
 _LEGACY_DATA_HOME_NAME = "hsf"
 _migrated = False
+_rt2800_synced = False
 
 def fonts_dir() -> Path:
     return _PKG / "fonts"
@@ -136,6 +137,45 @@ def handshakes_dir() -> Path:
     p = _get_data_home() / "handshakes"
     p.mkdir(parents=True, exist_ok=True)
     return p
+
+
+def rt2800_dir() -> Path:
+    """Runtime directory for the bundled RT2800 USB userspace driver."""
+    global _rt2800_synced
+    p = _get_data_home() / "rt2800"
+    p.mkdir(parents=True, exist_ok=True)
+    if not _rt2800_synced:
+        _rt2800_synced = True
+        src = _PKG / "data" / "rt2800"
+        try:
+            files = list(src.iterdir()) if src.is_dir() else []
+        except (OSError, TypeError):
+            files = []
+        for f in files:
+            if not f.is_file():
+                continue
+            dst = p / f.name
+            try:
+                dst.write_bytes(f.read_bytes())
+                if f.name == "rt2800d":
+                    dst.chmod(0o755)
+            except (OSError, PermissionError):
+                pass
+    return p
+
+
+def rt2800_bin() -> Path:
+    override = os.environ.get("ELWAND_RT2800_BIN")
+    if override:
+        return Path(override)
+    return rt2800_dir() / "rt2800d"
+
+
+def rt2800_firmware_dir() -> Path:
+    override = os.environ.get("ELWAND_RT2800_FW_DIR")
+    if override:
+        return Path(override)
+    return rt2800_dir()
 
 def models_catalog_file() -> Path:
     return databases_dir() / "models_catalog.json"
