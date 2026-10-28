@@ -75,7 +75,7 @@ def _checks():
     if _info.get("platform") == "darwin":
         try:
             from src.tools.scanner import wifi_rt2800
-            adapters = wifi_rt2800.adapters()
+            adapters = wifi_rt2800.adapters(wait=True)
         except Exception:
             adapters = []
         for a in adapters:

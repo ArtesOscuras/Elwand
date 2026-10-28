@@ -39,8 +39,21 @@ _op_state = None
 _pending = 0
 _last_scan = []
 _last_scan_at = 0.0
-_ioreg_cache = {"at": 0.0, "devices": []}
 _usb_ids = None
+
+# Adapter discovery runs `ioreg` (a subprocess that can take a while) and must
+# never block the GUI thread, so it is refreshed in a daemon thread and callers
+# only read this snapshot. The runtime-dir copy (binary/firmware) is done in the
+# same background worker.
+_ADAPTER_TTL = 30.0
+_adapter_lock = threading.Lock()
+_adapter_snapshot = {
+    "at": 0.0,
+    "devices": [],
+    "usb_ids": {(0x148F, 0x3572)},
+    "ready": False,
+    "loading": False,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -152,10 +165,8 @@ def _load_usb_ids():
     return ids
 
 
-def _ioreg_devices():
-    now = time.time()
-    if now - _ioreg_cache["at"] < 5.0:
-        return list(_ioreg_cache["devices"])
+def _ioreg_scan():
+    """Run ioreg once and return the parsed USB device list (blocking)."""
     devices = []
     try:
         r = subprocess.run(
@@ -183,18 +194,68 @@ def _ioreg_devices():
             "product": m_name.group(1) if m_name else "",
             "manufacturer": m_mfg.group(1) if m_mfg else "",
         })
-    _ioreg_cache["at"] = now
-    _ioreg_cache["devices"] = devices
     return devices
 
 
-def adapters():
-    """Detected RT2800 USB adapters (whether or not the helper is usable)."""
-    known = _load_usb_ids()
+def _refresh_adapters_once():
+    """Refresh the adapter snapshot synchronously (off-thread callers only)."""
+    try:
+        # Sync the bundled binary/firmware without blocking a GUI caller.
+        elwand_paths.rt2800_dir()
+    except Exception:
+        pass
+    devices = _ioreg_scan()
+    ids = _load_usb_ids()
     ready = driver_ready()
+    with _adapter_lock:
+        _adapter_snapshot["devices"] = devices
+        _adapter_snapshot["usb_ids"] = ids
+        _adapter_snapshot["ready"] = ready
+        _adapter_snapshot["at"] = time.time()
+
+
+def _refresh_adapters_async():
+    """Start a daemon refresh of the adapter snapshot (non-blocking)."""
+    with _adapter_lock:
+        if _adapter_snapshot["loading"]:
+            return
+        _adapter_snapshot["loading"] = True
+
+    def _work():
+        try:
+            _refresh_adapters_once()
+        finally:
+            with _adapter_lock:
+                _adapter_snapshot["loading"] = False
+
+    threading.Thread(target=_work, daemon=True).start()
+
+
+def _adapter_data():
+    """(devices, usb_ids, ready) from the snapshot, refreshing if stale."""
+    with _adapter_lock:
+        stale = (time.time() - _adapter_snapshot["at"]) >= _ADAPTER_TTL
+        loading = _adapter_snapshot["loading"]
+        devices = list(_adapter_snapshot["devices"])
+        ids = set(_adapter_snapshot["usb_ids"])
+        ready = _adapter_snapshot["ready"]
+    if stale and not loading:
+        _refresh_adapters_async()
+    return devices, ids, ready
+
+
+def adapters(wait=False):
+    """Detected RT2800 USB adapters (whether or not the helper is usable).
+
+    Discovery happens in a background thread, so this never blocks the GUI
+    thread. ``wait=True`` forces a synchronous refresh and must only be used
+    from off-GUI callers (e.g. the init dialog's checker thread)."""
+    if wait:
+        _refresh_adapters_once()
+    devices, known, ready = _adapter_data()
     out = []
     idx = 0
-    for dev in _ioreg_devices():
+    for dev in devices:
         if (dev["vid"], dev["pid"]) not in known:
             continue
         name = f"{IFACE_PREFIX}{idx}" if idx else IFACE_NAME
@@ -212,7 +273,7 @@ def adapters():
 
 
 def available():
-    return driver_ready() and bool(adapters())
+    return any(a["usable"] for a in adapters())
 
 
 def interfaces():
