@@ -6,6 +6,7 @@ from tkinter import ttk
 from src.gui import fonts, windowing, theme
 from src.machines import store
 from src.tools.bruteforce import BruteForceEngine, KerberosEngine
+from src.tools.bruteforce.people_users import usernames_from_people
 from src.elwand_paths import lst_dir as _lst_dir
 from src.gui.dialogs.target_section import TargetSection
 
@@ -196,7 +197,9 @@ class BruteforceDialog(tk.Toplevel):
         user_row.grid(row=row, column=1, sticky="ew", padx=15, pady=(5, 5))
         theme.Segmented(
             user_row,
-            [("inventory", "From inventory"), ("file", "From file")],
+            [("inventory", "From inventory"),
+             ("people", "From people with dicma"),
+             ("file", "From file")],
             user_src).pack(side=tk.LEFT)
 
         user_browse_btn = theme.button(
@@ -305,7 +308,10 @@ class BruteforceDialog(tk.Toplevel):
         user_src = tk.StringVar(value="inventory")
         user_path = tk.StringVar()
         theme.Segmented(
-            ue_row, [("inventory", "From inventory"), ("file", "From file")],
+            ue_row,
+            [("inventory", "From inventory"),
+             ("people", "From people with dicma"),
+             ("file", "From file")],
             user_src).pack(side=tk.LEFT)
         user_browse = theme.button(
             ue_row, "  Browse...  ",
@@ -540,7 +546,14 @@ class BruteforceDialog(tk.Toplevel):
         user_src = vars_["user_src"].get()
         pass_src = vars_["pass_src"].get()
 
-        if user_src == "inventory":
+        if user_src == "people":
+            users = usernames_from_people()
+            if not users:
+                self._log("No usernames generated from People (DICMA)", "error")
+                return
+            self._log(f"Using {len(users)} users from People (DICMA)", "info")
+            userlist = None
+        elif user_src == "inventory":
             from src.machines.credential_db import load_usernames
             users = load_usernames()
             if not users:
@@ -595,7 +608,7 @@ class BruteforceDialog(tk.Toplevel):
             return
         mode = vars_["mode"].get()
         try:
-            workers = int(vars_["workers"].get().strip() or "10")
+            workers = int(vars_["workers"].get().strip() or "200")
         except ValueError:
             self._log("Invalid thread count", "error")
             return
@@ -606,7 +619,15 @@ class BruteforceDialog(tk.Toplevel):
         single_user = ""
 
         if mode == "userenum":
-            if vars_["user_src"].get() == "inventory":
+            if vars_["user_src"].get() == "people":
+                users = usernames_from_people()
+                if not users:
+                    self._log("No usernames generated from People (DICMA)",
+                              "error")
+                    return
+                self._log(f"Using {len(users)} users from People (DICMA)",
+                          "info")
+            elif vars_["user_src"].get() == "inventory":
                 from src.machines.credential_db import load_usernames
                 users = load_usernames()
                 if not users:

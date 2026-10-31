@@ -1367,7 +1367,7 @@ class App(tk.Tk):
     @staticmethod
     def _autocomplete_bruteforce_userlist(prefix):
         from src.elwand_paths import lst_dir
-        results = [("users", "users")]
+        results = [("users", "users"), ("people-dicma", "people-dicma")]
         try:
             for fname in sorted(os.listdir(str(lst_dir()))):
                 if os.path.isfile(os.path.join(str(lst_dir()), fname)):
@@ -2173,14 +2173,17 @@ class App(tk.Tk):
             load_users, load_usernames, load_passwords,
         )
         from src.elwand_paths import lst_dir
+        from src.tools.bruteforce.people_users import usernames_from_people
 
         userlist = None
         users = None
-        if len(args) > 2 and args[2].lower() != "users":
+        if len(args) > 2 and args[2].lower() == "people-dicma":
+            users = usernames_from_people()
+        elif len(args) > 2 and args[2].lower() != "users":
             path = os.path.join(str(lst_dir()), args[2])
             if os.path.isfile(path):
                 userlist = path
-        if not userlist:
+        if not userlist and users is None:
             users = load_usernames()
 
         passlist = None
@@ -2243,6 +2246,7 @@ class App(tk.Tk):
         from src.tools.bruteforce import KerberosEngine
         from src.machines.credential_db import load_usernames, load_passwords
         from src.elwand_paths import lst_dir
+        from src.tools.bruteforce.people_users import usernames_from_people
 
         if len(args) < 2:
             self.console.body(
@@ -2273,6 +2277,8 @@ class App(tk.Tk):
 
         def _resolve_dict(arg, kind):
             """Return (path, values) for a dictionary arg; kind=users|passwords."""
+            if arg.lower() == "people-dicma" and kind == "users":
+                return None, usernames_from_people()
             if not arg or arg.lower() == kind:
                 return None, (load_usernames() if kind == "users"
                               else load_passwords())
