@@ -12,18 +12,28 @@ _DEFAULTS = {
             "models": ["big-pickle"],
         },
         "opencode": {
-            "base_url": "https://opencode.ai/zen/v1",
-            "api_key": "public",
+            # OpenCode Go (paid). The free big-pickle tier lives in the
+            # dedicated "op-big-pickle" provider.
+            "base_url": "https://opencode.ai/zen/go/v1",
+            "api_key": "",
             "models": [
-                "big-pickle",
-                "deepseek-v4-flash-free",
-                "x-preview-f-free",
-                "muse-spark-1.2-contributor-free",
-                "mimo-v2.5-free",
-                "hy3-free",
-                "nemotron-3-ultra-free",
-                "nemotron-3.5-lightning-free",
-                "laguna-s-2.1-free",
+                "deepseek-v4.1-flash",
+                "deepseek-v4-pro",
+                "glm-5",
+                "glm-5.1",
+                "glm-5.2",
+                "glm-5.3",
+                "kimi-k2.5",
+                "kimi-k2.6",
+                "kimi-k3",
+                "qwen3.6-plus",
+                "qwen3.7-max",
+                "qwen3.8-max",
+                "qwen3.8-flash",
+                "minimax-m3",
+                "grok-4.6",
+                "gpt-5.6-luna",
+                "mimo-v2.5",
             ],
         },
         "ollama": {
@@ -36,7 +46,7 @@ _DEFAULTS = {
     "active_provider": "op-big-pickle",
     "active_models": {
         "op-big-pickle": "big-pickle",
-        "opencode": "big-pickle",
+        "opencode": "deepseek-v4.1-flash",
     },
     "prompts": {
         "system": (

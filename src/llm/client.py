@@ -94,7 +94,10 @@ class LLMClient:
                 "msg_", descending=False)
             self._project_id = project_id or op_big_pickle.PROJECT
         elif pid == "opencode":
-            if not self._api_key:
+            # The provider now points at OpenCode Go, which needs the user's
+            # own API key. Keep the legacy "public" fallback only for the old
+            # free Zen endpoint if the user sets it manually.
+            if not self._api_key and "zen/go" not in self._base_url:
                 self._api_key = "public"
             # Session id is stable for the whole session (it is persisted by
             # the caller and only rotated on reset); request id identifies the
@@ -125,6 +128,12 @@ class LLMClient:
                     default_headers={"User-Agent": op_big_pickle.UA},
                 )
             elif self._provider_id == "opencode":
+                if "zen/go" in self._base_url and not self._api_key:
+                    raise RuntimeError(
+                        "The 'opencode' provider uses OpenCode Go and needs "
+                        "your own API key. Add it in Settings, or use "
+                        "'op-big-pickle' for the free big-pickle tier."
+                    )
                 # Mimic the official OpenCode client: override the UA; the
                 # x-stainless-* headers are removed per request (Omit).
                 self._client = OpenAI(
