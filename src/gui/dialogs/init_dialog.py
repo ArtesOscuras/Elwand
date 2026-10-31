@@ -65,6 +65,7 @@ def _checks():
     # --- Binaries ---
     yield _check("nmap_bin", "nmap", lambda: _resolve_binary("nmap")[0], kind="binary", critical=False)
     yield _check("hashcat", "hashcat", lambda: _resolve_binary("hashcat")[0], kind="binary", critical=False)
+    yield _check("kerbrute", "kerbrute", lambda: _resolve_binary("kerbrute")[0], kind="binary", critical=False)
     yield _check("hydra", "hydra", lambda: _resolve_binary("hydra")[0], kind="binary", critical=False)
     yield _check("whatweb", "whatweb", lambda: _resolve_binary("whatweb")[0], kind="binary", critical=False)
     yield _check("xfreerdp", "xfreerdp", lambda: _resolve_binary("xfreerdp")[0], kind="binary", critical=False)

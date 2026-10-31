@@ -1197,6 +1197,13 @@ def _delete_user(args, ctx=None):
 def _add_machine(args, ctx=None):
     from src.machines import store, machine_db
     ip = args.get("ip", "")
+    if ":" in ip:
+        existing = store.get_by_ipv6(ip)
+        if existing:
+            return (f"Machine #{existing.id} ({existing.ip}) already tracks "
+                    f"IPv6 {ip}.")
+        return ("IPv6 addresses cannot be added as a machine; add its IPv4 "
+                "address instead.")
     machine = store.add_or_update(ip=ip, method="agent")
     machine.device_type = "device unknown"
     machine_db.save_machine_info(machine)
@@ -1979,6 +1986,8 @@ def _scan_ip(args, ctx=None):
     from src import event_bus
     from src.machines import store as _store
     machine = _store.get(ip)
+    if machine is None and ":" in ip:
+        machine = _store.get_by_ipv6(ip)
     if machine:
         event_bus.submit({"type": "scan_ip_result", "machine": machine})
     lines = [f"Scan result for {ip}:"]

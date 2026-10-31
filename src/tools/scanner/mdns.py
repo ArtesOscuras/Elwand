@@ -72,7 +72,8 @@ class PassiveMDNSScanner:
         answers = dns.an if isinstance(dns.an, list) else [dns.an]
 
         ptr_map = {}
-        hosts = {}
+        hosts4 = {}
+        hosts6 = {}
         txts = {}
         srv_targets = {}
 
@@ -83,10 +84,10 @@ class PassiveMDNSScanner:
                 ptr_map[rrname] = _decode_name(ans.rdata)
 
             elif ans.type == 1:         # A
-                hosts[rrname] = ans.rdata
+                hosts4[rrname] = ans.rdata
 
             elif ans.type == 28:        # AAAA
-                hosts[rrname] = ans.rdata
+                hosts6[rrname] = ans.rdata
 
             elif ans.type == 33:        # SRV
                 target = _decode_name(getattr(ans, "target", ""))
@@ -101,14 +102,27 @@ class PassiveMDNSScanner:
             target_host = srv_targets.get(instance_name)
             if not target_host:
                 continue
-            ip = hosts.get(target_host)
-            if not ip:
+            # Prefer the IPv4 address; fall back to IPv6 only when there is no
+            # A record. Machines are keyed by IPv4, and an AAAA must never be
+            # used as the primary address.
+            raw_ip = hosts4.get(target_host) or hosts6.get(target_host)
+            if not raw_ip:
                 continue
+            ip = str(raw_ip)
             txt = txts.get(instance_name, {})
 
             from src.tools.scanner.mdns_cache import add_service
             add_service(ip, service_type + ".", hostname=target_host, txt=txt)
             self.on_host(ip=ip, hostname=target_host, method="mDNS-Passive")
+
+            # If both records exist, also report the AAAA once the IPv4 machine
+            # exists: the discovery handler attaches it to that machine's IPv6
+            # field instead of creating a separate (IPv6-keyed) machine.
+            raw_ip6 = hosts6.get(target_host)
+            ip6 = str(raw_ip6) if raw_ip6 else ""
+            if hosts4.get(target_host) and ip6 and ip6 != ip:
+                self.on_host(ip=ip6, hostname=target_host,
+                             method="mDNS-Passive")
 
 
 def _decode_name(val):

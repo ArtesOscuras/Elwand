@@ -439,7 +439,12 @@ def _do_scan_ip(ip):
     has_evidence = result != "device unknown" or ttl is not None or bool(mds)
     if not has_evidence:
         return None
-    machine = store.add_or_update(ip=ip, method="manual")
+    if ":" in ip:
+        machine = store.get_by_ipv6(ip)
+        if machine is None:
+            return None
+    else:
+        machine = store.add_or_update(ip=ip, method="manual")
     machine.device_type = result
     model = extract_model_for_ip(machine.ip, resolve=True)
     if model:
@@ -663,6 +668,14 @@ class App(tk.Tk):
         load_mdns_cache()
         start_autosave()
         store.load()
+        try:
+            removed = store.purge_ipv6()
+            for m in removed:
+                machine_db.delete_machine_db(m.id)
+            if removed:
+                store.save()
+        except Exception:
+            pass
         start_machines_autosave(store)
         try:
             from src.machines import credential_db
@@ -1010,8 +1023,10 @@ class App(tk.Tk):
 
         self.console.set_arg2_provider("use", "bruteforce", self._autocomplete_bruteforce_proto)
         self.console.set_arg3_provider("use", "bruteforce", self._autocomplete_webrecorder_target)
-        self.console.set_arg4_provider("use", "bruteforce", self._autocomplete_bruteforce_userlist)
-        self.console.set_arg5_provider("use", "bruteforce", self._autocomplete_bruteforce_passlist)
+        self.console.set_arg4_provider("use", "bruteforce", self._autocomplete_bruteforce_arg4)
+        self.console.set_arg5_provider("use", "bruteforce", self._autocomplete_bruteforce_arg5)
+        self.console.set_arg6_provider("use", "bruteforce", self._autocomplete_bruteforce_arg6)
+        self.console.set_arg7_provider("use", "bruteforce", self._autocomplete_bruteforce_arg7)
 
         self.console.set_arg2_provider("use", "fuzzer", self._autocomplete_fuzzer_method)
         self.console.set_arg3_provider("use", "fuzzer", self._autocomplete_webrecorder_target)
@@ -1345,6 +1360,7 @@ class App(tk.Tk):
     @staticmethod
     def _autocomplete_bruteforce_proto(prefix):
         return [("ftp", "ftp"), ("ssh", "ssh"), ("smb", "smb"),
+                ("kerberos", "kerberos"),
                 ("rdp", "rdp"), ("ldap", "ldap"), ("mssql", "mssql"),
                 ("mysql", "mysql"), ("pgsql", "pgsql")]
 
@@ -1371,6 +1387,32 @@ class App(tk.Tk):
         except OSError:
             pass
         return results
+
+    @staticmethod
+    def _autocomplete_bruteforce_arg4(prefix, proto=None):
+        """Arg 4: Kerberos mode, else the user wordlist (smb et al.)."""
+        if (proto or "").lower() == "kerberos":
+            return [("user-enum", "user-enum"), ("brute-pwd", "brute-pwd")]
+        return App._autocomplete_bruteforce_userlist(prefix)
+
+    @staticmethod
+    def _autocomplete_bruteforce_arg5(prefix, proto=None):
+        """Arg 5: Kerberos user wordlist, else the password wordlist."""
+        if (proto or "").lower() == "kerberos":
+            return App._autocomplete_bruteforce_userlist(prefix)
+        return App._autocomplete_bruteforce_passlist(prefix)
+
+    @staticmethod
+    def _autocomplete_bruteforce_arg6(prefix, mode=None):
+        """Arg 6: password wordlist (brute-pwd) or the <threads> placeholder."""
+        if (mode or "").lower() == "brute-pwd":
+            return App._autocomplete_bruteforce_passlist(prefix)
+        return [("<threads>", "")]
+
+    @staticmethod
+    def _autocomplete_bruteforce_arg7(prefix, mode=None):
+        """Arg 7: threads placeholder for brute-pwd."""
+        return [("<threads>", "")]
 
     @staticmethod
     def _autocomplete_fuzzer_method(prefix):
@@ -1836,6 +1878,13 @@ class App(tk.Tk):
         ip, machine = self._resolve_target(target)
         if ip and re.match(r"^\d+\.\d+\.\d+\.\d+$", ip):
             return ip
+        # A known domain: prefer the machine it is associated with rather than
+        # DNS, which can resolve the public domain to a different address.
+        if domain_db.exists(target):
+            for row in domain_db.load_domain_machines(target):
+                mip = row.get("machine_ip") if isinstance(row, dict) else ""
+                if mip and re.match(r"^\d+\.\d+\.\d+\.\d+$", str(mip)):
+                    return str(mip)
         try:
             info = socket.getaddrinfo(target, None, socket.AF_INET, socket.SOCK_STREAM)
             if info:
@@ -2086,9 +2135,11 @@ class App(tk.Tk):
     def _cmd_use_bruteforce(self, args):
         from .dialogs.bruteforce import BruteforceDialog
         from src.tools.bruteforce import BruteForceEngine
-        protos = ["ftp", "ssh", "smb", "rdp", "ldap", "mssql", "mysql", "pgsql"]
-        ports = {"ftp": 21, "ssh": 22, "smb": 445, "rdp": 3389, "ldap": 389,
-                 "mssql": 1433, "mysql": 3306, "pgsql": 5432}
+        protos = ["ftp", "ssh", "smb", "kerberos", "rdp", "ldap", "mssql",
+                  "mysql", "pgsql"]
+        ports = {"ftp": 21, "ssh": 22, "smb": 445, "kerberos": 88,
+                 "rdp": 3389, "ldap": 389, "mssql": 1433, "mysql": 3306,
+                 "pgsql": 5432}
         if not args:
             self._bruteforce_dlg = BruteforceDialog(self)
             return
@@ -2102,12 +2153,15 @@ class App(tk.Tk):
             return
         proto = args[0].lower()
         if proto not in protos:
-            self.console.body("Usage: use bruteforce [ftp|ssh|smb|rdp|ldap|mssql|mysql|pgsql] [ip|id|domain]")
+            self.console.body("Usage: use bruteforce [ftp|ssh|smb|kerberos|rdp|ldap|mssql|mysql|pgsql] [ip|id|domain]")
             return
         if len(args) < 2:
             dlg = BruteforceDialog(self)
             self._bruteforce_dlg = dlg
             dlg.select_tab(proto)
+            return
+        if proto == "kerberos":
+            self._cmd_use_bruteforce_kerberos(args[1:])
             return
         target = args[1]
         ip = self._resolve_to_ip(target)
@@ -2115,7 +2169,9 @@ class App(tk.Tk):
             self.console.warning(f"No machine found for: {target}")
             return
 
-        from src.machines.credential_db import load_users, load_passwords
+        from src.machines.credential_db import (
+            load_users, load_usernames, load_passwords,
+        )
         from src.elwand_paths import lst_dir
 
         userlist = None
@@ -2150,9 +2206,9 @@ class App(tk.Tk):
                 stripped = stripped[4:]
             c = {"success": "success", "error": "error", "info": "info"}.get(color)
             if c:
-                getattr(self.console, c)(stripped.rstrip())
+                self._safe_after(getattr(self.console, c), stripped.rstrip())
             else:
-                self.console.body(stripped.rstrip())
+                self._safe_after(self.console.body, stripped.rstrip())
         def on_found(p, tgt, port, user, pwd):
             from src.machines.credential_db import save_credential, save_user, load_credentials, load_users
             for c in load_credentials():
@@ -2182,6 +2238,140 @@ class App(tk.Tk):
         )
         self._bruteforce_engine = engine
         engine.start()
+
+    def _cmd_use_bruteforce_kerberos(self, args):
+        from src.tools.bruteforce import KerberosEngine
+        from src.machines.credential_db import load_usernames, load_passwords
+        from src.elwand_paths import lst_dir
+
+        if len(args) < 2:
+            self.console.body(
+                "Usage:\n"
+                "  use bruteforce kerberos <machine> user-enum <users_dict> [threads]\n"
+                "  use bruteforce kerberos <machine> brute-pwd <users_dict> <passwords_dict> [threads]")
+            return
+        target = args[0]
+        mode_arg = args[1].lower()
+        if mode_arg not in ("user-enum", "brute-pwd"):
+            self.console.error("Mode must be 'user-enum' or 'brute-pwd'.")
+            return
+        ip = self._resolve_to_ip(target)
+        if not ip:
+            self.console.warning(f"No machine found for: {target}")
+            return
+        # If the user passed a known domain, use it as the realm; otherwise
+        # derive the realm from the resolved machine's associated domain.
+        if domain_db.exists(target):
+            domain = target
+        else:
+            domain = self._domain_for_machine(ip)
+        if not domain:
+            self.console.error(
+                f"No domain associated with {ip}. Associate a domain with the "
+                "machine first, or set it in the dialog.")
+            return
+
+        def _resolve_dict(arg, kind):
+            """Return (path, values) for a dictionary arg; kind=users|passwords."""
+            if not arg or arg.lower() == kind:
+                return None, (load_usernames() if kind == "users"
+                              else load_passwords())
+            path = os.path.join(str(lst_dir()), arg)
+            if os.path.isfile(path):
+                return path, None
+            return None, []
+
+        users = userlist = None
+        passwords = passlist = None
+        if mode_arg == "user-enum":
+            user_arg = args[2] if len(args) > 2 else "users"
+            threads_arg = args[3] if len(args) > 3 else "200"
+            userlist, users = _resolve_dict(user_arg, "users")
+            if not userlist and not users:
+                self.console.warning("No users available.")
+                return
+        else:
+            user_arg = args[2] if len(args) > 2 else "users"
+            pass_arg = args[3] if len(args) > 3 else "passwords"
+            threads_arg = args[4] if len(args) > 4 else "200"
+            userlist, users = _resolve_dict(user_arg, "users")
+            passlist, passwords = _resolve_dict(pass_arg, "passwords")
+            if not userlist and not users:
+                self.console.warning("No users available.")
+                return
+            if not passlist and not passwords:
+                self.console.warning("No passwords available.")
+                return
+        try:
+            threads = int(threads_arg)
+        except (TypeError, ValueError):
+            self.console.error("Invalid thread count.")
+            return
+        if threads <= 0:
+            self.console.error("Thread count must be greater than 0.")
+            return
+
+        mode = "userenum" if mode_arg == "user-enum" else "bruteuser"
+
+        def on_result(text, color=None):
+            stripped = text.strip()
+            for pfx in ("[+] ", "[*] ", "[!] "):
+                if stripped.startswith(pfx):
+                    stripped = stripped[len(pfx):]
+                    break
+            c = {"success": "success", "error": "error",
+                 "info": "info"}.get(color)
+            if c:
+                self._safe_after(getattr(self.console, c), stripped.rstrip())
+            else:
+                self._safe_after(self.console.body, stripped.rstrip())
+
+        def on_found(user, pwd):
+            from src.machines.credential_db import save_credential, save_user
+            save_credential(user, pwd, domain=domain,
+                            password_origin="kerberos bruteforce")
+            save_user(user, origin="kerberos bruteforce", domain=domain)
+            self._safe_after(self.console.success,
+                             f"VALID LOGIN: {user}@{domain}:{pwd}")
+
+        def on_valid_user(username, state, detail):
+            from src.machines.credential_db import save_user
+            save_user(username, origin="kerberos userenum", domain=domain)
+            self._safe_after(self.console.success,
+                             f"VALID USERNAME: {username}  ({detail})")
+
+        self.console.info(
+            f"Starting Kerberos {mode_arg} against {ip} (realm {domain}, "
+            f"{threads} threads)...")
+        engine = KerberosEngine(
+            domain=domain, kdc=ip, mode=mode,
+            users=users, userlist=userlist,
+            passwords=passwords, passlist=passlist,
+            workers=threads,
+            on_result=on_result,
+            on_found=on_found,
+            on_valid_user=on_valid_user,
+        )
+        self._bruteforce_engine = engine
+        engine.start()
+
+    @staticmethod
+    def _domain_for_machine(ip):
+        """Best-known domain for a machine (its SMB domain or an associated one)."""
+        m = store.get(ip)
+        if m is None:
+            return ""
+        if getattr(m, "domain", ""):
+            return m.domain
+        try:
+            from src.machines import machine_db
+            doms = machine_db.load_domains(m.id)
+        except Exception:
+            doms = []
+        if doms:
+            d = doms[0]
+            return d[0] if isinstance(d, (tuple, list)) else d
+        return ""
 
     def _cmd_use_hashcat(self, args):
         from .dialogs.hashcat import HashcatDialog
@@ -4013,7 +4203,26 @@ class App(tk.Tk):
             event_bus.submit({"type": "scan_error", "message": hostname})
             return
 
+        ip = str(ip)
         if ip in ("127.0.0.1", "::1", "localhost") or ip.startswith("127."):
+            return
+
+        # A machine is always keyed by its IPv4 address. An IPv6 (mDNS AAAA or
+        # the active scanner's 16-byte address) only enriches the matching
+        # machine; it must never become the `ip` (that produced bare IPv6
+        # "machines" and duplicated entries).
+        if ":" in ip:
+            existing = (store.get_by_ipv6(ip)
+                        or store.get_by_mac(mac)
+                        or (store.get_by_hostname(hostname) if hostname else None))
+            if existing is None:
+                return
+            existing.update(hostname=hostname, mac=mac, method=method)
+            if not existing.ipv6:
+                existing.ipv6 = ip
+            machine_db.save_machine_info(existing)
+            _dbg(f"[discovery] ipv6={ip} hostname={hostname} method={method} "
+                 f"merged into #{existing.id} ({existing.ip})")
             return
 
         existing = store.get(ip)
@@ -4024,10 +4233,6 @@ class App(tk.Tk):
 
         if existing is not None:
             existing.update(hostname=hostname, mac=mac, method=method)
-            is_ipv6 = ":" in ip
-            if is_ipv6:
-                if not existing.ipv6:
-                    existing.ipv6 = ip
             machine_db.save_machine_info(existing)
             machine = existing
             _dbg(f"[discovery] ip={ip} hostname={hostname} method={method} merged into #{existing.id}" + (" (new)" if is_new else ""))

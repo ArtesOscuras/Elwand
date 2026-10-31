@@ -1,6 +1,6 @@
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from src import process_registry
 
 MAX_WORKERS = 10
@@ -84,35 +84,54 @@ class BruteForceEngine:
             self._emit(f"Unknown protocol: {self._protocol}", "error")
             return
 
-        combinations = [(u, p) for u in users for p in passwords]
+        combinations = ((u, p) for u in users for p in passwords)
         tested = 0
         executor = ThreadPoolExecutor(max_workers=self._workers)
-        futures = {}
+        max_inflight = max(1, self._workers * 4)
+        it = iter(combinations)
+        inflight = {}
 
-        for user, pwd in combinations:
+        def submit_next():
             if self._stop_flag.is_set():
-                break
-            futures[executor.submit(func, user, pwd)] = (user, pwd)
-
-        for f in as_completed(futures):
-            if self._stop_flag.is_set():
-                break
-            user, pwd = futures[f]
-            tested += 1
-            if self._on_progress:
-                self._on_progress(tested, total)
+                return False
             try:
-                ok = f.result()
-                if ok:
-                    key = f"{user}:{pwd}"
-                    if key not in self._found:
-                        self._found[key] = True
-                        if self._on_found:
-                            self._on_found(self._protocol, self._target, self._port, user, pwd)
-            except Exception:
-                pass
+                user, pwd = next(it)
+            except StopIteration:
+                return False
+            inflight[executor.submit(func, user, pwd)] = (user, pwd)
+            return True
 
-        executor.shutdown(wait=False)
+        try:
+            for _ in range(max_inflight):
+                if not submit_next():
+                    break
+            while inflight and not self._stop_flag.is_set():
+                done, _pending = wait(list(inflight),
+                                      return_when=FIRST_COMPLETED)
+                for f in done:
+                    pair = inflight.pop(f, None)
+                    if pair is None:
+                        continue
+                    user, pwd = pair
+                    tested += 1
+                    if self._on_progress:
+                        self._on_progress(tested, total)
+                    try:
+                        ok = f.result()
+                    except Exception:
+                        ok = False
+                    if ok:
+                        key = f"{user}:{pwd}"
+                        if key not in self._found:
+                            self._found[key] = True
+                            if self._on_found:
+                                self._on_found(self._protocol, self._target,
+                                               self._port, user, pwd)
+                    if self._stop_flag.is_set():
+                        break
+                    submit_next()
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
         self._emit(f"\n[*] Done. {len(self._found)} valid credentials found.")
 
     def _load_lines(self, path):

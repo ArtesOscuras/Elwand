@@ -106,6 +106,35 @@ class MachineStore:
                 return m
         return None
 
+    def get_by_ipv6(self, ipv6):
+        if not ipv6:
+            return None
+        for m in self._machines.values():
+            if getattr(m, "ipv6", "") == ipv6:
+                return m
+        return None
+
+    def get_by_mac(self, mac):
+        if not mac:
+            return None
+        mac = mac.lower()
+        for m in self._machines.values():
+            if m.mac and m.mac.lower() == mac:
+                return m
+        return None
+
+    def purge_ipv6(self):
+        """Remove machines whose primary key (`ip`) is an IPv6 address.
+
+        A machine must always be keyed by IPv4. Before the mDNS-IPv6 fix an
+        AAAA discovery could create a machine with the IPv6 in `ip`; this
+        drops those legacy rows. Returns the removed Machine objects so the
+        caller can also delete their per-id databases."""
+        removed = [m for ip, m in self._machines.items() if ":" in (ip or "")]
+        for m in removed:
+            del self._machines[m.ip]
+        return removed
+
     def get_by_id(self, mid):
         for m in self._machines.values():
             if m.id == mid:
