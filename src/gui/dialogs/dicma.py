@@ -201,7 +201,22 @@ class DicmaDialog(tk.Toplevel):
         return out, scroll
 
     def _on_tab_changed(self, event=None):
-        pass
+        # ttk.Notebook moves focus into the new tab (ActivateTab -> focusFirst ->
+        # traverseTo), landing on the first focusable widget — the "Output file"
+        # entry. Keep focus on the notebook and drop any stray selection.
+        for entry in (getattr(self, "_users_out_entry", None),
+                      getattr(self, "_neigh_out_entry", None),
+                      getattr(self, "_pass_out_entry", None),
+                      getattr(self, "_rules_out_entry", None)):
+            if entry is not None:
+                try:
+                    entry.selection_clear()
+                except tk.TclError:
+                    pass
+        try:
+            self._nb.focus_set()
+        except tk.TclError:
+            pass
 
     def _run_captured(self, fn, stdout=None):
         """Run fn() with stdout/stderr routed to this dialog's Output pane.
