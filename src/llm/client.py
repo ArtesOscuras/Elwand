@@ -3,6 +3,8 @@ import secrets as _secrets
 import time as _time
 from openai import OpenAI, RateLimitError, Omit
 
+from src.llm import op_big_pickle
+
 _XML_TOOL_PATTERN = _re.compile(r'<[^>]*DSML', _re.IGNORECASE)
 
 _RATE_LIMIT_ATTEMPTS = 6
@@ -74,7 +76,24 @@ class LLMClient:
                 f"'{pid}'. Use 'settings' to configure it."
             )
 
-        if pid == "opencode":
+        if pid == op_big_pickle.PROVIDER_ID:
+            if not self._base_url:
+                self._base_url = op_big_pickle.BASE_URL
+            if not self._api_key:
+                self._api_key = op_big_pickle.API_KEY
+            # This provider is exclusive to big-pickle; ignore a stale model
+            # selection from llm.json.
+            self._model = op_big_pickle.MODEL
+            # The free tier rejects legacy session IDs (counter 0 / high-half
+            # timestamp) and any ID that is not shaped like opencode's.
+            if session_id and op_big_pickle.is_valid_session_id(session_id):
+                self._session_id = session_id
+            else:
+                self._session_id = op_big_pickle.generate_id("ses_", descending=True)
+            self._request_id = request_id or op_big_pickle.generate_id(
+                "msg_", descending=False)
+            self._project_id = project_id or op_big_pickle.PROJECT
+        elif pid == "opencode":
             if not self._api_key:
                 self._api_key = "public"
             # Session id is stable for the whole session (it is persisted by
@@ -90,7 +109,22 @@ class LLMClient:
 
     def _ensure_client(self):
         if self._client is None:
-            if self._provider_id == "opencode":
+            if self._provider_id == op_big_pickle.PROVIDER_ID:
+                try:
+                    http_client = op_big_pickle.build_http_client()
+                except Exception as exc:
+                    raise RuntimeError(
+                        "The 'op-big-pickle' provider requires the 'utls' "
+                        "package. Reinstall Elwand or run: pip install utls"
+                    ) from exc
+                self._client = OpenAI(
+                    base_url=self._base_url,
+                    api_key=self._api_key,
+                    timeout=300,
+                    http_client=http_client,
+                    default_headers={"User-Agent": op_big_pickle.UA},
+                )
+            elif self._provider_id == "opencode":
                 # Mimic the official OpenCode client: override the UA; the
                 # x-stainless-* headers are removed per request (Omit).
                 self._client = OpenAI(
@@ -109,14 +143,23 @@ class LLMClient:
                 self._client = OpenAI(**kwargs)
 
     def _opencode_headers(self):
-        if self._provider_id != "opencode":
+        if self._provider_id == op_big_pickle.PROVIDER_ID:
+            headers = {
+                "x-opencode-project": self._project_id,
+                "x-opencode-session": self._session_id,
+                "x-opencode-session-id": self._session_id,
+                "x-opencode-request": self._request_id,
+                "x-opencode-client": "cli",
+            }
+        elif self._provider_id == "opencode":
+            headers = {
+                "x-opencode-project": self._project_id,
+                "x-opencode-session": self._session_id,
+                "x-opencode-request": self._request_id,
+                "x-opencode-client": "cli",
+            }
+        else:
             return None
-        headers = {
-            "x-opencode-project": self._project_id,
-            "x-opencode-session": self._session_id,
-            "x-opencode-request": self._request_id,
-            "x-opencode-client": "cli",
-        }
         for k in _STAINLESS_HEADER_KEYS:
             headers[k] = Omit()
         return headers
@@ -127,6 +170,11 @@ class LLMClient:
             try:
                 return fn()
             except RateLimitError as e:
+                if (self._provider_id == op_big_pickle.PROVIDER_ID
+                        and op_big_pickle.is_free_limit_error(e)):
+                    # The free-tier quota is exhausted for ~12h; retrying is
+                    # pointless and would freeze the UI for minutes.
+                    raise
                 last = e
                 if stop_event is not None and stop_event.is_set():
                     raise
@@ -167,9 +215,12 @@ class LLMClient:
 
     def _messages(self, messages):
         result = []
-        if self._system_prompt:
+        system_prompt = self._system_prompt
+        if self._provider_id == op_big_pickle.PROVIDER_ID:
+            system_prompt = op_big_pickle.apply_env(system_prompt)
+        if system_prompt:
             result.append(
-                {"role": "system", "content": self._system_prompt})
+                {"role": "system", "content": system_prompt})
         if self._purpose == "agent":
             result.append({"role": "system", "content": "[MODE: AGENT] You may use tools via the function calling API. Never use XML or markup to invoke tools."})
         else:
@@ -214,18 +265,31 @@ class LLMClient:
 
         return self._rate_limit_retry(_call)
 
+    def chat_text(self, messages, model=None, **kwargs):
+        """Return the assistant text for a one-shot prompt.
+
+        `op-big-pickle` must use the streaming/tool-bearing path required by
+        the free tier; every other provider keeps the previous `chat()`
+        behavior.
+        """
+        if self._provider_id == op_big_pickle.PROVIDER_ID:
+            return self.raw_complete(messages, model=model, **kwargs)
+        resp = self.chat(messages, model=model, **kwargs)
+        return resp.choices[0].message.content if resp and resp.choices else ""
+
     def raw_complete(self, messages, model=None, **kwargs):
         """Return the assistant text for a verbatim (self-contained) prompt.
 
-        The opencode free tier only serves requests that look like the official
-        client, i.e. they must be **streaming and carry the tool schemas**;
-        `tool_choice="none"` keeps the model from actually calling a tool. Other
-        providers use a plain (non-streaming) request.
+        The opencode free tier (and the dedicated `op-big-pickle` provider)
+        only serves requests that look like the official client, i.e. they
+        must be **streaming and carry the tool schemas**; `tool_choice="none"`
+        keeps the model from actually calling a tool. Other providers use a
+        plain (non-streaming) request.
         """
         self._ensure_client()
         m = model or self._model
 
-        if self._provider_id != "opencode":
+        if self._provider_id not in ("opencode", op_big_pickle.PROVIDER_ID):
             resp = self._rate_limit_retry(
                 lambda: self._client.chat.completions.create(
                     model=m, messages=messages,
@@ -236,12 +300,16 @@ class LLMClient:
 
         from src.llm.tools import TOOLS as _TOOLS
 
+        msgs = (op_big_pickle.with_env(messages)
+                if self._provider_id == op_big_pickle.PROVIDER_ID
+                else messages)
+
         def _call(use_tool_choice):
             kw = dict(kwargs)
             if use_tool_choice:
                 kw["tool_choice"] = "none"
             return self._client.chat.completions.create(
-                model=m, messages=messages, tools=_TOOLS, stream=True,
+                model=m, messages=msgs, tools=_TOOLS, stream=True,
                 extra_headers=self._opencode_headers(), **kw,
             )
 
@@ -416,6 +484,10 @@ class LLMClient:
 
             consecutive_xml_errors = 0
             return content
+
+    @property
+    def provider_id(self):
+        return self._provider_id
 
     @property
     def model(self):

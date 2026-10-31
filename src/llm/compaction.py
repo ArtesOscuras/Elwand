@@ -382,11 +382,10 @@ def compact_messages(
     _cdbg(f"compact_msgs llm_call start prompt_chars={len(summary_prompt)}")
     t0 = _time.monotonic()
     try:
-        resp = client.chat([
+        summary = client.chat_text([
             {"role": "system", "content": COMPACTION_SYSTEM},
             {"role": "user", "content": summary_prompt},
-        ])
-        summary = resp.choices[0].message.content if resp and resp.choices else ""
+        ]) or ""
         elapsed = _time.monotonic() - t0
         _cdbg(f"compact_msgs llm_done summary_len={len(summary)} elapsed={elapsed:.2f}s")
     except Exception as e:

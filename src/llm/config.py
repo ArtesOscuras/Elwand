@@ -6,6 +6,11 @@ _LLM_CONFIG_FILE = os.path.join(os.path.dirname(str(_settings_dir())), "llm.json
 
 _DEFAULTS = {
     "providers": {
+        "op-big-pickle": {
+            "base_url": "https://opencode.ai/zen/v1",
+            "api_key": "public",
+            "models": ["big-pickle"],
+        },
         "opencode": {
             "base_url": "https://opencode.ai/zen/v1",
             "api_key": "public",
@@ -28,8 +33,11 @@ _DEFAULTS = {
             "models": ["llama3.2:3b"],
         },
     },
-    "active_provider": "opencode",
-    "active_models": {"opencode": "big-pickle"},
+    "active_provider": "op-big-pickle",
+    "active_models": {
+        "op-big-pickle": "big-pickle",
+        "opencode": "big-pickle",
+    },
     "prompts": {
         "system": (
             "You are an AI assistant operating within Elwand, a penetration testing program. "

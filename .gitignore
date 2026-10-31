@@ -46,6 +46,9 @@ src/lst/rockyou.txt
 # User docs
 Documentacion_de_tkinter.txt
 
+# Local research notes (big-pickle free-tier detection)
+big-pickle.md
+
 # RT2800 driver build artifacts (runtime binary lives in src/data/rt2800)
 src/data/rt2800/source/port/build/
 src/data/rt2800/source/port/rt2800d

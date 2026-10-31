@@ -20,6 +20,7 @@ dependencies = [
     "prompt-toolkit>=3.0.0",
     "openai>=1.0.0",
     "html2text>=2025.0.0",
+    "utls>=2026.10.3",
 ]
 
 [project.scripts]

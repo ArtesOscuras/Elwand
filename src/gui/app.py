@@ -4412,8 +4412,13 @@ class App(tk.Tk):
         """
         import hashlib
         import os as _os
+        from src.llm import op_big_pickle
         from src.llm.client import _generate_opencode_id
-        self._llm_session_id = _generate_opencode_id("ses_", descending=True)
+        if self._llm_provider_id() == op_big_pickle.PROVIDER_ID:
+            self._llm_session_id = op_big_pickle.generate_id(
+                "ses_", descending=True)
+        else:
+            self._llm_session_id = _generate_opencode_id("ses_", descending=True)
         self._llm_project_id = hashlib.sha1(_os.urandom(32)).hexdigest()
         self._llm_request_id = None
         self._save_session()
@@ -4663,17 +4668,35 @@ class App(tk.Tk):
         except Exception as e:
             _ctx_log(f"cache clear ERROR: {e}")
 
+    def _llm_provider_id(self):
+        try:
+            from src.llm import config as _llm_config
+            return _llm_config.load().get("active_provider", "")
+        except Exception:
+            return ""
+
     def _llm_session(self):
-        """Stable opencode session id, persisted across restarts."""
-        if not self._llm_session_id:
-            from src.llm.client import _generate_opencode_id
+        """Stable opencode-style session id, persisted across restarts."""
+        from src.llm import op_big_pickle
+        from src.llm.client import _generate_opencode_id
+        if self._llm_provider_id() == op_big_pickle.PROVIDER_ID:
+            if not (self._llm_session_id
+                    and op_big_pickle.is_valid_session_id(self._llm_session_id)):
+                self._llm_session_id = op_big_pickle.generate_id(
+                    "ses_", descending=True)
+        elif not self._llm_session_id:
             self._llm_session_id = _generate_opencode_id("ses_", descending=True)
         return self._llm_session_id
 
     def _new_llm_request_id(self):
         """Per user-turn opencode request id (shared by tool round-trips)."""
+        from src.llm import op_big_pickle
         from src.llm.client import _generate_opencode_id
-        self._llm_request_id = _generate_opencode_id("msg_", descending=False)
+        if self._llm_provider_id() == op_big_pickle.PROVIDER_ID:
+            self._llm_request_id = op_big_pickle.generate_id(
+                "msg_", descending=False)
+        else:
+            self._llm_request_id = _generate_opencode_id("msg_", descending=False)
         return self._llm_request_id
 
     def _save_session(self):
