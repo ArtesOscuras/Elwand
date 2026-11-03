@@ -970,6 +970,9 @@ class App(tk.Tk):
         self.console.set_subcommands("stop", self._stop_targets)
         self.console.register_command("delete", self._cmd_delete, "Delete stored data")
         self.console.set_subcommands("delete", ["all", "dbs", "credential", "evidence", "hash", "handshake", "machine", "domain", "session", "user", "password", "shell", "people", "dictionary", "rule", "poc", "report", "inventory", "cache", "wifi", "provider"])
+        self.console.register_command("edit", self._cmd_edit, "Edit inventory items")
+        self.console.set_subcommands("edit",
+                                     ["hash", "poc", "report", "user", "credential", "people"])
         self.console.register_command("add", self._cmd_add, "Add to inventory")
         self.console.set_subcommands("add", ["machine", "domain", "session", "credential", "user", "password", "hash", "people", "dictionary", "rule", "provider"])
         self.console.register_command("init", self._cmd_init, "Re-run initialization checks")
@@ -1024,6 +1027,12 @@ class App(tk.Tk):
 
         self.console.set_arg2_provider("add", "machine", self._autocomplete_format_ip)
         self.console.set_arg2_provider("add", "domain", self._autocomplete_format_domain)
+        self.console.set_arg2_provider("edit", "hash", self._autocomplete_hash_noall)
+        self.console.set_arg2_provider("edit", "poc", self._autocomplete_pocs_noall)
+        self.console.set_arg2_provider("edit", "report", self._autocomplete_reports_noall)
+        self.console.set_arg2_provider("edit", "user", self._autocomplete_user_noall)
+        self.console.set_arg2_provider("edit", "credential", self._autocomplete_credential_user_noall)
+        self.console.set_arg2_provider("edit", "people", self._autocomplete_people_noall)
         self.console.set_arg2_provider("view", "session", self._autocomplete_session_names)
         self.console.set_arg2_provider("delete", "session", self._autocomplete_session_names)
         self.console.set_arg2_provider("add", "credential", self._autocomplete_user_noall)
@@ -1213,6 +1222,18 @@ class App(tk.Tk):
         try:
             for fname in sorted(os.listdir(str(pocs_dir()))):
                 if os.path.isfile(os.path.join(str(pocs_dir()), fname)):
+                    results.append((fname, fname))
+        except OSError:
+            pass
+        return results
+
+    @staticmethod
+    def _autocomplete_reports_noall(prefix):
+        from src.elwand_paths import reports_dir
+        results = []
+        try:
+            for fname in sorted(os.listdir(str(reports_dir()))):
+                if os.path.isfile(os.path.join(str(reports_dir()), fname)):
                     results.append((fname, fname))
         except OSError:
             pass
@@ -5405,6 +5426,127 @@ class App(tk.Tk):
             return
         domain = args[0].strip()
         threading.Thread(target=self._run_domain, args=(domain,), daemon=True).start()
+
+    def _cmd_edit(self, args):
+        if not args:
+            self.console.body(
+                "Usage: edit <hash|poc|report|user|credential|people> <item>")
+            return
+        sub = args[0].lower()
+        rest = args[1:]
+        if sub == "hash":
+            self._cmd_edit_hash(rest)
+        elif sub == "poc":
+            self._cmd_edit_poc(rest)
+        elif sub == "report":
+            self._cmd_edit_report(rest)
+        elif sub == "user":
+            self._cmd_edit_user(rest)
+        elif sub == "credential":
+            self._cmd_edit_credential(rest)
+        elif sub == "people":
+            self._cmd_edit_people(rest)
+        else:
+            self.console.error(f"Unknown edit target: {sub}")
+
+    def _cmd_edit_hash(self, args):
+        token = " ".join(args).strip()
+        if not token:
+            self.console.body("Usage: edit hash <hash|id>")
+            return
+        h = App._find_hash(token)
+        if not h:
+            self.console.warning(f"No hash found matching: {token}")
+            return
+        from .views.hash_detail import _HashEditDialog
+        dialog = _HashEditDialog(self, h)
+        if dialog.result:
+            self._refresh_hash_views()
+
+    def _cmd_edit_poc(self, args):
+        fname = " ".join(args).strip()
+        if not fname:
+            self.console.body("Usage: edit poc <filename>")
+            return
+        from src.elwand_paths import pocs_dir
+        path = os.path.join(str(pocs_dir()), fname)
+        if not os.path.isfile(path):
+            self.console.warning(f"POC not found: {fname}")
+            return
+        from .views.file_detail import PocDialog
+        PocDialog(self, path, f"POC \u2014 {fname}")
+        self._invalidate_item_views("pocs")
+
+    def _cmd_edit_report(self, args):
+        fname = " ".join(args).strip()
+        if not fname:
+            self.console.body("Usage: edit report <filename>")
+            return
+        from src.elwand_paths import reports_dir
+        path = os.path.join(str(reports_dir()), fname)
+        if not os.path.isfile(path):
+            self.console.warning(f"Report not found: {fname}")
+            return
+        self._edit_report(fname)
+
+    def _cmd_edit_user(self, args):
+        username = " ".join(args).strip()
+        if not username:
+            self.console.body("Usage: edit user <username>")
+            return
+        from src.machines.credential_db import load_users
+        u = next((x for x in load_users() if x.get("username") == username), None)
+        if not u:
+            self.console.warning(f"User not found: {username}")
+            return
+        from .views.user_detail import _UserEditDialog
+        dlg = _UserEditDialog(self, u)
+        try:
+            self.wait_window(dlg)
+        except Exception:
+            pass
+        self._invalidate_item_views("users", f"user_{username}")
+
+    def _cmd_edit_credential(self, args):
+        username = " ".join(args).strip()
+        if not username:
+            self.console.body("Usage: edit credential <username>")
+            return
+        from src.machines.credential_db import load_credentials
+        c = next((x for x in load_credentials()
+                  if x.get("username") == username), None)
+        if not c:
+            self.console.warning(f"Credential not found: {username}")
+            return
+        from .views.credential_detail import _EditDialog
+        _EditDialog(self, c)
+        self._invalidate_item_views("credentials", f"credential_{c['id']}")
+
+    def _cmd_edit_people(self, args):
+        target = " ".join(args).strip().lower()
+        if not target:
+            self.console.body("Usage: edit people <first last>")
+            return
+        from src.machines.people_db import load_people
+        p = next((x for x in load_people()
+                  if f"{x.get('first_name','')} {x.get('last_name','')}"
+                  .strip().lower() == target), None)
+        if not p:
+            self.console.warning(f"Person not found: {target}")
+            return
+        from .views.people_detail import _PersonEditDialog
+        dlg = _PersonEditDialog(self, p)
+        try:
+            self.wait_window(dlg)
+        except Exception:
+            pass
+        self._invalidate_item_views("people", f"person_{p['id']}")
+
+    def _invalidate_item_views(self, *names):
+        for name in names:
+            view = self.visualizer.get_view(name)
+            if view is not None and hasattr(view, "_last_hash"):
+                view._last_hash = None
 
     def _cmd_add(self, args):
         if not args:

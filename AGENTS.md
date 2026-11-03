@@ -418,6 +418,8 @@ General rules:
 * Avoid duplicating state unnecessarily.
 * Ensure database interactions are explicit and easy to trace.
 
+**`edit` command:** `edit <hash|poc|report|user|credential|people> <item>` opens the matching edit dialog directly (arg-2 autocompletes existing items: hash tokens `#id:preview`, POC/report filenames, usernames and person names). Handlers `_cmd_edit*` resolve the item and refresh the relevant list/detail view afterwards.
+
 ---
 
 ## Domains, Directories & HTTP/HTTPS Protocol (`src/machines/*_db.py`, `src/gui/views/*_detail.py`)
