@@ -251,7 +251,8 @@ def _extract_domains_from_whatweb(output):
         if not re.match(r"^https?://", url):
             continue
         host = re.sub(r"^https?://", "", url).split("/")[0].split(":")[0]
-        if host and "." in host:
+        if (host and "." in host and not re.match(r"^\d+\.\d+\.\d+\.\d+$", host)
+                and any(ch.isalpha() for ch in host)):
             domains.add(host)
     return sorted(domains)
 
@@ -261,7 +262,7 @@ def _run_whatweb(ip, port, mode="direct"):
     try:
         if mode == "direct":
             out = subprocess.run(
-                [mode, "-a", "3", url],
+                ["whatweb", "-a", "3", url],
                 capture_output=True, timeout=60, text=True,
             )
         elif mode == "subshell":

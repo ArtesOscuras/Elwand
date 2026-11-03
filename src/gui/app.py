@@ -681,6 +681,10 @@ class App(tk.Tk):
                 store.save()
         except Exception:
             pass
+        try:
+            self._repair_misplaced_domains()
+        except Exception:
+            pass
         start_machines_autosave(store)
         try:
             from src.machines import credential_db
@@ -4056,24 +4060,20 @@ class App(tk.Tk):
                 machine.device_type = "device unknown"
                 machine_db.save_machine_info(machine)
         else:
-            if not domain_db.exists(target):
-                domain_db.init_or_update(target, 0, "0.0.0.0", "manual", scheme_for_port(port))
             domain_name = target
-            try:
-                info = socket.getaddrinfo(domain_name, None, socket.AF_INET, socket.SOCK_STREAM)
-                ip = info[0][4][0] if info else domain_name
-            except Exception:
-                ip = domain_name
-            machine = store.get(ip)
-            if not machine:
+            ip = self._resolve_to_ip(target)
+            machine = store.get(ip) if ip else None
+            if ip and not machine:
                 machine = store.add_or_update(ip=ip, method="manual")
                 machine.device_type = "device unknown"
                 machine_db.save_machine_info(machine)
-            domain_db.init_or_update(domain_name, machine.id, machine.ip, "whatweb",
-                                     scheme_for_port(port))
+            if machine:
+                domain_db.init_or_update(domain_name, machine.id, machine.ip,
+                                         "whatweb", scheme_for_port(port))
 
         if not machine:
-            self.console.warning(f"No machine found for: {target}")
+            self.console.warning(
+                f"Could not resolve {target} to an IP; nothing was added.")
             return
         ip = machine.ip
         self._tracked_thread("WhatWeb", f"{ip}:{port}",
@@ -4125,6 +4125,7 @@ class App(tk.Tk):
             stdout, stderr = _run_whatweb(target, port, mode=mode)
             stdout = self._strip_ansi(stdout)
             stderr = self._strip_ansi(stderr)
+            whatweb_output = stdout
             if stderr:
                 for line in stderr.split("\n"):
                     if line.strip():
@@ -4142,6 +4143,9 @@ class App(tk.Tk):
                 self.console.after(0, lambda: self.console.info(
                     f"Web scan {target}:{port} done (whatweb)"
                 ))
+                for line in whatweb_output.split("\n"):
+                    if line.strip():
+                        self.console.after(0, lambda l=line: self.console.body(f"  {l}"))
                 for d in domains:
                     self.console.after(0, lambda dom=d: self.console.success(f"  domain: {dom}"))
             else:
@@ -5765,6 +5769,70 @@ class App(tk.Tk):
         hid = save_hash_entry(hash_type, args[1], origin="manual")
         self.console.success(f"Hash #{hid} added")
         self._refresh_hash_views()
+
+    @staticmethod
+    def _is_valid_ip(value):
+        import ipaddress
+        try:
+            ipaddress.ip_address((value or "").strip())
+            return True
+        except ValueError:
+            return False
+
+    def _repair_misplaced_domains(self):
+        """Fix machines whose `ip` is actually a domain (legacy DNS-failure bug).
+
+        Moves their directories/notes/web services to the domain, unlinks and
+        deletes the bogus machine, and cleans IP-looking/duplicate domain rows.
+        """
+        changed = False
+        for m in list(store.get_all()):
+            ip = (m.ip or "").strip()
+            if self._is_valid_ip(ip):
+                continue
+            if "." not in ip or not any(ch.isalpha() for ch in ip):
+                continue  # not a domain-looking value; leave it alone
+            domain = ip
+
+            real_id, real_ip = 0, ""
+            for row in domain_db.load_domain_machines(domain):
+                mip = row.get("machine_ip") or ""
+                mid = row.get("machine_id") or 0
+                if mid and mid != m.id and self._is_valid_ip(mip):
+                    real_id, real_ip = mid, mip
+                    break
+
+            if not domain_db.exists(domain):
+                domain_db.init_or_update(domain, real_id, real_ip, "repair", "")
+                if not real_id:
+                    domain_db.remove_domain_machine(domain, 0)
+
+            for path, _ts, port, scheme in machine_db.load_directories(m.id):
+                domain_db.save_directory(domain, path, port, scheme)
+            for (path, port, scheme), note in machine_db.load_directory_notes(m.id).items():
+                domain_db.set_directory_note(
+                    domain, path, None if port == -1 else port, scheme, note)
+            for port, output in machine_db.load_web_services(m.id):
+                low = (output or "").lower()
+                if output and not low.startswith("error") and "no address" not in low:
+                    domain_db.save_web_service(domain, port, output)
+
+            domain_db.remove_domain_machine(domain, m.id)
+            machine_db.delete_machine_db(m.id)
+            store.remove(m.ip)
+            changed = True
+            self.console.body(
+                f"Repaired misplaced domain '{domain}': directories moved to "
+                f"the domain and the bogus machine removed.")
+
+        if changed:
+            store.save()
+
+        for m in store.get_all():
+            for dom, _src, _proto in list(machine_db.load_domains(m.id)):
+                if self._is_valid_ip(dom):
+                    machine_db.remove_domain(m.id, dom)
+            machine_db.dedupe_domains(m.id)
 
     def _refresh_hash_views(self):
         """Refresh any open hash list/detail views after a hash changed."""

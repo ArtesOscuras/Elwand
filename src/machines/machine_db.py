@@ -468,6 +468,28 @@ def load_domains(machine_id):
         return []
 
 
+def remove_domain(machine_id, domain):
+    _init_db_dir()
+    path = _get_path(machine_id)
+    try:
+        with sqlite3.connect(path) as conn:
+            conn.execute("DELETE FROM domains WHERE domain = ?", (domain,))
+    except (PermissionError, OSError, sqlite3.OperationalError):
+        pass
+
+
+def dedupe_domains(machine_id):
+    _init_db_dir()
+    path = _get_path(machine_id)
+    try:
+        with sqlite3.connect(path) as conn:
+            conn.execute(
+                "DELETE FROM domains WHERE rowid NOT IN ("
+                "SELECT MIN(rowid) FROM domains GROUP BY domain, source)")
+    except (PermissionError, OSError, sqlite3.OperationalError):
+        pass
+
+
 def delete_machine_db(machine_id):
     _init_db_dir()
     path = _get_path(machine_id)

@@ -1,6 +1,7 @@
 """Agent tool definitions — OpenAI function calling schema + handlers."""
 
 import os
+import re
 
 TOOLS = [
     {
@@ -1204,6 +1205,9 @@ def _add_machine(args, ctx=None):
                     f"IPv6 {ip}.")
         return ("IPv6 addresses cannot be added as a machine; add its IPv4 "
                 "address instead.")
+    if not re.match(r"^\d+\.\d+\.\d+\.\d+$", ip):
+        return (f"Invalid IPv4 address: {ip}. Domains belong to add_domain; "
+                f"machines are keyed by their IP.")
     machine = store.add_or_update(ip=ip, method="agent")
     machine.device_type = "device unknown"
     machine_db.save_machine_info(machine)
@@ -2239,6 +2243,13 @@ def _delete_password(args, ctx=None):
     return f"Password not found."
 
 
+def _is_ip_host(host):
+    """True when a URL host is an IP literal (IPv4 or IPv6)."""
+    if not host:
+        return False
+    return bool(re.match(r"^\d{1,3}(?:\.\d{1,3}){3}$", host)) or ":" in host
+
+
 def _http_indicates_exists(status):
     """Heuristic: treat the HTTP status as evidence that a path exists."""
     if status is None:
@@ -2303,7 +2314,7 @@ def _webfetch(args, ctx=None):
                 path = parsed.path or "/"
                 port = parsed.port or (443 if parsed.scheme == "https" else 80)
                 from src.machines import store, machine_db, domain_db
-                machine = store.get(host)
+                machine = store.get(host) if _is_ip_host(host) else None
                 if machine:
                     machine_db.save_directory(machine.id, path, port, parsed.scheme)
                 elif domain_db.exists(host):
@@ -2331,7 +2342,7 @@ def _webfetch(args, ctx=None):
             path = parsed.path or "/"
             port = parsed.port or (443 if parsed.scheme == "https" else 80)
             from src.machines import store, machine_db, domain_db
-            machine = store.get(host)
+            machine = store.get(host) if _is_ip_host(host) else None
             if machine:
                 machine_db.save_directory(machine.id, path, port, parsed.scheme)
             elif domain_db.exists(host):
@@ -2648,7 +2659,7 @@ def _fuzz_start(args, ctx=None):
     wl_path = str(wl_path)
     resolved_ip = ctx._resolve_to_ip(target)
     from src.machines import store, machine_db
-    machine = store.get(resolved_ip or target)
+    machine = store.get(resolved_ip) if resolved_ip else None
     display_target = resolved_ip or target
     url_template = None
     if method == "directory":

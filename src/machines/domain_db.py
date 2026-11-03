@@ -376,6 +376,19 @@ def load_subdomains(domain):
         return []
 
 
+def remove_domain_machine(domain, machine_id):
+    _init_db_dir()
+    path = _get_path(domain)
+    try:
+        with sqlite3.connect(path) as conn:
+            conn.execute(
+                "DELETE FROM domain_machines WHERE machine_id = ?",
+                (machine_id,),
+            )
+    except (PermissionError, OSError, sqlite3.OperationalError):
+        pass
+
+
 def exists(domain):
     _init_db_dir()
     return os.path.isfile(_get_path(domain))

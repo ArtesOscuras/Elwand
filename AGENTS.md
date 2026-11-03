@@ -86,6 +86,8 @@ App-wide shortcuts are registered in **one place**: `App._bind_global_shortcuts(
 
 `_close_active_dialog` finds the open dialog via `grab_current()` (falling back to the focused widget's toplevel) and closes it by **invoking its `WM_DELETE_WINDOW` protocol handler** (so per-dialog cleanup runs), falling back to `destroy()` when none is set. When adding a new global shortcut, add it to `_bind_global_shortcuts()` (not scattered `bind` calls) and bind both `Control` and `Command`.
 
+**Shell terminals** (`src/gui/views/shell_detail.py`, inherited by `ReverseShellDetailView`/`SSHDetailView`) follow real-terminal conventions: `Ctrl+C` is **always** sent to the target as SIGINT (never copies), so copy with `Ctrl+Shift+C` (or `Cmd+C` on macOS / `Ctrl+Insert`), and paste with `Ctrl+Shift+V` (or `Cmd+V` / `Shift+Insert`); `Cmd+A` selects all on macOS. Mouse drag selects text normally. While a selection exists, `_append_output` does **not** auto-scroll, and typing clears the selection and goes to the prompt (never edits the protected output). The terminal uses real Tk marks (`freeze`, `prompt`) rather than index strings so appended output stays in order before the prompt after any selection.
+
 ---
 
 ### Mouse and Clickable Elements
@@ -442,6 +444,8 @@ Each domain records the **protocol** it serves over (`http`/`https`). Scheme hel
 * `render_tree(paths)` — nested tree, **sorted case-insensitively per level**, box-drawing connectors; **implied parents are created** (a stored `/admin/login` yields an `admin` node). Root line is `/`.
 * `base_url(host, ports, preferred=None)` — `scheme://host[:port]`, preferring a domain's stored `protocol`; otherwise HTTPS inferred from `_HTTPS_PORTS`/web-service ports; standard ports (80/443) omitted, non-standard kept.
 
+**Never a domain as a machine:** the store's `ip` is always an IP. `_cmd_whatweb` resolves a domain (associated machine IP first, then DNS) and aborts without creating anything if it cannot; `webfetch`/`fuzz_start` route directory saves to `domain_db` for hostnames (only IP hosts go to `machine_db`); `_extract_domains_from_whatweb` ignores IP-looking hosts; the agent `add_machine` tool rejects non-IPv4. On startup `App._repair_misplaced_domains()` migrates any legacy machine whose `ip` is a domain (directories/notes/web services to the domain, unlink + delete the bogus machine) and cleans IP-looking/duplicate domain rows.
+
 **Per-port storage:** the `directories` table carries `port INTEGER` and `scheme TEXT` (idempotent migration `_migrate_directories` in both `machine_db` and `domain_db`; legacy rows stay `NULL`). `save_directory(id_or_domain, path, port=None, scheme="")` dedups by `(path, port, scheme)`, and `load_directories` returns `(path, discovered_at, port, scheme)` tuples. `src/dirutil.py` (`group_directories`, `port_label`) groups rows by `(scheme, port)`; the views render **one tree per port** (so a machine/domain with several HTTP/HTTPS services gets separate trees) and the copied URL uses that group's port/scheme. `webfetch`, the webrecorder, the fuzzer GUI and the agent `fuzz_start` pass the real port/scheme; `fuzz_start` also saves to the **domain** (registering it if needed) in addition to the resolved machine.
 
 **Inline actions, notes & delete:** clicking a node expands a compact **inline** row right below it (pushing the tree down; embedded via `Text.window_create`) with mini `copy` / `delete` buttons and a `note:` entry; clicking the same node again collapses it. The row is tracked per view as `_expanded_dir = (scheme, port, path)` plus `_expanded_note` (kept across re-renders), and an expanding an implied parent is allowed (delete is disabled there). Notes are stored per `(path, port, scheme)` in a `directory_notes` table (both DBs: `set_directory_note` / `load_directory_notes`; empty removes it) and rendered inline after the node name in `MUTED`. `delete_directory()` removes the discovered `directories` row (and its note). The buttons are icon `tk.Label`s using `icons.copy_icon()` / `icons.delete_icon()` (both 20px scaled, optional text fallback), so the copy icon (`src/icons/copy.png`) matches the delete cross (soft white disc + bright glyph). The old `close_menu()`/Toplevel popup was removed. Node tag clicks return `"break"` and a widget-level press/motion guard (installed once per `Text`) prevents Tk's class binding from starting an accidental text selection when a node is clicked/dragged (normal text selection on non-node text still works).
@@ -586,6 +590,7 @@ Examples include:
 
 * `nmap`
 * `hashcat`
+* `whatweb`
 
 Guidelines:
 
@@ -594,6 +599,8 @@ Guidelines:
 * Do not bundle these binaries.
 * Do not assume fixed installation paths.
 * Support standard discovery mechanisms (e.g., PATH resolution).
+
+**WhatWeb:** `_has_whatweb()` resolves the binary via `PATH` (`direct`), a shell subshell (`subshell`), or a shell alias (`interactive`/explicit path). `_run_whatweb(host, port, mode)` runs `whatweb -a 3 <host:port>` (the `direct` mode must execute `whatweb`, not the mode name). The console `use whatweb` (`App._run_webscan`) prints the whatweb output in the console and stores it in the machine/domain `web_services` table; when whatweb is unavailable it falls back to the internal HTTP probe.
 
 ---
 
