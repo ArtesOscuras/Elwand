@@ -165,6 +165,14 @@ class ShellDetailView(BaseView):
 
         self.terminal.bind("<Return>", self._on_enter)
         self.terminal.bind("<Control-c>", self._on_ctrl_c)
+        self.terminal.bind("<Control-Shift-C>", self._copy_selection)
+        self.terminal.bind("<Command-c>", self._copy_selection)
+        self.terminal.bind("<Control-Insert>", self._copy_selection)
+        self.terminal.bind("<Control-Shift-V>", self._on_paste)
+        self.terminal.bind("<Command-v>", self._on_paste)
+        self.terminal.bind("<Shift-Insert>", self._on_paste)
+        self.terminal.bind("<Control-a>", self._jump_to_prompt)
+        self.terminal.bind("<Command-a>", self._select_all)
         self.terminal.bind("<BackSpace>", self._on_backspace)
         self.terminal.bind("<Delete>", self._on_backspace)
         self.terminal.bind("<Key>", self._on_key)
@@ -173,7 +181,6 @@ class ShellDetailView(BaseView):
         self.terminal.bind("<Up>", self._on_history_up)
         self.terminal.bind("<Down>", self._on_history_down)
         self.terminal.bind("<Home>", self._jump_to_prompt)
-        self.terminal.bind("<Control-a>", self._jump_to_prompt)
         self.terminal.bind("<Configure>", self._on_terminal_resize)
 
         bar = tk.Frame(self, bg="#000000")
@@ -209,12 +216,15 @@ class ShellDetailView(BaseView):
         self._resize_id = None
 
     def _insert_prompt(self):
+        self.terminal.mark_set("insert", tk.END)
         self.terminal.insert(tk.END, "\n", "bright")
-        self._freeze_mark = self.terminal.index("insert")
+        prompt_start = self.terminal.index("end-1c")
         self.terminal.insert(tk.END, self._prompt, "prompt")
+        self.terminal.mark_set("freeze", prompt_start)
+        self._freeze_mark = "freeze"
         self.terminal.mark_set("prompt", "insert")
         self.terminal.mark_gravity("prompt", tk.LEFT)
-        self.terminal.see(tk.END)
+        self._see_end()
 
     def _protect(self, start=None, end=None):
         self.terminal.tag_add("protected", start or "1.0", end or self._freeze_mark)
@@ -223,15 +233,64 @@ class ShellDetailView(BaseView):
         self.terminal.mark_set("insert", self.terminal.index("prompt"))
         return "break"
 
-    def _on_click(self, event):
-        self.terminal.focus_set()
-        self.terminal.mark_set("insert", tk.END)
-        self.terminal.see(tk.END)
+    def _has_selection(self):
+        try:
+            return bool(self.terminal.tag_ranges("sel"))
+        except tk.TclError:
+            return False
+
+    def _copy_selection(self, event=None):
+        try:
+            text = self.terminal.get("sel.first", "sel.last")
+        except tk.TclError:
+            return "break"
+        if text:
+            self.clipboard_clear()
+            self.clipboard_append(text)
         return "break"
 
+    def _select_all(self, event=None):
+        self.terminal.tag_add("sel", "1.0", "end-1c")
+        self.terminal.mark_set("insert", "1.0")
+        return "break"
+
+    def _on_paste(self, event=None):
+        try:
+            text = self.clipboard_get()
+        except tk.TclError:
+            return "break"
+        if not text:
+            return "break"
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        self.terminal.tag_remove("sel", "1.0", tk.END)
+        self.terminal.mark_set("insert", tk.END)
+        self.terminal.insert(tk.END, text)
+        self.terminal.see(tk.END)
+        self._protect("1.0", self._freeze_mark)
+        return "break"
+
+    def _see_end(self):
+        if not self._has_selection():
+            self.terminal.see(tk.END)
+
+    def _on_click(self, event):
+        self.terminal.focus_set()
+
     def _on_key(self, event):
+        if event.keysym in (
+            "Shift_L", "Shift_R", "Control_L", "Control_R", "Alt_L", "Alt_R",
+            "Meta_L", "Meta_R", "Super_L", "Super_R", "Caps_Lock", "Num_Lock",
+        ):
+            return
+        printable = bool(event.char) and ord(event.char[0]) >= 32
+        if self._has_selection():
+            self.terminal.tag_remove("sel", "1.0", tk.END)
+            if printable:
+                self.terminal.mark_set("insert", tk.END)
         if self.terminal.compare("insert", "<", "prompt"):
             self.terminal.mark_set("insert", tk.END)
+        if printable:
+            self.terminal.see(tk.END)
         c = event.keysym
         if c in ("Left", "Right"):
             prompt_idx = self.terminal.index("prompt")
@@ -243,6 +302,15 @@ class ShellDetailView(BaseView):
         self._protect("1.0", self._freeze_mark)
 
     def _on_backspace(self, event):
+        if self._has_selection():
+            try:
+                if self.terminal.compare("sel.first", ">=", "prompt"):
+                    return
+            except tk.TclError:
+                pass
+            self.terminal.tag_remove("sel", "1.0", tk.END)
+            self.terminal.mark_set("insert", tk.END)
+            return "break"
         if self.terminal.compare("insert", "<=", "prompt"):
             return "break"
 
@@ -252,7 +320,8 @@ class ShellDetailView(BaseView):
     def _lock_and_send(self, cmd):
         self.terminal.delete("prompt", tk.END)
         self.terminal.insert(tk.END, cmd + "\n", "bright")
-        self._freeze_mark = self.terminal.index("insert")
+        self.terminal.mark_set("freeze", tk.END)
+        self._freeze_mark = "freeze"
         self._protect("1.0", self._freeze_mark)
 
         if cmd.strip():
@@ -276,7 +345,8 @@ class ShellDetailView(BaseView):
             return "break"
         if cmd.strip().lower() == "clear":
             self.terminal.delete("1.0", tk.END)
-            self._freeze_mark = "1.0"
+            self.terminal.mark_set("freeze", "1.0")
+            self._freeze_mark = "freeze"
             self._protect("1.0", self._freeze_mark)
             s = shell_db.get_session(self._sid)
             if s:
@@ -300,7 +370,8 @@ class ShellDetailView(BaseView):
             else:
                 send_raw(self._sid, "\x03")
         self.terminal.insert(tk.END, "^C\n", "muted")
-        self._freeze_mark = self.terminal.index("insert")
+        self.terminal.mark_set("freeze", tk.END)
+        self._freeze_mark = "freeze"
         self._protect("1.0", self._freeze_mark)
         self._insert_prompt()
         return "break"
@@ -413,7 +484,8 @@ class ShellDetailView(BaseView):
                 text=f"Shell #{s['id']} — {s['ip']} ({s['status']})"
             )
         if self.terminal.get("1.0", tk.END).strip() == "":
-            self._freeze_mark = "1.0"
+            self.terminal.mark_set("freeze", "1.0")
+            self._freeze_mark = "freeze"
             self._protect("1.0", self._freeze_mark)
             self._append_output("[connected]\n", "info")
             self._insert_prompt()
@@ -436,7 +508,8 @@ class ShellDetailView(BaseView):
         agent_cmd = None
         touch = shell_db.pop_agent_touch(self._sid)
         if touch:
-            self._freeze_mark = self.terminal.index(tk.END)
+            self.terminal.mark_set("freeze", tk.END)
+            self._freeze_mark = "freeze"
             self._protect("1.0", self._freeze_mark)
             if isinstance(touch, str):
                 agent_cmd = touch
@@ -445,7 +518,9 @@ class ShellDetailView(BaseView):
         if agent_cmd:
             self.terminal.delete("prompt", tk.END)
             self.terminal.insert(tk.END, agent_cmd + "\n", "info")
-            self._freeze_mark = self.terminal.index("insert")
+            self.terminal.mark_set("insert", tk.END)
+            self.terminal.mark_set("freeze", tk.END)
+            self._freeze_mark = "freeze"
             self._protect("1.0", self._freeze_mark)
             self._strip_echo_cmd = agent_cmd
             self._insert_prompt()
@@ -495,7 +570,7 @@ class ShellDetailView(BaseView):
             self._append_ansi_text(text)
         else:
             self.terminal.insert(self._freeze_mark, text, tag or "bright")
-        self.terminal.see(tk.END)
+        self._see_end()
         if self._recording:
             self._record_buffer.append(text)
 

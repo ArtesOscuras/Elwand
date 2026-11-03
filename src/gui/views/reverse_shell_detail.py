@@ -45,16 +45,20 @@ class ReverseShellDetailView(ShellDetailView):
         self._resize_terminal()
 
     def _insert_prompt(self):
+        self.terminal.mark_set("insert", tk.END)
+        prompt_start = self.terminal.index("end-1c")
         self.terminal.insert(tk.END, self._prompt, "prompt")
-        self._freeze_mark = self.terminal.index("insert-1c")
+        self.terminal.mark_set("freeze", prompt_start)
+        self._freeze_mark = "freeze"
         self.terminal.mark_set("prompt", "insert")
         self.terminal.mark_gravity("prompt", tk.LEFT)
-        self.terminal.see(tk.END)
+        self._see_end()
 
     def _lock_and_send(self, cmd):
         self.terminal.delete("prompt", tk.END)
         self.terminal.insert(tk.END, "\n", "bright")
-        self._freeze_mark = self.terminal.index("insert-1c")
+        self.terminal.mark_set("freeze", tk.END)
+        self._freeze_mark = "freeze"
         self._protect("1.0", self._freeze_mark)
         if cmd.strip():
             self._history.append(cmd.strip())
@@ -71,7 +75,8 @@ class ReverseShellDetailView(ShellDetailView):
             return "break"
         if cmd.strip().lower() == "clear":
             self.terminal.delete("1.0", tk.END)
-            self._freeze_mark = "1.0"
+            self.terminal.mark_set("freeze", "1.0")
+            self._freeze_mark = "freeze"
             self._protect("1.0", self._freeze_mark)
             self._insert_prompt()
             send_command(self._sid, "clear")
