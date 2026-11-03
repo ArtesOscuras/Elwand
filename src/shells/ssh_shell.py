@@ -134,6 +134,15 @@ class SSHConnectionThread:
             if raw is None:
                 break
 
+            if raw == "":
+                try:
+                    channel.send("\n")
+                    _dbg(f"[ssh-shell #{self._sid}] sent empty line")
+                except SSHException as e:
+                    shell_db.append_output(self._sid, f"Send error: {e}\n")
+                    break
+                continue
+
             cmd = raw.strip()
             if not cmd:
                 continue

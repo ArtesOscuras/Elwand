@@ -21,6 +21,7 @@ dependencies = [
     "openai>=1.0.0",
     "html2text>=2025.0.0",
     "utls>=2026.10.3",
+    "pyte>=0.8.1",
 ]
 
 [project.scripts]

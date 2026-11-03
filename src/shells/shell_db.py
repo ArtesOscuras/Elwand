@@ -77,7 +77,19 @@ def set_os(sid, shell_os):
             s["type"] = "Revershell (unix)"
 
 
-def append_output(sid, data):
+def set_auto_output(sid, duration=2.0):
+    """Mark output produced until `duration` seconds from now as automated."""
+    s = get_session(sid)
+    if s:
+        s["_auto_until"] = _time.time() + duration
+
+
+def is_auto_output(sid):
+    s = get_session(sid)
+    return bool(s and _time.time() < s.get("_auto_until", 0))
+
+
+def append_output(sid, data, auto=None):
     s = get_session(sid)
     if s:
         s["last_active"] = datetime.now()
@@ -87,7 +99,9 @@ def append_output(sid, data):
             except Exception:
                 data = repr(data)
         data = data.replace("\r\n", "\n").replace("\r", "\n")
-        s["buffer"].append(data)
+        if auto is None:
+            auto = is_auto_output(sid)
+        s["buffer"].append((data, bool(auto)))
         ab = s.get("_agent_buffer")
         if ab is not None:
             ab.append(data)
@@ -97,13 +111,12 @@ def append_output(sid, data):
 def drain_output(sid):
     s = get_session(sid)
     if not s:
-        return ""
+        return []
     buf = s["buffer"]
     if not buf:
-        return ""
-    result = "".join(buf)
+        return []
     s["buffer"] = []
-    return result
+    return [item if isinstance(item, tuple) else (item, False) for item in buf]
 
 
 def enable_agent_buffer(sid):

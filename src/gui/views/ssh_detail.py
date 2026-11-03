@@ -27,17 +27,26 @@ class SSHDetailView(ShellDetailView):
         self._see_end()
 
     def _lock_and_send(self, cmd):
+        self._end_auto()
         self.terminal.delete("prompt", tk.END)
+        if cmd.strip():
+            self.terminal.insert(tk.END, cmd, "bright")
+            self._strip_echo_cmd = cmd
+        else:
+            self._strip_echo_cmd = ""
+        self.terminal.insert(tk.END, "\n", "bright")
         self.terminal.mark_set("freeze", tk.END)
         self._freeze_mark = "freeze"
         self._protect("1.0", self._freeze_mark)
         if cmd.strip():
             self._history.append(cmd.strip())
             self._history_idx = len(self._history)
-            send_command(self._sid, cmd)
+        send_command(self._sid, cmd if cmd.strip() else "")
         self._insert_prompt()
 
     def _resize_terminal(self):
+        if self._raw_mode:
+            return
         import tkinter.font as tkfont
         try:
             f = tkfont.Font(font=self.terminal.cget("font"))
@@ -51,6 +60,10 @@ class SSHDetailView(ShellDetailView):
             rows = max(5, useful_h // char_h)
             s = shell_db.get_session(self._sid)
             if s and s["status"] == "connected":
+                size = (rows, cols)
+                if size == self._last_tty_size:
+                    return
+                self._last_tty_size = size
                 ch = s.get("ssh_channel")
                 if ch:
                     ch.resize_pty(width=cols, height=rows)
@@ -62,6 +75,8 @@ class SSHDetailView(ShellDetailView):
         self._resize_terminal()
 
     def _on_enter(self, event):
+        if self._raw_mode:
+            return self._send_raw_key(event)
         cmd = self._get_current_cmd()
         self.terminal.delete("prompt", tk.END)
         if cmd.strip().lower() == "exit":
@@ -69,11 +84,13 @@ class SSHDetailView(ShellDetailView):
                 self._on_back_click()
             return "break"
         if cmd.strip().lower() == "clear":
+            self._end_auto()
             self.terminal.delete("1.0", tk.END)
             self.terminal.mark_set("freeze", "1.0")
             self._freeze_mark = "freeze"
             self._protect("1.0", self._freeze_mark)
             self._insert_prompt()
+            self._strip_echo_cmd = "clear"
             send_command(self._sid, "clear")
             return "break"
         self._lock_and_send(cmd)

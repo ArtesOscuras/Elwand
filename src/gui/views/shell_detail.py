@@ -19,6 +19,35 @@ _ANSI_FG = {
     90: "#888888", 91: "#ff6b6b", 92: "#4cdf8b", 93: "#e5c07b",
     94: "#7fc6f0", 95: "#d4a0d4", 96: "#70d4c8", 97: "#ffffff",
 }
+_PROMPT_SPACE_RE = re.compile(r"[\$#%>:\]] $")
+_PROMPT_END_RE = re.compile(r"[\$#%>:\]]\s*$")
+
+_RAW_KEYS = {
+    "Up": "\x1b[A", "Down": "\x1b[B", "Right": "\x1b[C", "Left": "\x1b[D",
+    "Home": "\x1b[H", "End": "\x1b[F", "Prior": "\x1b[5~", "Next": "\x1b[6~",
+    "Insert": "\x1b[2~", "Delete": "\x1b[3~",
+    "F1": "\x1bOP", "F2": "\x1bOQ", "F3": "\x1bOR", "F4": "\x1bOS",
+    "F5": "\x1b[15~", "F6": "\x1b[17~", "F7": "\x1b[18~", "F8": "\x1b[19~",
+    "F9": "\x1b[20~", "F10": "\x1b[21~", "F11": "\x1b[23~", "F12": "\x1b[24~",
+    "BackSpace": "\x7f", "Return": "\r", "KP_Enter": "\r",
+    "Tab": "\t", "ISO_Left_Tab": "\x1b[Z", "Escape": "\x1b",
+}
+_RAW_MODIFIERS = {
+    "Shift_L", "Shift_R", "Control_L", "Control_R", "Alt_L", "Alt_R",
+    "Meta_L", "Meta_R", "Super_L", "Super_R", "Caps_Lock", "Num_Lock",
+}
+_ALT_ENTER_SEQS = ("\x1b[?1049h", "\x1b[?47h", "\x1b[?1047h")
+_ALT_EXIT_SEQS = ("\x1b[?1049l", "\x1b[?47l", "\x1b[?1047l")
+_RAW_COLORS = {
+    "black": "#000000", "red": "#cc0000", "green": "#4e9a06",
+    "brown": "#c4a000", "blue": "#3465a4", "magenta": "#75507b",
+    "cyan": "#06989a", "white": "#d3d7cf",
+    "brightblack": "#555753", "brightred": "#ef2929",
+    "brightgreen": "#8ae234", "brightbrown": "#fce94f",
+    "brightblue": "#729fcf", "brightmagenta": "#ad7fa8",
+    "brightcyan": "#34e2e2", "brightwhite": "#eeeeec",
+}
+
 _ANSI_BG = {
     40: "#1a1a1a", 41: "#5c1a1a", 42: "#1a3c1a", 43: "#4c3c1a",
     44: "#1a2a4c", 45: "#3c1a4c", 46: "#1a3c3c", 47: "#555555",
@@ -113,6 +142,22 @@ class ShellDetailView(BaseView):
         self._use_ansi = False
         self._ansi_tags = {}
         self._strip_echo_cmd = None
+        self._auto_until_prompt = False
+        self._auto_seen = False
+        self._last_tty_size = None
+        self._raw_capable = (
+            stype == "SSH"
+            or ("revers" in stype.lower() and "windows" not in stype.lower())
+        )
+        self._raw_mode = False
+        self._screen = None
+        self._stream = None
+        self._raw_tags = {}
+        self._raw_sig = None
+        self._raw_alt = False
+        self._raw_force = False
+        self._raw_auto = False
+        self._raw_tail = ""
         super().__init__(parent, **kwargs)
 
     def _build_ui(self):
@@ -162,12 +207,15 @@ class ShellDetailView(BaseView):
         self.terminal.tag_configure("info", foreground=INFO)
         self.terminal.tag_configure("error", foreground="#f44747")
         self.terminal.tag_configure("prompt", foreground=SUCCESS)
+        self.terminal.tag_configure("auto", foreground=MUTED)
+        self.terminal.tag_raise("auto")
 
         self.terminal.bind("<Return>", self._on_enter)
         self.terminal.bind("<Control-c>", self._on_ctrl_c)
         self.terminal.bind("<Control-Shift-C>", self._copy_selection)
         self.terminal.bind("<Command-c>", self._copy_selection)
         self.terminal.bind("<Control-Insert>", self._copy_selection)
+        self.terminal.bind("<Control-v>", self._on_paste)
         self.terminal.bind("<Control-Shift-V>", self._on_paste)
         self.terminal.bind("<Command-v>", self._on_paste)
         self.terminal.bind("<Shift-Insert>", self._on_paste)
@@ -211,6 +259,18 @@ class ShellDetailView(BaseView):
         self._agent_toggle.bind("<Enter>", lambda e: self._agent_toggle.config(bg="#333333"))
         self._agent_toggle.bind("<Leave>", lambda e: self._agent_toggle.config(bg="#222222"))
 
+        self._raw_toggle = tk.Label(
+            bar, text="Raw: OFF",
+            bg="#222222", fg="#f44747",
+            font=fonts.view_font(10), relief=tk.FLAT, bd=0,
+            padx=12, pady=6, cursor="",
+        )
+        if self._raw_capable:
+            self._raw_toggle.pack(side=tk.RIGHT, padx=(0, 10))
+            self._raw_toggle.bind("<Button-1>", lambda e: self._on_raw_toggle())
+            self._raw_toggle.bind("<Enter>", lambda e: self._raw_toggle.config(bg="#333333"))
+            self._raw_toggle.bind("<Leave>", lambda e: self._raw_toggle.config(bg="#222222"))
+
         self._last_output = ""
         self._poll_id = None
         self._resize_id = None
@@ -230,6 +290,8 @@ class ShellDetailView(BaseView):
         self.terminal.tag_add("protected", start or "1.0", end or self._freeze_mark)
 
     def _jump_to_prompt(self, event=None):
+        if self._raw_mode:
+            return self._send_raw_key(event)
         self.terminal.mark_set("insert", self.terminal.index("prompt"))
         return "break"
 
@@ -255,6 +317,20 @@ class ShellDetailView(BaseView):
         return "break"
 
     def _on_paste(self, event=None):
+        if self._raw_mode:
+            try:
+                text = self.clipboard_get()
+            except tk.TclError:
+                return "break"
+            if text:
+                try:
+                    send_raw(
+                        self._sid,
+                        text.replace("\r\n", "\n").replace("\n", "\r"))
+                except Exception:
+                    pass
+            return "break"
+        self._end_auto()
         try:
             text = self.clipboard_get()
         except tk.TclError:
@@ -277,11 +353,15 @@ class ShellDetailView(BaseView):
         self.terminal.focus_set()
 
     def _on_key(self, event):
+        if self._raw_mode:
+            return self._send_raw_key(event)
         if event.keysym in (
             "Shift_L", "Shift_R", "Control_L", "Control_R", "Alt_L", "Alt_R",
             "Meta_L", "Meta_R", "Super_L", "Super_R", "Caps_Lock", "Num_Lock",
         ):
             return
+        if self._auto_seen:
+            self._end_auto()
         printable = bool(event.char) and ord(event.char[0]) >= 32
         if self._has_selection():
             self.terminal.tag_remove("sel", "1.0", tk.END)
@@ -299,9 +379,15 @@ class ShellDetailView(BaseView):
                 return "break"
 
     def _on_key_release(self, event):
+        if self._raw_mode:
+            return
         self._protect("1.0", self._freeze_mark)
 
     def _on_backspace(self, event):
+        if self._raw_mode:
+            return self._send_raw_key(event)
+        if self._auto_seen:
+            self._end_auto()
         if self._has_selection():
             try:
                 if self.terminal.compare("sel.first", ">=", "prompt"):
@@ -317,9 +403,30 @@ class ShellDetailView(BaseView):
     def _get_current_cmd(self):
         return self.terminal.get("prompt", "end-1c")
 
+    def _send_auto(self, cmd):
+        """Send an Elwand-driven command (resize/stabilize) shown in grey."""
+        if not self._freeze_mark:
+            return
+        try:
+            line_start = self.terminal.index(f"{self._freeze_mark} linestart")
+            prev = self.terminal.get(f"{self._freeze_mark}-1c", self._freeze_mark)
+            prefix = " " if prev and not prev.isspace() else ""
+            self.terminal.tag_add("auto", line_start, self._freeze_mark)
+            self.terminal.insert(self._freeze_mark, prefix + cmd + "\n", "auto")
+            self.terminal.tag_raise("auto")
+        except tk.TclError:
+            return
+        if self._recording:
+            self._record_buffer.append(cmd + "\n")
+        self._strip_echo_cmd = cmd
+        self._auto_until_prompt = True
+        send_command(self._sid, cmd, auto=True)
+
     def _lock_and_send(self, cmd):
+        self._end_auto()
         self.terminal.delete("prompt", tk.END)
-        self.terminal.insert(tk.END, cmd + "\n", "bright")
+        if cmd.strip():
+            self.terminal.insert(tk.END, cmd + "\n", "bright")
         self.terminal.mark_set("freeze", tk.END)
         self._freeze_mark = "freeze"
         self._protect("1.0", self._freeze_mark)
@@ -337,6 +444,8 @@ class ShellDetailView(BaseView):
         self._insert_prompt()
 
     def _on_enter(self, event):
+        if self._raw_mode:
+            return self._send_raw_key(event)
         cmd = self._get_current_cmd()
         self.terminal.delete("prompt", tk.END)
         if cmd.strip().lower() == "exit":
@@ -359,6 +468,10 @@ class ShellDetailView(BaseView):
         return "break"
 
     def _on_ctrl_c(self, event):
+        if self._raw_mode:
+            return self._send_raw_key(event)
+        if self._auto_seen:
+            self._end_auto()
         s = shell_db.get_session(self._sid)
         if s and s["status"] == "connected":
             rs = s.get("winrm_runspace")
@@ -377,6 +490,8 @@ class ShellDetailView(BaseView):
         return "break"
 
     def _on_history_up(self, event):
+        if self._raw_mode:
+            return self._send_raw_key(event)
         if not self._history:
             return "break"
         if self._history_idx == len(self._history):
@@ -388,6 +503,8 @@ class ShellDetailView(BaseView):
         return "break"
 
     def _on_history_down(self, event):
+        if self._raw_mode:
+            return self._send_raw_key(event)
         if self._history_idx < len(self._history) - 1:
             self._history_idx += 1
             self.terminal.delete("prompt", tk.END)
@@ -413,6 +530,236 @@ class ShellDetailView(BaseView):
             text="Agent: ON" if on else "Agent: OFF",
             fg=SUCCESS if on else "#f44747",
         )
+
+    def _update_raw_btn(self):
+        if not hasattr(self, "_raw_toggle"):
+            return
+        try:
+            if self._raw_mode:
+                self._raw_toggle.config(text="Raw: ON", fg=SUCCESS)
+            else:
+                self._raw_toggle.config(text="Raw: OFF", fg="#f44747")
+        except tk.TclError:
+            pass
+
+    def _on_raw_toggle(self):
+        if not self._raw_capable:
+            return
+        if self._raw_mode:
+            self._exit_raw()
+        else:
+            self._enter_raw()
+
+    def _raw_dimensions(self):
+        try:
+            w = self.terminal.winfo_width()
+            h = self.terminal.winfo_height()
+            f = fonts.view_font(13)
+            char_w = max(1, f.measure(" "))
+            char_h = max(1, f.metrics("linespace"))
+            pad_x = int(self.terminal.cget("padx") or 0) * 2
+            pad_y = int(self.terminal.cget("pady") or 0) * 2
+            cols = max(20, (w - pad_x) // char_w)
+            rows = max(5, (h - pad_y) // char_h)
+            return rows, cols
+        except Exception:
+            return 24, 80
+
+    def _enter_raw(self, auto=False, initial_data=""):
+        try:
+            import pyte
+        except Exception:
+            self._append_output(
+                "pyte is required for the raw terminal. Reinstall Elwand.\n",
+                "error")
+            return
+        if not auto:
+            try:
+                self._resize_terminal()
+            except Exception:
+                pass
+        rows, cols = self._raw_dimensions()
+        self._screen = pyte.Screen(cols, rows)
+        self._stream = pyte.Stream(self._screen)
+        self._raw_tags = {}
+        self._raw_sig = None
+        self._raw_alt = False
+        self._raw_force = False
+        self._raw_auto = bool(auto)
+        self._raw_tail = ""
+        self._raw_mode = True
+        self._strip_echo_cmd = None
+        self._auto_seen = False
+        self._auto_until_prompt = False
+        shell_db.set_auto_output(self._sid, 0)
+        self.terminal.configure(wrap="none")
+        self.terminal.tag_remove("sel", "1.0", tk.END)
+        self.terminal.delete("1.0", tk.END)
+        self._update_raw_btn()
+        self.terminal.focus_force()
+        self.after(100, lambda: self.terminal.focus_force())
+        if initial_data:
+            if any(seq in initial_data for seq in _ALT_ENTER_SEQS):
+                self._raw_alt = True
+            if any(seq in initial_data for seq in _ALT_EXIT_SEQS):
+                self._raw_alt = False
+            try:
+                self._stream.feed(initial_data)
+            except Exception as e:
+                shell_db._dbg(f"[shell raw] initial feed error: {e}")
+            try:
+                self._render_raw(force=True)
+            except Exception as e:
+                shell_db._dbg(f"[shell raw] initial render error: {e}")
+        if not auto:
+            try:
+                send_raw(self._sid, "\r")
+            except Exception as e:
+                shell_db._dbg(f"[shell raw] enter newline error: {e}")
+        if self._poll_id:
+            self.after_cancel(self._poll_id)
+        self._poll_id = self.after(50, self._poll)
+
+    def _reset_raw_force(self):
+        self._raw_force = False
+        self._update_raw_btn()
+
+    def _exit_raw(self):
+        if not self._raw_mode:
+            return
+        if self._raw_alt and not self._raw_force:
+            self._raw_force = True
+            try:
+                self._raw_toggle.config(text="Raw: click again", fg="#f44747")
+                self.after(2000, self._reset_raw_force)
+            except tk.TclError:
+                pass
+            return
+        self._raw_force = False
+        self._raw_auto = False
+        self._raw_tail = ""
+        self._raw_mode = False
+        self._screen = None
+        self._stream = None
+        self._raw_tags = {}
+        self.terminal.configure(wrap="word", insertwidth=2)
+        self.terminal.delete("1.0", tk.END)
+        self.terminal.mark_set("freeze", "1.0")
+        self._freeze_mark = "freeze"
+        self._protect("1.0", self._freeze_mark)
+        self._strip_echo_cmd = ""
+        try:
+            send_raw(self._sid, "\r")
+        except Exception as e:
+            shell_db._dbg(f"[shell raw] exit newline error: {e}")
+        self._insert_prompt()
+        self._last_tty_size = None
+        self._update_raw_btn()
+        self.terminal.focus_force()
+        self.after(150, self._resize_terminal)
+        if self._poll_id:
+            self.after_cancel(self._poll_id)
+        self._poll_id = self.after(200, self._poll)
+
+    def _raw_color(self, value, default):
+        if value in (None, "default", ""):
+            return default
+        if isinstance(value, int):
+            if value < 16:
+                name = ["black", "red", "green", "brown", "blue", "magenta",
+                        "cyan", "white", "brightblack", "brightred",
+                        "brightgreen", "brightbrown", "brightblue",
+                        "brightmagenta", "brightcyan", "brightwhite"][value]
+                return _RAW_COLORS.get(name, default)
+            if value < 232:
+                n = value - 16
+                r, g, b = n // 36, (n % 36) // 6, n % 6
+                conv = lambda v: 0 if v == 0 else 55 + v * 40
+                return f"#{conv(r):02x}{conv(g):02x}{conv(b):02x}"
+            v = min(255, 8 + (value - 232) * 10)
+            return f"#{v:02x}{v:02x}{v:02x}"
+        s = str(value)
+        if s.startswith("#") and len(s) == 7:
+            return s
+        if len(s) == 6 and all(c in "0123456789abcdefABCDEF" for c in s):
+            return "#" + s
+        return _RAW_COLORS.get(s, default)
+
+    def _raw_tag(self, cell):
+        fg = self._raw_color(cell.fg, BRIGHT)
+        bg = self._raw_color(cell.bg, "#000000")
+        if cell.reverse:
+            fg, bg = bg, fg
+        key = (fg, bg, bool(cell.bold), bool(cell.underscore),
+               bool(cell.strikethrough))
+        tag = self._raw_tags.get(key)
+        if tag:
+            return tag
+        tag = f"raw_{len(self._raw_tags)}"
+        conf = {"foreground": fg, "background": bg}
+        if cell.bold:
+            conf["font"] = fonts.view_font_bold(13)
+        if cell.underscore:
+            conf["underline"] = True
+        if cell.strikethrough:
+            conf["overstrike"] = True
+        self.terminal.tag_configure(tag, **conf)
+        try:
+            self.terminal.tag_raise("sel")
+        except tk.TclError:
+            pass
+        self._raw_tags[key] = tag
+        return tag
+
+    def _render_raw(self, force=False):
+        if self._screen is None or self._has_selection():
+            return
+        display = list(self._screen.display)
+        cur = self._screen.cursor
+        sig = (tuple(display), cur.x, cur.y)
+        if not force and sig == self._raw_sig:
+            return
+        self._raw_sig = sig
+        self.terminal.delete("1.0", tk.END)
+        for y, row in enumerate(display):
+            line = self._screen.buffer[y]
+            x = 0
+            n = len(row)
+            while x < n:
+                tag = self._raw_tag(line[x])
+                j = x + 1
+                while j < n and self._raw_tag(line[j]) == tag:
+                    j += 1
+                self.terminal.insert(tk.END, row[x:j], tag)
+                x = j
+            if y < len(display) - 1:
+                self.terminal.insert(tk.END, "\n")
+        cy = min(max(cur.y, 0), max(0, len(display) - 1))
+        cx = min(max(cur.x, 0), max(0, len(display[0]) - 1)) if display else 0
+        self.terminal.mark_set("insert", f"{cy + 1}.{cx}")
+        self.terminal.see("insert")
+        try:
+            hidden = bool(getattr(cur, "hidden", False))
+            self.terminal.configure(insertwidth=0 if hidden else 2)
+        except tk.TclError:
+            pass
+
+    def _send_raw_key(self, event):
+        if event.keysym in _RAW_MODIFIERS:
+            return "break"
+        seq = _RAW_KEYS.get(event.keysym)
+        if seq is None:
+            seq = event.char
+            if seq and (event.state & 0x0008):
+                seq = "\x1b" + seq
+        if seq:
+            try:
+                ok = send_raw(self._sid, seq)
+                if not ok:
+                    shell_db._dbg(f"[shell raw] send failed: {seq!r}")
+            except Exception as e:
+                shell_db._dbg(f"[shell raw] send error: {e}")
+        return "break"
 
     def _start_recording(self, name):
         self._record_name = _sanitize(name)
@@ -483,13 +830,20 @@ class ShellDetailView(BaseView):
             self._title_label.config(
                 text=f"Shell #{s['id']} — {s['ip']} ({s['status']})"
             )
+        if self._poll_id:
+            self.after_cancel(self._poll_id)
+            self._poll_id = None
+        if self._raw_mode:
+            self.after(100, lambda: self.terminal.focus_force())
+            self.after(200, self._poll)
+            return
         if self.terminal.get("1.0", tk.END).strip() == "":
             self.terminal.mark_set("freeze", "1.0")
             self._freeze_mark = "freeze"
             self._protect("1.0", self._freeze_mark)
             self._append_output("[connected]\n", "info")
             self._insert_prompt()
-        self.after(100, lambda: self.terminal.focus_set())
+        self.after(100, lambda: self.terminal.focus_force())
         self.after(500, self._poll)
 
     def on_deactivate(self):
@@ -504,6 +858,35 @@ class ShellDetailView(BaseView):
             self._on_back_click()
 
     def _poll(self):
+        if self._raw_mode:
+            auto_exit = False
+            try:
+                entered = self._raw_alt
+                fed = False
+                for data, _auto in shell_db.drain_output(self._sid):
+                    if not data:
+                        continue
+                    if any(seq in data for seq in _ALT_ENTER_SEQS):
+                        self._raw_alt = True
+                        entered = True
+                    if any(seq in data for seq in _ALT_EXIT_SEQS):
+                        self._raw_alt = False
+                    try:
+                        if self._stream is not None:
+                            self._stream.feed(data)
+                            fed = True
+                    except Exception as e:
+                        shell_db._dbg(f"[shell raw] feed error: {e}")
+                self._render_raw(force=fed)
+                if self._raw_auto and entered and not self._raw_alt:
+                    auto_exit = True
+            except Exception as e:
+                shell_db._dbg(f"[shell raw] poll error: {e}")
+            if auto_exit:
+                self._exit_raw()
+                return
+            self._poll_id = self.after(300, self._poll)
+            return
         moved = False
         agent_cmd = None
         touch = shell_db.pop_agent_touch(self._sid)
@@ -526,20 +909,33 @@ class ShellDetailView(BaseView):
             self._insert_prompt()
             moved = False
 
-        new_data = shell_db.drain_output(self._sid)
-        if new_data:
-            data = new_data.replace("\r\n", "\n").replace("\r", "\n")
-            if self._strip_echo_cmd:
+        segments = shell_db.drain_output(self._sid)
+        joined = "".join(d for d, _ in segments)
+        scan = self._raw_tail + joined
+        self._raw_tail = scan[-32:]
+        if self._raw_capable and any(seq in scan for seq in _ALT_ENTER_SEQS):
+            self._enter_raw(auto=True, initial_data=joined)
+            if not self._raw_mode:
+                self._poll_id = self.after(500, self._poll)
+            return
+        for data, auto in segments:
+            if not data:
+                continue
+            if self._strip_echo_cmd is not None:
                 cmd = self._strip_echo_cmd
                 self._strip_echo_cmd = None
                 prefix = cmd + "\n"
                 if data.startswith(prefix):
                     data = data[len(prefix):]
             if data:
-                self._append_output(data, "bright")
+                self._append_output(data, "auto" if auto else "bright")
 
         if moved:
             self._insert_prompt()
+
+        if self._auto_seen and not shell_db.is_auto_output(self._sid):
+            self._auto_seen = False
+            self._whiten_last_prompt()
 
         s = shell_db.get_session(self._sid)
         if s:
@@ -565,11 +961,82 @@ class ShellDetailView(BaseView):
                         pass
         self._poll_id = self.after(500, self._poll)
 
+    def _drop_remote_prompt_space(self, start, text):
+        """Avoid a double gap when the remote prompt already ends with a space."""
+        if self._prompt != " " or not text.endswith(" "):
+            return
+        tail = text.rsplit("\n", 1)[-1]
+        try:
+            prev = self.terminal.get(f"{start}-1c", start)
+        except tk.TclError:
+            prev = ""
+        if not _PROMPT_SPACE_RE.search(prev + tail):
+            return
+        try:
+            end = f"{start}+{len(text)}c"
+            self.terminal.delete(f"{end}-1c", end)
+        except tk.TclError:
+            pass
+
+    @staticmethod
+    def _strip_ansi_codes(text):
+        text = re.sub(r"\x1b\].*?(\x07|\x1b\\)", "", text, flags=re.S)
+        text = text.replace("\x07", "")
+        text = re.sub(r"\x1b\[[?0-9;]*[a-zA-Z]", "", text)
+        text = re.sub(r"\x1b[^\[\]]", "", text)
+        text = re.sub(r"\x1b$", "", text)
+        return text
+
+    def _whiten_final_prompt(self, start, text):
+        """Keep the final prompt of an automated block white, not grey."""
+        last = text.rsplit("\n", 1)[-1]
+        if not _PROMPT_END_RE.search(last):
+            return
+        try:
+            end = self.terminal.index(f"{start}+{len(text)}c")
+            nl = text.rfind("\n")
+            pstart = self.terminal.index(
+                f"{start}+{nl + 1}c") if nl >= 0 else start
+            self.terminal.tag_remove("auto", pstart, end)
+        except tk.TclError:
+            return
+        if self._auto_until_prompt:
+            self._auto_until_prompt = False
+            self._auto_seen = False
+            shell_db.set_auto_output(self._sid, 0)
+
+    def _whiten_last_prompt(self):
+        """Make the current (last) prompt white after an automated block."""
+        try:
+            last = self.terminal.index("end-1c")
+            start = self.terminal.index(f"{last} linestart")
+            line = self.terminal.get(start, last)
+        except tk.TclError:
+            return
+        if not _PROMPT_END_RE.search(line):
+            return
+        self.terminal.tag_remove("auto", start, last)
+
+    def _end_auto(self):
+        if self._auto_seen or self._auto_until_prompt:
+            self._whiten_last_prompt()
+        self._auto_seen = False
+        self._auto_until_prompt = False
+        shell_db.set_auto_output(self._sid, 0)
+
     def _append_output(self, text, tag=None):
-        if self._use_ansi and "\x1b" in text:
+        if tag == "auto" and "\x1b" in text:
+            text = self._strip_ansi_codes(text)
+        if self._use_ansi and "\x1b" in text and tag != "auto":
             self._append_ansi_text(text)
         else:
+            start = self.terminal.index(self._freeze_mark)
             self.terminal.insert(self._freeze_mark, text, tag or "bright")
+            if tag == "auto":
+                self._auto_seen = True
+                if self._auto_until_prompt:
+                    self._whiten_final_prompt(start, text)
+            self._drop_remote_prompt_space(start, text)
         self._see_end()
         if self._recording:
             self._record_buffer.append(text)
@@ -625,8 +1092,9 @@ class ShellDetailView(BaseView):
         if not segments:
             return
         plain = "".join(s[0] for s in segments)
-        idx = self.terminal.index(self._freeze_mark)
+        start = self.terminal.index(self._freeze_mark)
         self.terminal.insert(self._freeze_mark, plain)
+        idx = start
         for text_part, fg, bg, bold in segments:
             if not text_part:
                 continue
@@ -634,3 +1102,4 @@ class ShellDetailView(BaseView):
             tag = self._ansi_tag(fg, bg, bold)
             self.terminal.tag_add(tag, idx, end)
             idx = end
+        self._drop_remote_prompt_space(start, plain)
