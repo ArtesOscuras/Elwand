@@ -1,4 +1,3 @@
-import json
 import tkinter as tk
 from tkinter import ttk
 from src.gui import fonts, windowing
@@ -566,55 +565,69 @@ def open_provider_dialog(parent, config, refresh_cb=None, is_new=False, preselec
     detect_btn.bind("<Enter>", lambda e: detect_btn.config(bg="#333333"))
     detect_btn.bind("<Leave>", lambda e: detect_btn.config(bg="#222222"))
 
-    def _ollama_context_length(base, model):
-        if not model or not base:
-            return None
-        if "11434" not in base and "ollama" not in base.lower():
-            return None
+    def _ollama_context(base, model, provider_id=""):
+        """Return (source, context) the Ollama server will actually use."""
+        from src.llm import ollama as _ollama
+        if not model or not _ollama.is_ollama_base(base, provider_id):
+            return None, None
         try:
-            import urllib.request
-            root = base.rstrip("/")
-            if root.endswith("/v1"):
-                root = root[:-3].rstrip("/")
-            payload = json.dumps({"name": model}).encode("utf-8")
-            req = urllib.request.Request(
-                root + "/api/show", data=payload,
-                headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=8) as r:
-                data = json.loads(r.read().decode("utf-8"))
-            info = data.get("model_info") or {}
-            for k, v in info.items():
-                if isinstance(k, str) and k.lower().endswith("context_length") and isinstance(v, int) and v > 0:
-                    return v
-            return None
+            source, value = _ollama.resolve_context(base, model, timeout=5)
         except Exception:
-            return None
+            return None, None
+        if value:
+            return source, value
+        return "default", _ollama.DEFAULT_CONTEXT
 
     def _run_detect():
         url = url_var.get().strip()
         key = key_var.get().strip()
         if not url:
             return
+        current_model = model_var.get().strip()
+        provider = name_var.get().strip()
         feedback.config(text="Detecting models...", fg=SUCCESS)
         detect_btn.config(text=" ... ", fg=FG_DIM)
         def _run():
             try:
-                from openai import OpenAI
-                client = OpenAI(base_url=url, api_key=key or "none")
-                api_models = client.models.list()
-                ids = [m.id for m in api_models.data]
-                ctx = _ollama_context_length(url, ids[0] if ids else None)
-                dialog.after(0, lambda: _on_detect(ids, ctx))
+                from src.llm import ollama as _ollama
+                ids = None
+                if _ollama.is_ollama_base(url, provider):
+                    ids = _ollama.list_models(url, timeout=5)
+                if not ids:
+                    from openai import OpenAI
+                    client = OpenAI(base_url=url, api_key=key or "none")
+                    page = client.models.list()
+                    ids = [m.id for m in (getattr(page, "data", None) or [])]
+                ids = ids or []
+                model = (current_model if (current_model and current_model in ids)
+                         else (ids[0] if ids else current_model))
+                source, ctx = _ollama_context(url, model, provider)
+                dialog.after(0, lambda: _on_detect(ids, ctx, source, model))
             except Exception as e:
                 dialog.after(0, lambda err=str(e): _on_error(err))
-        def _on_detect(ids, ctx=None):
+        def _on_detect(ids, ctx=None, source=None, model=None):
             try:
+                ids = list(ids or [])
                 model_combo['values'] = ids
-                if ids and model_var.get() not in ids:
-                    model_var.set(ids[0])
-                if ctx and not ctx_limit_var.get().strip():
-                    ctx_limit_var.set(str(ctx))
-                feedback.config(text=f"Found {len(ids)} model(s).", fg=SUCCESS)
+                if model:
+                    model_var.set(model)
+                shown = model or ""
+                if ctx:
+                    if not ctx_limit_var.get().strip():
+                        ctx_limit_var.set(str(ctx))
+                    feedback.config(
+                        text=f"Found {len(ids)} model(s). "
+                             f"{shown}: server context {ctx} ({source}).", fg=SUCCESS)
+                elif not ids:
+                    from src.llm import ollama as _ollama
+                    if _ollama.is_ollama_base(url, provider):
+                        feedback.config(
+                            text="No models installed. Pull one with: "
+                                 f"ollama pull {model or '<model>'}.", fg=ERR)
+                    else:
+                        feedback.config(text="Found 0 model(s).", fg=SUCCESS)
+                else:
+                    feedback.config(text=f"Found {len(ids)} model(s).", fg=SUCCESS)
                 detect_btn.config(text=" Detect ", fg=FG)
             except tk.TclError:
                 pass
@@ -636,6 +649,33 @@ def open_provider_dialog(parent, config, refresh_cb=None, is_new=False, preselec
     key_entry.bind("<FocusOut>", _on_focus_out)
 
     detect_btn.bind("<Button-1>", lambda e: _run_detect())
+
+    def _on_model_selected(event=None):
+        url = url_var.get().strip()
+        model = model_var.get().strip()
+        provider = name_var.get().strip()
+        if not url or not model:
+            return
+        def _run():
+            source, ctx = _ollama_context(url, model, provider)
+            if not ctx:
+                return
+            def _apply():
+                try:
+                    if not ctx_limit_var.get().strip():
+                        ctx_limit_var.set(str(ctx))
+                    feedback.config(
+                        text=f"{model}: server context {ctx} ({source}).", fg=SUCCESS)
+                except tk.TclError:
+                    pass
+            try:
+                dialog.after(0, _apply)
+            except tk.TclError:
+                pass
+        import threading
+        threading.Thread(target=_run, daemon=True).start()
+
+    model_combo.bind("<<ComboboxSelected>>", _on_model_selected)
 
     row += 1
 
@@ -794,7 +834,13 @@ def open_provider_dialog(parent, config, refresh_cb=None, is_new=False, preselec
             config["active_provider"] = new_key
         llm.config.save(config)
         refresh_cb and refresh_cb()
-        feedback.config(text="Saved.")
+        from src.llm import ollama as _ollama
+        if (_ollama.is_ollama_base(url_var.get().strip(), new_key)
+                and providers[new_key].get("context_limit")):
+            feedback.config(
+                text="Saved. Ollama context will be pinned via a derived model.")
+        else:
+            feedback.config(text="Saved.")
         dialog.after(800, dialog.destroy)
 
     if not is_new:

@@ -56,6 +56,7 @@ class LLMClient:
 
         pid = provider_id or config.get("active_provider", "")
         provider = _cfg.get_provider(config, pid)
+        self._provider = provider
         self._base_url = provider.get("base_url", "")
         self._api_key = provider.get("api_key", "")
         self._provider_id = pid
@@ -112,6 +113,10 @@ class LLMClient:
 
     def _ensure_client(self):
         if self._client is None:
+            from src.llm import ollama
+            if ollama.is_ollama_base(self._base_url, self._provider_id):
+                self._apply_ollama_context(ollama)
+                self._check_ollama_model(ollama)
             if self._provider_id == op_big_pickle.PROVIDER_ID:
                 try:
                     http_client = op_big_pickle.build_http_client()
@@ -150,6 +155,40 @@ class LLMClient:
                     kwargs["api_key"] = ""
                     kwargs["_enforce_credentials"] = False
                 self._client = OpenAI(**kwargs)
+
+    def _apply_ollama_context(self, ollama):
+        """Use a context-pinned derivative when the provider sets context_limit.
+
+        Ollama's OpenAI endpoint ignores `num_ctx`, so a user-specified context
+        is enforced by creating/using `<model>-ctx<N>` (references the base blobs).
+        """
+        desired = self._provider.get("context_limit")
+        if not isinstance(desired, int) or desired <= 0:
+            return
+        try:
+            derived = ollama.ensure_context_model(self._base_url, self._model, desired)
+        except Exception:
+            return
+        if derived:
+            self._model = derived
+
+    def _check_ollama_model(self, ollama):
+        """Fail early with an actionable message when the model is not pulled."""
+        try:
+            models = ollama.list_models(self._base_url)
+        except Exception:
+            return
+        if models is None:
+            return
+        if not models:
+            raise RuntimeError(
+                "The Ollama server has no models installed. "
+                f"Run: ollama pull {self._model}")
+        if self._model not in models:
+            raise RuntimeError(
+                f"Ollama model '{self._model}' is not installed on the server. "
+                f"Available: {', '.join(models)}. "
+                f"Run: ollama pull {self._model}")
 
     def _opencode_headers(self):
         if self._provider_id == op_big_pickle.PROVIDER_ID:

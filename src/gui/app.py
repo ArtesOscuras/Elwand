@@ -629,6 +629,8 @@ class App(tk.Tk):
         self._context_injected = False
         self._last_token_pct = None
         self._total_api_tokens = 0
+        self._ollama_ctx_cache = {}
+        self._ollama_ctx_refreshing = set()
         self._fuzz_dlg = None
         self._tcpscan_running = False
         self._tcpscan_process = None
@@ -4593,14 +4595,29 @@ class App(tk.Tk):
             pid = config.get("active_provider", "") or ""
             am = config.get("active_models", {})
             providers = config.get("providers", {})
-            name = am.get(pid) or (providers.get(pid, {}).get("models", [None])[0])
-            override = providers.get(pid, {}).get("context_limit")
-            return pid, name, override
+            provider = providers.get(pid, {})
+            name = am.get(pid) or (provider.get("models", [None])[0])
+            override = provider.get("context_limit")
+            base_url = provider.get("base_url", "")
+            return pid, name, override, base_url
         except Exception:
-            return "", None, None
+            return "", None, None, ""
 
     def _get_model_context_limit(self):
-        pid, name, override = self._get_active_model()
+        pid, name, override, base_url = self._get_active_model()
+        from src.llm import ollama
+        if ollama.is_ollama_base(base_url, pid):
+            # A user-specified context is enforced by a context-pinned model
+            # (see LLMClient._apply_ollama_context), so it takes precedence.
+            if isinstance(override, int) and override > 0:
+                return override
+            # Otherwise read the context the server will actually use instead
+            # of the model's theoretical max (Ollama's OpenAI endpoint ignores
+            # num_ctx and defaults to a much smaller window).
+            ctx = self._ollama_context(base_url, name)
+            if ctx:
+                return ctx
+            return ollama.DEFAULT_CONTEXT
         if isinstance(override, int) and override > 0:
             return override
         if name:
@@ -4618,6 +4635,38 @@ class App(tk.Tk):
                 if key in name_lower:
                     return limit
         return self._DEFAULT_CONTEXT_LIMIT
+
+    _OLLAMA_CTX_TTL = 15
+
+    def _ollama_context(self, base_url, name):
+        """Cached server-side context for an Ollama model (refresh in background)."""
+        if not name:
+            return None
+        key = f"{base_url}|{name}"
+        entry = self._ollama_ctx_cache.get(key)
+        if entry is not None and time.time() - entry[1] < self._OLLAMA_CTX_TTL:
+            return entry[0]
+        self._refresh_ollama_context(key, base_url, name)
+        return entry[0] if entry is not None else None
+
+    def _refresh_ollama_context(self, key, base_url, name):
+        if key in self._ollama_ctx_refreshing:
+            return
+        self._ollama_ctx_refreshing.add(key)
+
+        def _run():
+            from src.llm import ollama
+            try:
+                _source, value = ollama.resolve_context(base_url, name)
+            except Exception:
+                value = None
+            if not value:
+                value = ollama.DEFAULT_CONTEXT
+            self._ollama_ctx_cache[key] = (value, time.time())
+            self._ollama_ctx_refreshing.discard(key)
+            self._safe_after(self._update_mode_prompt)
+
+        threading.Thread(target=_run, daemon=True).start()
 
     def _estimate_tokens(self, messages):
         try:
