@@ -31,9 +31,9 @@ class SSHDetailView(ShellDetailView):
         self.terminal.delete("prompt", tk.END)
         if cmd.strip():
             self.terminal.insert(tk.END, cmd, "bright")
-            self._strip_echo_cmd = cmd
+            self._start_strip(cmd)
         else:
-            self._strip_echo_cmd = ""
+            self._start_strip("")
         self.terminal.insert(tk.END, "\n", "bright")
         self.terminal.mark_set("freeze", tk.END)
         self._freeze_mark = "freeze"
@@ -90,7 +90,7 @@ class SSHDetailView(ShellDetailView):
             self._freeze_mark = "freeze"
             self._protect("1.0", self._freeze_mark)
             self._insert_prompt()
-            self._strip_echo_cmd = "clear"
+            self._start_strip("clear")
             send_command(self._sid, "clear")
             return "break"
         self._lock_and_send(cmd)

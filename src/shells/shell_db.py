@@ -98,7 +98,6 @@ def append_output(sid, data, auto=None):
                 data = data.decode(errors="replace")
             except Exception:
                 data = repr(data)
-        data = data.replace("\r\n", "\n").replace("\r", "\n")
         if auto is None:
             auto = is_auto_output(sid)
         s["buffer"].append((data, bool(auto)))
@@ -136,7 +135,7 @@ def drain_agent_output(sid):
         return ""
     result = "".join(buf)
     s["_agent_buffer"] = []
-    return result
+    return result.replace("\r\n", "\n").replace("\r", "\n")
 
 
 def touch_agent(sid, cmd=None):

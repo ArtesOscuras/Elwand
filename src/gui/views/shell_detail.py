@@ -2,6 +2,7 @@ import re
 from src.gui import fonts, windowing, theme
 import json
 import os
+import time
 import tkinter as tk
 from datetime import datetime
 from .base import BaseView
@@ -142,6 +143,8 @@ class ShellDetailView(BaseView):
         self._use_ansi = False
         self._ansi_tags = {}
         self._strip_echo_cmd = None
+        self._strip_buffer = ""
+        self._strip_started = None
         self._auto_until_prompt = False
         self._auto_seen = False
         self._last_tty_size = None
@@ -403,22 +406,76 @@ class ShellDetailView(BaseView):
     def _get_current_cmd(self):
         return self.terminal.get("prompt", "end-1c")
 
+    def _start_strip(self, cmd):
+        self._strip_echo_cmd = cmd
+        self._strip_buffer = ""
+        self._strip_started = None
+
+    def _clear_strip(self):
+        self._strip_echo_cmd = None
+        self._strip_buffer = ""
+        self._strip_started = None
+
+    def _resolve_echo(self, data):
+        """Strip the remote echo of the just-sent command, even if split."""
+        if self._strip_echo_cmd is None:
+            return data
+        if self._strip_started is None:
+            self._strip_started = time.time()
+        self._strip_buffer += data
+        buf = self._strip_buffer
+        cmd = self._strip_echo_cmd
+        if cmd == "":
+            if buf.startswith("\n"):
+                self._clear_strip()
+                return buf[1:]
+            if buf:
+                self._clear_strip()
+                return buf
+            return ""
+        if buf.startswith("\n"):
+            b2 = buf[1:]
+            if b2.startswith(cmd) or cmd.startswith(b2):
+                buf = b2
+        if buf.startswith(cmd):
+            rest = buf[len(cmd):]
+            if rest.startswith("\n"):
+                rest = rest[1:]
+            if rest or time.time() - self._strip_started > 1.0:
+                self._clear_strip()
+                return rest
+            return ""
+        if cmd.startswith(buf):
+            if time.time() - self._strip_started > 1.0:
+                self._clear_strip()
+                return buf
+            return ""
+        self._clear_strip()
+        return buf
+
     def _send_auto(self, cmd):
         """Send an Elwand-driven command (resize/stabilize) shown in grey."""
         if not self._freeze_mark:
             return
         try:
             line_start = self.terminal.index(f"{self._freeze_mark} linestart")
+        except tk.TclError:
+            line_start = self._freeze_mark
+        try:
             prev = self.terminal.get(f"{self._freeze_mark}-1c", self._freeze_mark)
-            prefix = " " if prev and not prev.isspace() else ""
+        except tk.TclError:
+            prev = ""
+        prefix = " " if prev and not prev.isspace() else ""
+        try:
             self.terminal.tag_add("auto", line_start, self._freeze_mark)
             self.terminal.insert(self._freeze_mark, prefix + cmd + "\n", "auto")
             self.terminal.tag_raise("auto")
-        except tk.TclError:
+        except tk.TclError as e:
+            shell_db._dbg(f"[shell] auto send error: {e}")
             return
         if self._recording:
             self._record_buffer.append(cmd + "\n")
-        self._strip_echo_cmd = cmd
+        self._start_strip(cmd)
         self._auto_until_prompt = True
         send_command(self._sid, cmd, auto=True)
 
@@ -552,9 +609,10 @@ class ShellDetailView(BaseView):
 
     def _raw_dimensions(self):
         try:
+            import tkinter.font as tkfont
             w = self.terminal.winfo_width()
             h = self.terminal.winfo_height()
-            f = fonts.view_font(13)
+            f = tkfont.Font(font=self.terminal.cget("font"))
             char_w = max(1, f.measure(" "))
             char_h = max(1, f.metrics("linespace"))
             pad_x = int(self.terminal.cget("padx") or 0) * 2
@@ -578,7 +636,10 @@ class ShellDetailView(BaseView):
                 self._resize_terminal()
             except Exception:
                 pass
-        rows, cols = self._raw_dimensions()
+        if self._last_tty_size:
+            rows, cols = self._last_tty_size
+        else:
+            rows, cols = self._raw_dimensions()
         self._screen = pyte.Screen(cols, rows)
         self._stream = pyte.Stream(self._screen)
         self._raw_tags = {}
@@ -588,7 +649,7 @@ class ShellDetailView(BaseView):
         self._raw_auto = bool(auto)
         self._raw_tail = ""
         self._raw_mode = True
-        self._strip_echo_cmd = None
+        self._clear_strip()
         self._auto_seen = False
         self._auto_until_prompt = False
         shell_db.set_auto_output(self._sid, 0)
@@ -647,7 +708,7 @@ class ShellDetailView(BaseView):
         self.terminal.mark_set("freeze", "1.0")
         self._freeze_mark = "freeze"
         self._protect("1.0", self._freeze_mark)
-        self._strip_echo_cmd = ""
+        self._start_strip("")
         try:
             send_raw(self._sid, "\r")
         except Exception as e:
@@ -905,7 +966,7 @@ class ShellDetailView(BaseView):
             self.terminal.mark_set("freeze", tk.END)
             self._freeze_mark = "freeze"
             self._protect("1.0", self._freeze_mark)
-            self._strip_echo_cmd = agent_cmd
+            self._start_strip(agent_cmd)
             self._insert_prompt()
             moved = False
 
@@ -921,12 +982,8 @@ class ShellDetailView(BaseView):
         for data, auto in segments:
             if not data:
                 continue
-            if self._strip_echo_cmd is not None:
-                cmd = self._strip_echo_cmd
-                self._strip_echo_cmd = None
-                prefix = cmd + "\n"
-                if data.startswith(prefix):
-                    data = data[len(prefix):]
+            data = data.replace("\r\n", "\n").replace("\r", "\n")
+            data = self._resolve_echo(data)
             if data:
                 self._append_output(data, "auto" if auto else "bright")
 

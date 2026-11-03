@@ -176,7 +176,6 @@ class SSHConnectionThread:
                         _dbg(f"[ssh-shell #{sid}] first recv: {data[:200]}")
                         first = False
                     text = data.decode(errors="replace")
-                    text = text.replace("\r\n", "\n").replace("\r", "\n")
                     if text:
                         shell_db.append_output(sid, text)
                 elif channel.closed:

@@ -657,7 +657,7 @@ class RemoteAccessDialog(tk.Toplevel):
                     if not data:
                         _dbg(f"[remote-access] pty reader #{sid} EOF")
                         break
-                    text = data.decode(errors="replace").replace("\r\n", "\n").replace("\r", "\n")
+                    text = data.decode(errors="replace")
                     _dbg(f"[remote-access] pty reader #{sid} got {len(text)} chars")
                     shell_db.append_output(sid, text)
                 wpid, status = os.waitpid(pid, os.WNOHANG)
@@ -671,7 +671,7 @@ class RemoteAccessDialog(tk.Toplevel):
                             data = os.read(master_fd, 4096)
                             if not data:
                                 break
-                            text = data.decode(errors="replace").replace("\r\n", "\n").replace("\r", "\n")
+                            text = data.decode(errors="replace")
                             _dbg(f"[remote-access] pty reader #{sid} drain {len(text)} chars")
                             shell_db.append_output(sid, text)
                     except Exception:
