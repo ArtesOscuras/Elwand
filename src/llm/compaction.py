@@ -231,10 +231,17 @@ def build_summary_prompt(previous_summary=None, head_messages=None):
     return "\n\n".join(parts)
 
 
+def _effective_buffer(model_context_limit, buffer):
+    buf = buffer if buffer is not None else DEFAULT_BUFFER
+    # Never reserve more than half the window: for small local-model contexts
+    # (e.g. Ollama's 4096 default) a fixed 20k buffer made overflow always true.
+    return max(1, min(buf, model_context_limit // 2))
+
+
 def usable_context(model_context_limit, output_max_tokens, buffer=None):
     if model_context_limit <= 0:
         return 0
-    buf = buffer if buffer is not None else DEFAULT_BUFFER
+    buf = _effective_buffer(model_context_limit, buffer)
     reserved = min(buf, output_max_tokens) if output_max_tokens > 0 else buf
     return max(0, model_context_limit - reserved)
 
@@ -242,7 +249,7 @@ def usable_context(model_context_limit, output_max_tokens, buffer=None):
 def is_overflow(tokens_used, model_context_limit, buffer=None):
     if model_context_limit <= 0:
         return False
-    buf = buffer if buffer is not None else DEFAULT_BUFFER
+    buf = _effective_buffer(model_context_limit, buffer)
     return tokens_used >= model_context_limit - buf
 
 
