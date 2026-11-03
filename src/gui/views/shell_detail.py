@@ -23,6 +23,11 @@ _ANSI_FG = {
 _PROMPT_SPACE_RE = re.compile(r"[\$#%>:\]] $")
 _PROMPT_END_RE = re.compile(r"[\$#%>:\]]\s*$")
 
+_MAX_DRAIN_CHARS = 150_000
+_MAX_TERM_LINES = 5_000
+_MAX_TERM_CHARS = 400_000
+_FLOOD_CHARS = 400_000
+
 _RAW_KEYS = {
     "Up": "\x1b[A", "Down": "\x1b[B", "Right": "\x1b[C", "Left": "\x1b[D",
     "Home": "\x1b[H", "End": "\x1b[F", "Prior": "\x1b[5~", "Next": "\x1b[6~",
@@ -147,6 +152,7 @@ class ShellDetailView(BaseView):
         self._strip_started = None
         self._auto_until_prompt = False
         self._auto_seen = False
+        self._flood = False
         self._last_tty_size = None
         self._raw_capable = (
             stype == "SSH"
@@ -192,7 +198,7 @@ class ShellDetailView(BaseView):
             terminal_frame,
             bg="#000000", fg=BRIGHT,
             font=fonts.view_font(13), borderwidth=0, highlightthickness=0,
-            cursor="xterm", wrap=tk.WORD,
+            cursor="xterm", wrap=tk.CHAR,
             insertbackground=BRIGHT,
             pady=10, padx=10,
         )
@@ -206,7 +212,6 @@ class ShellDetailView(BaseView):
 
         self.terminal.tag_configure("muted", foreground=MUTED)
         self.terminal.tag_configure("bright", foreground=BRIGHT)
-        self.terminal.tag_configure("protected", foreground=BRIGHT)
         self.terminal.tag_configure("info", foreground=INFO)
         self.terminal.tag_configure("error", foreground="#f44747")
         self.terminal.tag_configure("prompt", foreground=SUCCESS)
@@ -227,7 +232,6 @@ class ShellDetailView(BaseView):
         self.terminal.bind("<BackSpace>", self._on_backspace)
         self.terminal.bind("<Delete>", self._on_backspace)
         self.terminal.bind("<Key>", self._on_key)
-        self.terminal.bind("<KeyRelease>", self._on_key_release)
         self.terminal.bind("<Button-1>", self._on_click)
         self.terminal.bind("<Up>", self._on_history_up)
         self.terminal.bind("<Down>", self._on_history_down)
@@ -289,9 +293,6 @@ class ShellDetailView(BaseView):
         self.terminal.mark_gravity("prompt", tk.LEFT)
         self._see_end()
 
-    def _protect(self, start=None, end=None):
-        self.terminal.tag_add("protected", start or "1.0", end or self._freeze_mark)
-
     def _jump_to_prompt(self, event=None):
         if self._raw_mode:
             return self._send_raw_key(event)
@@ -345,7 +346,6 @@ class ShellDetailView(BaseView):
         self.terminal.mark_set("insert", tk.END)
         self.terminal.insert(tk.END, text)
         self.terminal.see(tk.END)
-        self._protect("1.0", self._freeze_mark)
         return "break"
 
     def _see_end(self):
@@ -380,11 +380,6 @@ class ShellDetailView(BaseView):
             insert_idx = self.terminal.index("insert")
             if c == "Left" and self.terminal.compare(insert_idx, "==", prompt_idx):
                 return "break"
-
-    def _on_key_release(self, event):
-        if self._raw_mode:
-            return
-        self._protect("1.0", self._freeze_mark)
 
     def _on_backspace(self, event):
         if self._raw_mode:
@@ -480,13 +475,16 @@ class ShellDetailView(BaseView):
         send_command(self._sid, cmd, auto=True)
 
     def _lock_and_send(self, cmd):
+        shell_db.stop_discard(self._sid)
         self._end_auto()
+        s = shell_db.get_session(self._sid)
+        if s:
+            s["_truncated"] = False
         self.terminal.delete("prompt", tk.END)
         if cmd.strip():
             self.terminal.insert(tk.END, cmd + "\n", "bright")
         self.terminal.mark_set("freeze", tk.END)
         self._freeze_mark = "freeze"
-        self._protect("1.0", self._freeze_mark)
 
         if cmd.strip():
             self._history.append(cmd.strip())
@@ -510,10 +508,13 @@ class ShellDetailView(BaseView):
                 self._on_back_click()
             return "break"
         if cmd.strip().lower() == "clear":
+            shell_db.stop_discard(self._sid)
+            s = shell_db.get_session(self._sid)
+            if s:
+                s["_truncated"] = False
             self.terminal.delete("1.0", tk.END)
             self.terminal.mark_set("freeze", "1.0")
             self._freeze_mark = "freeze"
-            self._protect("1.0", self._freeze_mark)
             s = shell_db.get_session(self._sid)
             if s:
                 cwd = s.get("winrm_cwd")
@@ -527,6 +528,7 @@ class ShellDetailView(BaseView):
     def _on_ctrl_c(self, event):
         if self._raw_mode:
             return self._send_raw_key(event)
+        shell_db.start_discard(self._sid)
         if self._auto_seen:
             self._end_auto()
         s = shell_db.get_session(self._sid)
@@ -542,7 +544,6 @@ class ShellDetailView(BaseView):
         self.terminal.insert(tk.END, "^C\n", "muted")
         self.terminal.mark_set("freeze", tk.END)
         self._freeze_mark = "freeze"
-        self._protect("1.0", self._freeze_mark)
         self._insert_prompt()
         return "break"
 
@@ -703,11 +704,10 @@ class ShellDetailView(BaseView):
         self._screen = None
         self._stream = None
         self._raw_tags = {}
-        self.terminal.configure(wrap="word", insertwidth=2)
+        self.terminal.configure(wrap="char", insertwidth=2)
         self.terminal.delete("1.0", tk.END)
         self.terminal.mark_set("freeze", "1.0")
         self._freeze_mark = "freeze"
-        self._protect("1.0", self._freeze_mark)
         self._start_strip("")
         try:
             send_raw(self._sid, "\r")
@@ -888,8 +888,9 @@ class ShellDetailView(BaseView):
     def on_activate(self):
         s = shell_db.get_session(self._sid)
         if s:
+            extra = " [output truncated]" if s.get("_truncated") else ""
             self._title_label.config(
-                text=f"Shell #{s['id']} — {s['ip']} ({s['status']})"
+                text=f"Shell #{s['id']} — {s['ip']} ({s['status']}){extra}"
             )
         if self._poll_id:
             self.after_cancel(self._poll_id)
@@ -901,7 +902,6 @@ class ShellDetailView(BaseView):
         if self.terminal.get("1.0", tk.END).strip() == "":
             self.terminal.mark_set("freeze", "1.0")
             self._freeze_mark = "freeze"
-            self._protect("1.0", self._freeze_mark)
             self._append_output("[connected]\n", "info")
             self._insert_prompt()
         self.after(100, lambda: self.terminal.focus_force())
@@ -924,7 +924,10 @@ class ShellDetailView(BaseView):
             try:
                 entered = self._raw_alt
                 fed = False
-                for data, _auto in shell_db.drain_output(self._sid):
+                pending = shell_db.buffer_chars(self._sid)
+                budget = 50_000 if pending > 400_000 else _MAX_DRAIN_CHARS
+                for data, _auto in shell_db.drain_output(
+                        self._sid, max_chars=budget):
                     if not data:
                         continue
                     if any(seq in data for seq in _ALT_ENTER_SEQS):
@@ -946,15 +949,33 @@ class ShellDetailView(BaseView):
             if auto_exit:
                 self._exit_raw()
                 return
-            self._poll_id = self.after(300, self._poll)
+            pending = shell_db.buffer_chars(self._sid)
+            delay = 100 if pending > 400_000 else (50 if pending else 300)
+            self._poll_id = self.after(delay, self._poll)
             return
+        s = shell_db.get_session(self._sid)
+        if s and s.get("_discard"):
+            if time.time() - s.get("_discard_last", 0) > 0.4:
+                shell_db.stop_discard(self._sid)
+        pending = shell_db.buffer_chars(self._sid)
+        if (pending > _FLOOD_CHARS and s
+                and (datetime.now() - s["last_active"]).total_seconds() < 0.5):
+            self._flood = True
+            try:
+                self._title_label.config(
+                    text=(f"Shell #{s['id']} — {s['ip']} "
+                          f"({s['status']}) [flooding…]"))
+            except tk.TclError:
+                pass
+            self._poll_id = self.after(200, self._poll)
+            return
+        self._flood = False
         moved = False
         agent_cmd = None
         touch = shell_db.pop_agent_touch(self._sid)
         if touch:
             self.terminal.mark_set("freeze", tk.END)
             self._freeze_mark = "freeze"
-            self._protect("1.0", self._freeze_mark)
             if isinstance(touch, str):
                 agent_cmd = touch
             moved = True
@@ -965,12 +986,12 @@ class ShellDetailView(BaseView):
             self.terminal.mark_set("insert", tk.END)
             self.terminal.mark_set("freeze", tk.END)
             self._freeze_mark = "freeze"
-            self._protect("1.0", self._freeze_mark)
             self._start_strip(agent_cmd)
             self._insert_prompt()
             moved = False
 
-        segments = shell_db.drain_output(self._sid)
+        budget = 50_000 if pending > 400_000 else _MAX_DRAIN_CHARS
+        segments = shell_db.drain_output(self._sid, max_chars=budget)
         joined = "".join(d for d, _ in segments)
         scan = self._raw_tail + joined
         self._raw_tail = scan[-32:]
@@ -979,13 +1000,19 @@ class ShellDetailView(BaseView):
             if not self._raw_mode:
                 self._poll_id = self.after(500, self._poll)
             return
+        appended = False
         for data, auto in segments:
             if not data:
                 continue
             data = data.replace("\r\n", "\n").replace("\r", "\n")
             data = self._resolve_echo(data)
             if data:
-                self._append_output(data, "auto" if auto else "bright")
+                self._append_output(
+                    data, "auto" if auto else None, scroll=False)
+                appended = True
+        if appended:
+            self._trim_terminal()
+            self._see_end()
 
         if moved:
             self._insert_prompt()
@@ -996,8 +1023,9 @@ class ShellDetailView(BaseView):
 
         s = shell_db.get_session(self._sid)
         if s:
+            extra = " [output truncated]" if s.get("_truncated") else ""
             self._title_label.config(
-                text=f"Shell #{s['id']} — {s['ip']} ({s['status']})"
+                text=f"Shell #{s['id']} — {s['ip']} ({s['status']}){extra}"
             )
             cwd = s.get("winrm_cwd")
             if cwd:
@@ -1016,7 +1044,26 @@ class ShellDetailView(BaseView):
                             self.terminal.mark_gravity("prompt", tk.LEFT)
                     except Exception:
                         pass
-        self._poll_id = self.after(500, self._poll)
+        pending = shell_db.buffer_chars(self._sid)
+        delay = 100 if pending > 400_000 else (50 if pending else 500)
+        self._poll_id = self.after(delay, self._poll)
+
+    def _trim_terminal(self):
+        if self._has_selection():
+            return
+        try:
+            end = str(self.terminal.index("end-1c"))
+            lines = int(end.split(".")[0])
+            if lines > _MAX_TERM_LINES + 500:
+                self.terminal.delete("1.0", f"{lines - _MAX_TERM_LINES}.0")
+            cnt = self.terminal.count("1.0", "end-1c", "chars")
+            total = int(cnt[0] if isinstance(cnt, tuple) else cnt)
+            if total > _MAX_TERM_CHARS + 50_000:
+                idx = self.terminal.index(
+                    f"1.0 + {total - _MAX_TERM_CHARS} chars")
+                self.terminal.delete("1.0", idx)
+        except Exception:
+            pass
 
     def _drop_remote_prompt_space(self, start, text):
         """Avoid a double gap when the remote prompt already ends with a space."""
@@ -1081,20 +1128,24 @@ class ShellDetailView(BaseView):
         self._auto_until_prompt = False
         shell_db.set_auto_output(self._sid, 0)
 
-    def _append_output(self, text, tag=None):
+    def _append_output(self, text, tag=None, scroll=True):
         if tag == "auto" and "\x1b" in text:
             text = self._strip_ansi_codes(text)
         if self._use_ansi and "\x1b" in text and tag != "auto":
             self._append_ansi_text(text)
         else:
             start = self.terminal.index(self._freeze_mark)
-            self.terminal.insert(self._freeze_mark, text, tag or "bright")
+            if tag:
+                self.terminal.insert(self._freeze_mark, text, tag)
+            else:
+                self.terminal.insert(self._freeze_mark, text)
             if tag == "auto":
                 self._auto_seen = True
                 if self._auto_until_prompt:
                     self._whiten_final_prompt(start, text)
             self._drop_remote_prompt_space(start, text)
-        self._see_end()
+        if scroll:
+            self._see_end()
         if self._recording:
             self._record_buffer.append(text)
 

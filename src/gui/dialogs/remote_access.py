@@ -653,7 +653,7 @@ class RemoteAccessDialog(tk.Toplevel):
             while True:
                 r, _, _ = select.select([master_fd], [], [], 1.0)
                 if r:
-                    data = os.read(master_fd, 4096)
+                    data = os.read(master_fd, 65536)
                     if not data:
                         _dbg(f"[remote-access] pty reader #{sid} EOF")
                         break
@@ -668,7 +668,7 @@ class RemoteAccessDialog(tk.Toplevel):
                             r, _, _ = select.select([master_fd], [], [], 0.1)
                             if not r:
                                 break
-                            data = os.read(master_fd, 4096)
+                            data = os.read(master_fd, 65536)
                             if not data:
                                 break
                             text = data.decode(errors="replace")

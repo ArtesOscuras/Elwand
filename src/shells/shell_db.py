@@ -1,3 +1,4 @@
+import collections
 import os
 import socket
 import threading
@@ -22,6 +23,10 @@ def _dbg(msg):
         pass
 # ---------------------------------------------------------------------------
 
+_MAX_PENDING_CHARS = 800_000
+_KEEP_PENDING_CHARS = 400_000
+_TRUNC_NOTICE_SECS = 2.0
+
 _id_counter = 0
 _lock = threading.Lock()
 _sessions = {}
@@ -44,7 +49,12 @@ def add_session(ip, port, listener_port):
         "last_active": datetime.now(),
         "status": "connected",
         "type": "Revershell",
-        "buffer": [],
+        "buffer": collections.deque(),
+        "_buffer_chars": 0,
+        "_trunc_notice": 0.0,
+        "_truncated": False,
+        "_discard": False,
+        "_discard_last": 0.0,
         "socket": None,
         "active": True,
     }
@@ -58,6 +68,10 @@ def set_socket(sid, sock):
     s = get_session(sid)
     if s:
         s["socket"] = sock
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 262144)
+        except OSError:
+            pass
 
 
 def set_status(sid, status):
@@ -98,24 +112,90 @@ def append_output(sid, data, auto=None):
                 data = data.decode(errors="replace")
             except Exception:
                 data = repr(data)
+        if s.get("_discard"):
+            s["_discard_last"] = _time.time()
+            keep = data[-4096:]
+            s["buffer"].clear()
+            s["buffer"].append((keep, False))
+            s["_buffer_chars"] = len(keep)
+            return
         if auto is None:
             auto = is_auto_output(sid)
         s["buffer"].append((data, bool(auto)))
+        s["_buffer_chars"] = s.get("_buffer_chars", 0) + len(data)
+        if s["_buffer_chars"] > _MAX_PENDING_CHARS:
+            while s["_buffer_chars"] > _KEEP_PENDING_CHARS and s["buffer"]:
+                old, _ = s["buffer"].popleft()
+                s["_buffer_chars"] -= len(old)
+            now = _time.time()
+            if now - s.get("_trunc_notice", 0.0) > _TRUNC_NOTICE_SECS:
+                s["_trunc_notice"] = now
+                s["_truncated"] = True
+                marker = "\n[... output truncated ...]\n"
+                s["buffer"].appendleft((marker, False))
+                s["_buffer_chars"] += len(marker)
         ab = s.get("_agent_buffer")
         if ab is not None:
             ab.append(data)
-        _dbg(f"[shell-db] append_output #{sid}: {len(data)} chars")
+            if len(ab) > 1000:
+                del ab[:500]
 
 
-def drain_output(sid):
+def has_output(sid):
+    s = get_session(sid)
+    return bool(s and s["buffer"])
+
+
+def buffer_chars(sid):
+    s = get_session(sid)
+    return int(s.get("_buffer_chars", 0)) if s else 0
+
+
+def start_discard(sid):
+    s = get_session(sid)
+    if s:
+        s["_discard"] = True
+        s["_discard_last"] = _time.time()
+        s["buffer"].clear()
+        s["_buffer_chars"] = 0
+        s["_truncated"] = False
+
+
+def stop_discard(sid):
+    s = get_session(sid)
+    if s:
+        s["_discard"] = False
+
+
+def drain_output(sid, max_chars=None):
     s = get_session(sid)
     if not s:
         return []
     buf = s["buffer"]
     if not buf:
         return []
-    s["buffer"] = []
-    return [item if isinstance(item, tuple) else (item, False) for item in buf]
+    if max_chars is None:
+        items = list(buf)
+        buf.clear()
+        s["_buffer_chars"] = 0
+        return [item if isinstance(item, tuple) else (item, False)
+                for item in items]
+    out = []
+    used = 0
+    while buf and used < max_chars:
+        text, auto = buf[0] if isinstance(buf[0], tuple) else (buf[0], False)
+        if not text:
+            buf.popleft()
+            continue
+        take = min(len(text), max_chars - used)
+        out.append((text[:take], auto))
+        used += take
+        s["_buffer_chars"] = max(0, s.get("_buffer_chars", 0) - take)
+        if take < len(text):
+            buf[0] = (text[take:], auto)
+        else:
+            buf.popleft()
+    return out
 
 
 def enable_agent_buffer(sid):

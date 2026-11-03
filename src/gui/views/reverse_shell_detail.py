@@ -61,7 +61,11 @@ class ReverseShellDetailView(ShellDetailView):
         self._see_end()
 
     def _lock_and_send(self, cmd):
+        shell_db.stop_discard(self._sid)
         self._end_auto()
+        s = shell_db.get_session(self._sid)
+        if s:
+            s["_truncated"] = False
         self.terminal.delete("prompt", tk.END)
         if cmd.strip():
             self.terminal.insert(tk.END, cmd, "bright")
@@ -71,7 +75,6 @@ class ReverseShellDetailView(ShellDetailView):
         self.terminal.insert(tk.END, "\n", "bright")
         self.terminal.mark_set("freeze", tk.END)
         self._freeze_mark = "freeze"
-        self._protect("1.0", self._freeze_mark)
         if cmd.strip():
             self._history.append(cmd.strip())
             self._history_idx = len(self._history)
@@ -88,11 +91,14 @@ class ReverseShellDetailView(ShellDetailView):
                 self._on_back_click()
             return "break"
         if cmd.strip().lower() == "clear":
+            shell_db.stop_discard(self._sid)
             self._end_auto()
+            sess = shell_db.get_session(self._sid)
+            if sess:
+                sess["_truncated"] = False
             self.terminal.delete("1.0", tk.END)
             self.terminal.mark_set("freeze", "1.0")
             self._freeze_mark = "freeze"
-            self._protect("1.0", self._freeze_mark)
             self._insert_prompt()
             self._start_strip("clear")
             send_command(self._sid, "clear")

@@ -169,7 +169,7 @@ class SSHConnectionThread:
         try:
             while self._running:
                 if channel.recv_ready():
-                    data = channel.recv(4096)
+                    data = channel.recv(65536)
                     if not data:
                         break
                     if first:
