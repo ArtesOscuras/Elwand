@@ -2,6 +2,7 @@ import tkinter as tk
 from src.gui import fonts, icons
 
 _ORDER = [
+    ("Session", "sessions"),
     ("Wifi", "wifi"),
     ("Tools", "tools"),
     ("Machines", "machines"),

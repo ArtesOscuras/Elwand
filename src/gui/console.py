@@ -238,7 +238,18 @@ class Console(tk.Frame):
         self.commands[name] = {"handler": handler, "help": help_text}
 
     def set_subcommands(self, name, items):
+        # `items` may be a list or a zero-arg callable returning the list
+        # (the popup is then computed at display time, e.g. only running tools).
         self._subcommands[name] = items
+
+    def _subcommand_items(self, name):
+        items = self._subcommands.get(name, [])
+        if callable(items):
+            try:
+                items = items() or []
+            except Exception:
+                items = []
+        return list(items)
 
     def set_arg2_provider(self, cmd, subcmd, provider):
         self._arg2_providers[(cmd, subcmd)] = provider
@@ -746,7 +757,8 @@ class Console(tk.Frame):
 
         if in_arg_mode and cmd_prefix in self._subcommands:
             arg1 = arg_prefix.split(None, 1)[0] if arg_prefix else ""
-            sc_matches = [s for s in self._subcommands[cmd_prefix] if s.startswith(arg1)]
+            sc_matches = [s for s in self._subcommand_items(cmd_prefix)
+                          if s.startswith(arg1)]
             if sc_matches:
                 if self._arg7_popup:
                     if len(self._arg7_matches) == 1:
@@ -1073,7 +1085,7 @@ class Console(tk.Frame):
             return
 
         if in_arg_mode and cmd_prefix in self._subcommands:
-            sc_items = self._subcommands[cmd_prefix]
+            sc_items = self._subcommand_items(cmd_prefix)
             arg1_text = arg_prefix.split(None, 1)[0] if arg_prefix else ""
             sc_matches = [s for s in sc_items if s.startswith(arg1_text)]
             self._show_or_update(cmd_matches)

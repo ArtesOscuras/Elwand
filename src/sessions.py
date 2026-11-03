@@ -57,6 +57,24 @@ def _slug(text):
     return re.sub(r"[^a-zA-Z0-9_.-]+", "-", (text or "").strip()).strip("-")[:40]
 
 
+def _next_auto_name():
+    """Next free `newN` name for sessions created without a custom name."""
+    used = set()
+    try:
+        for d in sessions_root().iterdir():
+            if d.is_dir():
+                meta = _read_json(d / "meta.json") or {}
+                name = (meta.get("name") or "").strip().lower()
+                if name:
+                    used.add(name)
+    except OSError:
+        pass
+    i = 1
+    while f"new{i}" in used:
+        i += 1
+    return f"new{i}"
+
+
 def _gen_id(name=""):
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     suffix = uuid.uuid4().hex[:4]
@@ -120,7 +138,7 @@ def set_active(session_id):
 
 def create(name=None, activate=True):
     with _LOCK:
-        name = (name or "").strip() or datetime.now().strftime("Session %Y-%m-%d %H:%M")
+        name = (name or "").strip() or _next_auto_name()
         sid = _gen_id(name)
         d = session_dir(sid)
         d.mkdir(parents=True, exist_ok=False)
@@ -260,7 +278,7 @@ def bootstrap():
         if migrated:
             set_active(migrated)
             return migrated
-        sid = create(name="default", activate=False)
+        sid = create(name=None, activate=False)
         set_active(sid)
         return sid
 

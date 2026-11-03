@@ -14,7 +14,7 @@ from . import windowing
 from . import theme
 from .console import Console
 from .visualizer import Visualizer
-from .views import WifiView, NetworkView, DomainListView, EvidenceListView, CredentialListView, UsersView, PasswordsView, HashListView, ShellListView, ToolsView, InventoryView, PeopleView, ProcessView, ServicesView, DictionarysView, RulesView, PocsView, ReportsView, ReportView, HandshakesView
+from .views import SessionView, WifiView, NetworkView, DomainListView, EvidenceListView, CredentialListView, UsersView, PasswordsView, HashListView, ShellListView, ToolsView, InventoryView, PeopleView, ProcessView, ServicesView, DictionarysView, RulesView, PocsView, ReportsView, ReportView, HandshakesView
 from .dialogs import ScanDialog
 from src import settings as elwand_settings
 from src.machines import store, start_autosave as start_machines_autosave, stop_autosave as stop_machines_autosave
@@ -610,6 +610,7 @@ class App(tk.Tk):
         self.after(300, self._set_initial_sash)
 
         self._passive_scanner = None
+        self._passive_lock = threading.Lock()
         self._active_scanner = None
         self._selected_interface = None
         self._identifying_ips = set()
@@ -772,10 +773,9 @@ class App(tk.Tk):
         from .dialogs.init_dialog import InitDialog
         dialog = InitDialog(self)
         self.wait_window(dialog)
-        if self._passive_scanner is None or not self._passive_scanner.is_running:
-            self._start_passive_scanner()
-        if self._shell_listener is None or not self._shell_listener.is_running:
-            self._start_shell_listener()
+        # Listeners stay OFF by default; the user enables them from Services
+        # (or `start ...`). The passive mDNS scanner is also started on demand
+        # when the scanner is used.
 
     def _set_initial_sash(self):
         self.update_idletasks()
@@ -783,14 +783,25 @@ class App(tk.Tk):
         if h > 100:
             self._pane.sash_place(0, 0, h * 2 // 3)
 
+    def _ensure_passive_scanner(self):
+        """Start the passive mDNS scanner if needed; returns (ok, started)."""
+        with self._passive_lock:
+            if self._passive_scanner is not None and self._passive_scanner.is_running:
+                return True, False
+            from src.tools.scanner.mdns import _check_permission
+            if not _check_permission():
+                return False, False
+            self._passive_scanner = PassiveMDNSScanner(
+                on_host_callback=self._on_host_discovered)
+            self._passive_scanner.start()
+            return True, True
+
     def _start_passive_scanner(self):
-        from src.tools.scanner.mdns import _check_permission
-        if not _check_permission():
+        ok, started = self._ensure_passive_scanner()
+        if started:
+            self.console.info("Passive listening mDNS started")
+        elif not ok:
             self.console.error("mDNS passive scanner: permission denied. Run as root or install with CAP_NET_RAW.")
-            return
-        self._passive_scanner = PassiveMDNSScanner(on_host_callback=self._on_host_discovered)
-        self._passive_scanner.start()
-        self.console.info("Passive listening mDNS started")
 
     def _start_wifi_monitor(self):
         from src.tools.scanner import wifi_monitor
@@ -818,7 +829,6 @@ class App(tk.Tk):
             if enable:
                 if self._passive_scanner is None or not self._passive_scanner.is_running:
                     self._start_passive_scanner()
-                    self.console.info("Passive mDNS listener started")
             else:
                 if self._passive_scanner and self._passive_scanner.is_running:
                     self._passive_scanner.stop()
@@ -864,6 +874,11 @@ class App(tk.Tk):
         return states
 
     def _register_views(self):
+        session_view = SessionView(self.visualizer)
+        session_view._on_session_click = self._open_session_detail
+        session_view._on_delete_session = self._on_session_view_delete
+        self.visualizer.register_view("sessions", session_view)
+
         wifi_view = WifiView(self.visualizer)
         wifi_view._on_network_click = self._open_wifi_view
         self.visualizer.register_view("wifi", wifi_view)
@@ -944,7 +959,7 @@ class App(tk.Tk):
         self.console.set_escape_stop_callback(self._escape_stop_llm)
         self.console.set_clear_callback(self._save_session)
         self.console.register_command("view", self._cmd_view, "Switch or list views")
-        self.console.set_subcommands("view", ["list", "wifi", "tools", "inventory", "machine", "domain", "shell", "credential", "hash", "user", "passwords", "people", "evidence", "process", "services", "dictionary", "rule", "poc", "report", "handshake"])
+        self.console.set_subcommands("view", ["list", "session", "wifi", "tools", "inventory", "machine", "domain", "shell", "credential", "hash", "user", "passwords", "people", "evidence", "process", "services", "dictionary", "rule", "poc", "report", "handshake"])
         self.console.register_command("use", self._cmd_use, "Use a tool")
         self.console.set_subcommands("use", ["scanner", "port-inspector", "fuzzer", "webrecorder", "nslookup", "ping", "tcpscan", "udpscan", "bannergrab", "whatweb", "bruteforce", "hashcat", "dicma", "wifioperator"])
         self.console.register_command("connect", self._cmd_connect, "Connect via FTP/SFTP/SSH/WinRM")
@@ -952,16 +967,17 @@ class App(tk.Tk):
         self.console.register_command("start", self._cmd_start, "Start listeners")
         self.console.set_subcommands("start", ["shells-listener", "mdns-listener"])
         self.console.register_command("stop", self._cmd_stop, "Stop listeners")
-        self.console.set_subcommands("stop", ["shells-listener", "mdns-listener", "scanner", "bruteforce", "fuzzer", "webrecorder", "tcpscan", "udpscan", "whatweb", "port-inspector", "bannergrab", "hashcat"])
+        self.console.set_subcommands("stop", self._stop_targets)
         self.console.register_command("delete", self._cmd_delete, "Delete stored data")
-        self.console.set_subcommands("delete", ["all", "dbs", "credential", "evidence", "hash", "handshake", "machine", "domain", "user", "password", "shell", "people", "dictionary", "rule", "poc", "report", "inventory", "cache", "wifi", "provider"])
+        self.console.set_subcommands("delete", ["all", "dbs", "credential", "evidence", "hash", "handshake", "machine", "domain", "session", "user", "password", "shell", "people", "dictionary", "rule", "poc", "report", "inventory", "cache", "wifi", "provider"])
         self.console.register_command("add", self._cmd_add, "Add to inventory")
-        self.console.set_subcommands("add", ["machine", "domain", "credential", "user", "password", "hash", "people", "dictionary", "rule", "provider"])
+        self.console.set_subcommands("add", ["machine", "domain", "session", "credential", "user", "password", "hash", "people", "dictionary", "rule", "provider"])
         self.console.register_command("init", self._cmd_init, "Re-run initialization checks")
         self.console.register_command("settings", self._cmd_settings, "Open settings dialog")
         self.console.register_command("set", self._cmd_set, "Adjust settings")
-        self.console.set_subcommands("set", ["provider"])
+        self.console.set_subcommands("set", ["provider", "session"])
         self.console.set_arg2_provider("set", "provider", self._autocomplete_providers)
+        self.console.set_arg2_provider("set", "session", self._autocomplete_session_names)
         self.console.register_command("debug", self._cmd_debug, "Debug utilities")
         self.console.set_subcommands("debug", ["ctx_screenshot", "rotate_opencode_headers"])
         self.console.register_command("exit", self._cmd_exit, "Close the application")
@@ -1008,6 +1024,8 @@ class App(tk.Tk):
 
         self.console.set_arg2_provider("add", "machine", self._autocomplete_format_ip)
         self.console.set_arg2_provider("add", "domain", self._autocomplete_format_domain)
+        self.console.set_arg2_provider("view", "session", self._autocomplete_session_names)
+        self.console.set_arg2_provider("delete", "session", self._autocomplete_session_names)
         self.console.set_arg2_provider("add", "credential", self._autocomplete_user_noall)
         self.console.set_arg2_provider("add", "user", self._autocomplete_format_username)
         self.console.set_arg2_provider("add", "password", self._autocomplete_format_password)
@@ -1061,11 +1079,6 @@ class App(tk.Tk):
         self.console.set_arg3_provider("add", "credential", self._autocomplete_password_noall)
         self.console.set_arg3_provider("add", "hash", self._autocomplete_format_hash)
 
-        self.console.register_command("session", self._cmd_session, "Manage work sessions")
-        self.console.set_subcommands("session",
-                                     ["list", "new", "switch", "rename", "delete", "info"])
-        for _sub in ("switch", "rename", "delete", "info"):
-            self.console.set_arg2_provider("session", _sub, self._autocomplete_sessions)
 
     @staticmethod
     def _file_choices_merged(kind):
@@ -1716,6 +1729,8 @@ class App(tk.Tk):
                 self._cmd_view_domain(rest)
             else:
                 self.visualizer.activate_view("domains")
+        elif sub == "session":
+            self._cmd_view_session(rest)
         elif sub == "shell":
             if rest:
                 self._cmd_view_shell(rest)
@@ -1941,6 +1956,9 @@ class App(tk.Tk):
                 )
                 self._active_scanner.start()
                 self.console.info("Active scan started")
+                ok, started = self._ensure_passive_scanner()
+                if started:
+                    self.console.info("Passive listening mDNS started")
                 self.console.body(
                     f"    Interface: {self._active_scanner.interface_name}  "
                     f"Network: {self._active_scanner.network_cidr}"
@@ -3307,6 +3325,38 @@ class App(tk.Tk):
         else:
             self.console.warning("No shell listener is running")
 
+    def _stop_targets(self):
+        """Subcommands for `stop`: only the tools/services currently active."""
+        targets = []
+        if self._shell_listener and self._shell_listener.is_running:
+            targets.append("shells-listener")
+        if self._passive_scanner and self._passive_scanner.is_running:
+            targets.append("mdns-listener")
+        if self._active_scanner and self._active_scanner.is_running:
+            targets.append("scanner")
+        if self._bruteforce_engine or self._bruteforce_dlg:
+            targets.append("bruteforce")
+        try:
+            from src.tools.fuzz.engine import FuzzEngine
+            fuzz_active = (FuzzEngine.active_count() > 0
+                           or getattr(self, "_fuzz_engine", None)
+                           or self._fuzz_dlg)
+        except Exception:
+            fuzz_active = bool(getattr(self, "_fuzz_engine", None))
+        if fuzz_active:
+            targets.append("fuzzer")
+        if self._recorder and self._recorder.is_running():
+            targets.append("webrecorder")
+        if self._tcpscan_running:
+            targets.append("tcpscan")
+        if self._udpscan_running:
+            targets.append("udpscan")
+        if getattr(self, "_port_inspector_running", False):
+            targets.append("port-inspector")
+        if getattr(self, "_hashcat_engine", None):
+            targets.append("hashcat")
+        return targets
+
     def _cmd_stop(self, args):
         if not args:
             self.console.body("Usage: stop <shells-listener|mdns-listener|scanner>")
@@ -3459,13 +3509,7 @@ class App(tk.Tk):
         if self._passive_scanner and self._passive_scanner.is_running:
             self.console.warning("Passive scan is already running.")
             return
-        from src.tools.scanner.mdns import _check_permission
-        if not _check_permission():
-            self.console.error("mDNS passive scanner: permission denied.")
-            return
-        self._passive_scanner = PassiveMDNSScanner(on_host_callback=self._on_host_discovered)
-        self._passive_scanner.start()
-        self.console.info("Passive listening mDNS started")
+        self._start_passive_scanner()
 
     def _scan_active(self):
         result = self._show_scan_dialog()
@@ -3499,6 +3543,9 @@ class App(tk.Tk):
                 )
                 self._active_scanner.start()
                 self.console.info("Active scan started")
+                ok, started = self._ensure_passive_scanner()
+                if started:
+                    self.console.info("Passive listening mDNS started")
                 nmap_status = "enabled" if self._active_scanner.has_nmap else "disabled"
                 self.console.body(
                     f"    Interface: {self._active_scanner.interface_name}  "
@@ -3550,6 +3597,10 @@ class App(tk.Tk):
                 interface_name=iface_name,
             )
             self._active_scanner.start()
+            ok, started = self._ensure_passive_scanner()
+            if started:
+                event_bus.submit({"type": "scan_info",
+                                  "message": "Passive listening mDNS started"})
         except RuntimeError as e:
             event_bus.submit({"type": "scan_error", "message": f"Active scan failed: {e}"})
 
@@ -4328,11 +4379,13 @@ class App(tk.Tk):
 
     def _cmd_set(self, args):
         if not args:
-            self.console.body("Usage: set provider <provider>")
+            self.console.body("Usage: set provider <provider> | set session <id|name>")
             return
         sub = args[0].lower()
         if sub == "provider":
             self._cmd_set_providers(args[1:])
+        elif sub == "session":
+            self._cmd_set_session(args[1:])
         else:
             self.console.error(f"Unknown set target: {sub}.")
 
@@ -4366,6 +4419,21 @@ class App(tk.Tk):
         self.console.success(
             f"Active provider set to '{match}' "
             f"(model: {llm_config.get_active_model(cfg)}).")
+
+    def _cmd_set_session(self, args):
+        ref = " ".join(args).strip()
+        if not ref:
+            self.console.body("Usage: set session <id|name>")
+            return
+        sid = self._resolve_session_id(ref)
+        if not sid:
+            self.console.error(f"Session not found: {ref}")
+            return
+        before = sessions.get_active_id()
+        if self._switch_to_session(sid) and sid != before:
+            meta = sessions.read_meta(sid)
+            self.console.body(
+                f"Switched to session {meta.get('name') or sid}")
 
     def _cmd_debug(self, args):
         if not args:
@@ -5340,7 +5408,7 @@ class App(tk.Tk):
 
     def _cmd_add(self, args):
         if not args:
-            self.console.body("Usage: add <machine|domain|credential|user|password|hash|provider>")
+            self.console.body("Usage: add <machine|domain|session|credential|user|password|hash|provider>")
             return
         sub = args[0].lower()
         rest = args[1:]
@@ -5348,6 +5416,8 @@ class App(tk.Tk):
             self._cmd_add_machine(rest)
         elif sub == "domain":
             self._cmd_domain(rest)
+        elif sub == "session":
+            self._cmd_add_session(rest)
         elif sub == "credential":
             self._cmd_add_credential(rest)
         elif sub == "user":
@@ -5437,6 +5507,42 @@ class App(tk.Tk):
             self.console.after(0, lambda: self.console.success(
                 f"{domain} → {ip}  (new machine #{machine.id}){suffix}"
             ))
+
+    def _cmd_add_session(self, args):
+        name = " ".join(args).strip() or None
+        sid = sessions.create(name=name, activate=False)
+        if self._switch_to_session(sid):
+            self.console.success(f"Created and switched to session {sid}")
+            self._refresh_session_view()
+        else:
+            try:
+                sessions.delete(sid)
+            except Exception:
+                pass
+
+    def _cmd_view_session(self, args):
+        if not args:
+            self.visualizer.activate_view("sessions")
+            return
+        ref = " ".join(args).strip()
+        sid = self._resolve_session_id(ref)
+        if not sid:
+            self.console.error(f"Session not found: {ref}")
+            return
+        self._open_session_detail(sid)
+
+    def _cmd_delete_session(self, args):
+        is_force = bool(args) and args[-1].lower() == "force"
+        ref_parts = args[:-1] if is_force else args
+        ref = " ".join(ref_parts).strip()
+        if not ref:
+            self.console.body("Usage: delete session <id|name> [force]")
+            return
+        sid = self._resolve_session_id(ref)
+        if not sid:
+            self.console.error(f"Session not found: {ref}")
+            return
+        self._delete_session(sid, force=is_force)
 
     def _cmd_add_machine(self, args):
         if not args:
@@ -5898,7 +6004,7 @@ class App(tk.Tk):
 
     def _cmd_delete(self, args):
         if not args:
-            self.console.body("Usage: delete <all|dbs|inventory|machine|domain|user|credential|password|hash|handshake|people|shell|evidence|poc|report|dictionary|rule|cache|wifi|provider>")
+            self.console.body("Usage: delete <all|dbs|inventory|machine|domain|session|user|credential|password|hash|handshake|people|shell|evidence|poc|report|dictionary|rule|cache|wifi|provider>")
             return
         sub = args[0].lower()
         if sub == "all":
@@ -5917,6 +6023,8 @@ class App(tk.Tk):
             self._cmd_delete_machine(args[1:])
         elif sub == "domain":
             self._cmd_delete_domain(args[1:])
+        elif sub == "session":
+            self._cmd_delete_session(args[1:])
         elif sub == "user":
             self._cmd_delete_user(args[1:])
         elif sub == "password":
@@ -6435,13 +6543,23 @@ class App(tk.Tk):
     # ─── Work sessions ─────────────────────────────────────────────
 
     @staticmethod
-    def _autocomplete_sessions(prefix):
-        rows = []
-        for s in sessions.list_sessions():
+    def _autocomplete_session_names(prefix):
+        rows = sessions.list_sessions()
+        counts = {}
+        for s in rows:
+            name = (s.get("name") or "").strip()
+            counts[name] = counts.get(name, 0) + 1
+        out = []
+        for s in rows:
             sid = s.get("id", "")
+            name = (s.get("name") or "").strip()
             mark = "*" if s.get("active") else " "
-            rows.append((f"{mark} {sid}  {s.get('name', '')}", sid))
-        return rows
+            if name and counts.get(name, 0) == 1:
+                out.append((f"{mark} {name}  ({sid})", name))
+            else:
+                label = f"{mark} {sid}  {name}" if name else f"{mark} {sid}"
+                out.append((label, sid))
+        return out
 
     @staticmethod
     def _resolve_session_id(token):
@@ -6458,87 +6576,96 @@ class App(tk.Tk):
             return by_name[0]
         return None
 
-    def _cmd_session(self, args):
-        sub = (args[0].lower() if args else "list")
-        rest = args[1:]
-        if sub in ("list", "ls"):
-            rows = sessions.list_sessions()
-            if not rows:
-                self.console.body("No sessions.")
-                return
-            self.console.title("Sessions")
-            for s in rows:
-                mark = "*" if s.get("active") else " "
+    def _open_session_detail(self, sid):
+        if not sid:
+            return
+        view_name = f"session_{sid}"
+        if view_name not in self.visualizer.get_view_names():
+            from .views import SessionDetailView
+            view = SessionDetailView(self.visualizer, sid)
+            view._on_back_click = lambda: self.visualizer.activate_view("sessions")
+            view._on_switch_click = self._session_detail_switch
+            view._on_rename_click = self._session_detail_rename
+            view._on_delete_click = self._session_detail_delete
+            self.visualizer.register_view(view_name, view)
+        self.visualizer.activate_view(view_name)
+
+    def _session_detail_switch(self, sid):
+        before = sessions.get_active_id()
+        if self._switch_to_session(sid) and sid != before:
+            meta = sessions.read_meta(sid)
+            self.console.body(
+                f"Switched to session {meta.get('name') or sid}")
+
+    def _session_detail_rename(self, sid):
+        from .views.session_detail import prompt_session_name
+        meta = sessions.read_meta(sid)
+        name = prompt_session_name(self.visualizer, meta.get("name") or sid)
+        if not name or name == meta.get("name"):
+            return
+        sessions.rename(sid, name)
+        self.console.body(f"Renamed session {sid} -> {name}")
+        view = self.visualizer.get_view(f"session_{sid}")
+        if view is not None:
+            try:
+                view.refresh()
+            except Exception:
+                pass
+        self._refresh_session_view()
+
+    def _session_detail_delete(self, sid):
+        self._delete_session(sid, force=True)
+
+    def _on_session_view_delete(self, sid):
+        self._delete_session(sid, force=True)
+
+    def _refresh_session_view(self):
+        view = self.visualizer.get_view("sessions")
+        if view is not None:
+            try:
+                view.refresh()
+            except Exception:
+                pass
+
+    def _delete_session(self, sid, force=False):
+        detail_name = f"session_{sid}"
+        if sid == sessions.get_active_id():
+            if not force:
                 self.console.body(
-                    f" {mark} {s.get('id', ''):<36} {s.get('name', '')}")
-            self.console.body(f"Active: {sessions.get_active_id()}")
-        elif sub in ("new", "create"):
-            name = " ".join(rest).strip() or None
-            sid = sessions.create(name=name, activate=False)
-            if self._switch_to_session(sid):
-                self.console.success(f"Created and switched to session {sid}")
-            else:
+                    f"{sid} is the active session. Deleting it creates a new "
+                    f"session and switches to it. Re-run: "
+                    f"delete session {sid} force")
+                return False
+            try:
+                new_sid = sessions.create(name=None, activate=False)
+            except Exception as e:
+                self.console.error(f"Could not create a new session: {e}")
+                return False
+            if not self._switch_to_session(new_sid):
                 try:
-                    sessions.delete(sid)
+                    sessions.delete(new_sid)
                 except Exception:
                     pass
-        elif sub == "switch":
-            if not rest:
-                self.console.body("Usage: session switch <id|name>")
-                return
-            sid = self._resolve_session_id(rest[0])
-            if not sid:
-                self.console.error(f"Session not found: {rest[0]}")
-                return
-            if self._switch_to_session(sid):
-                self.console.success(f"Switched to session {sid}")
-        elif sub == "rename":
-            if len(rest) < 2:
-                self.console.body("Usage: session rename <id|name> <new name>")
-                return
-            sid = self._resolve_session_id(rest[0])
-            if not sid:
-                self.console.error(f"Session not found: {rest[0]}")
-                return
-            new_name = sessions.rename(sid, " ".join(rest[1:]))
-            self.console.success(f"Renamed {sid} -> {new_name}")
-        elif sub == "delete":
-            if not rest:
-                self.console.body("Usage: session delete <id|name> [yes]")
-                return
-            sid = self._resolve_session_id(rest[0])
-            if not sid:
-                self.console.error(f"Session not found: {rest[0]}")
-                return
-            if sid == sessions.get_active_id():
-                self.console.error("Cannot delete the active session; switch first.")
-                return
-            if len(rest) < 2 or rest[-1].lower() != "yes":
-                self.console.warning(
-                    f"Delete session {sid}? Re-run: session delete {sid} yes")
-                return
+                self.console.error(
+                    "Cannot delete the active session while busy; "
+                    "nothing was deleted.")
+                return False
+            self.console.success(f"Created and switched to session {new_sid}")
+        try:
+            sessions.delete(sid)
+        except Exception as e:
+            self.console.error(str(e))
+            return False
+        self.console.body(f"Deleted session {sid}")
+        if self.visualizer.get_active_view_name() == detail_name:
+            self.visualizer.activate_view("sessions")
+        if detail_name in self.visualizer.views:
             try:
-                sessions.delete(sid)
-            except Exception as e:
-                self.console.error(str(e))
-                return
-            self.console.success(f"Deleted session {sid}")
-        elif sub == "info":
-            sid = self._resolve_session_id(rest[0]) if rest else sessions.get_active_id()
-            if not sid:
-                self.console.error("No active session.")
-                return
-            meta = sessions.read_meta(sid)
-            self.console.title(f"Session {sid}")
-            for key in ("name", "created", "updated", "target", "notes"):
-                if meta.get(key):
-                    self.console.body(f"  {key}: {meta[key]}")
-            self.console.body(f"  path: {sessions.session_dir(sid)}")
-            if sid == sessions.get_active_id():
-                self.console.body("  active: yes")
-        else:
-            self.console.body(
-                "Usage: session <list|new|switch|rename|delete|info> ...")
+                self.visualizer.views.pop(detail_name).destroy()
+            except Exception:
+                pass
+        self._refresh_session_view()
+        return True
 
     def _session_busy(self):
         reasons = []
@@ -6569,7 +6696,7 @@ class App(tk.Tk):
 
     def _switch_to_session(self, sid):
         if sid == sessions.get_active_id():
-            self.console.info("Already in that session.")
+            self.console.body("Already in that session.")
             return True
         reasons = self._session_busy()
         if reasons:

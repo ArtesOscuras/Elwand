@@ -1,4 +1,6 @@
 from .base import BaseView
+from .session_view import SessionView
+from .session_detail import SessionDetailView
 from .wifi import WifiView
 from .wifi_detail import WifiDetailView
 from .machines import NetworkView
