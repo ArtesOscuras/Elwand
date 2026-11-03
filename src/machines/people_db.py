@@ -7,9 +7,8 @@ _DB_PATH = None
 
 def _init_db_path():
     global _DB_PATH
-    if _DB_PATH is None:
-        d = str(databases_dir())
-        _DB_PATH = os.path.join(d, "people.dbs")
+    d = str(databases_dir())
+    _DB_PATH = os.path.join(d, "people.dbs")
     return _DB_PATH
 
 

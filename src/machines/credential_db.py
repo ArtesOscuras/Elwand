@@ -9,9 +9,8 @@ _DB_PATH = None
 
 def _init_db_path():
     global _DB_PATH
-    if _DB_PATH is None:
-        db_dir = _credentials_dir()
-        _DB_PATH = os.path.join(db_dir, "credentials.dbs")
+    db_dir = _credentials_dir()
+    _DB_PATH = os.path.join(db_dir, "credentials.dbs")
 
 
 def _migrate_cred_table():

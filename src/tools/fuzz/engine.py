@@ -18,6 +18,25 @@ _ssl_context.verify_mode = ssl.CERT_NONE
 
 
 class FuzzEngine:
+    # All running engines (console-, dialog- and agent-started), so the
+    # `stop fuzzer` command can stop them without holding their reference.
+    _active = set()
+    _active_lock = threading.Lock()
+
+    @classmethod
+    def stop_all(cls):
+        """Stop every running fuzz engine; return how many were signalled."""
+        with cls._active_lock:
+            engines = list(cls._active)
+        for engine in engines:
+            engine.stop()
+        return len(engines)
+
+    @classmethod
+    def active_count(cls):
+        with cls._active_lock:
+            return len(cls._active)
+
     def __init__(self, target, wordlist_path, method, target_ip=None, on_result=None, workers=None, on_progress=None, on_found=None, on_done=None, url_template=None, show_codes=None, hide_size_range=None, scheme="http"):
         self._target = target
         self._wordlist_path = wordlist_path
@@ -37,6 +56,8 @@ class FuzzEngine:
 
     def start(self):
         self._stop_flag.clear()
+        with FuzzEngine._active_lock:
+            FuzzEngine._active.add(self)
         pid = process_registry.register(
             "Fuzzer", detail=f"{self._method}  {self._target}")
 
@@ -44,6 +65,8 @@ class FuzzEngine:
             try:
                 self._run()
             finally:
+                with FuzzEngine._active_lock:
+                    FuzzEngine._active.discard(self)
                 process_registry.finish(pid)
 
         threading.Thread(target=_wrap, daemon=True).start()

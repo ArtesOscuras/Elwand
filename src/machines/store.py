@@ -34,9 +34,8 @@ _save_lock = threading.Lock()
 
 def _init_db_path():
     global _DB_FILE
-    if _DB_FILE is None:
-        db_dir = _databases_dir()
-        _DB_FILE = os.path.join(db_dir, "machines.dbs")
+    db_dir = _databases_dir()
+    _DB_FILE = os.path.join(db_dir, "machines.dbs")
 
 
 class Machine:

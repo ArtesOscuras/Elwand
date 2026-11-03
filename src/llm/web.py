@@ -199,12 +199,12 @@ def _curl_resolve(url, timeout, method, body, content_type, headers, antibot=Fal
 
 
 def _fetch_raw(url, timeout=DEFAULT_TIMEOUT, method="GET", body=None, content_type=None, headers=None, antibot=False):
-    _status, resp_headers, text, ct, note = _curl_resolve(url, timeout, method, body, content_type, headers, antibot)
+    status, resp_headers, text, ct, note = _curl_resolve(url, timeout, method, body, content_type, headers, antibot)
     if isinstance(text, str) and text.startswith("[non-text"):
-        return text, ct, resp_headers
+        return status, text, ct, resp_headers
     if note:
         text = f"{note}\n\n{text}"
-    return text, ct, resp_headers
+    return status, text, ct, resp_headers
 
 
 def fetch_raw(url, timeout=DEFAULT_TIMEOUT, method="GET", body=None, content_type=None, headers=None, antibot=False):
@@ -217,14 +217,18 @@ def fetch_raw(url, timeout=DEFAULT_TIMEOUT, method="GET", body=None, content_typ
 
 
 def fetch_url(url, format="markdown", timeout=DEFAULT_TIMEOUT, offset=1, limit=None,
-              method="GET", body=None, content_type=None, headers=None, antibot=False):
+              method="GET", body=None, content_type=None, headers=None, antibot=False,
+              with_status=False):
     if not url.startswith("http://") and not url.startswith("https://"):
         url = "https://" + url
 
     try:
-        raw_content, raw_ct, resp_headers = _fetch_raw(url, timeout, method=method, body=body, content_type=content_type, headers=headers, antibot=antibot)
+        status_code, raw_content, raw_ct, resp_headers = _fetch_raw(
+            url, timeout, method=method, body=body, content_type=content_type,
+            headers=headers, antibot=antibot)
     except Exception as e:
-        return f"Error fetching URL: {e}"
+        err = f"Error fetching URL: {e}"
+        return (None, err) if with_status else err
 
     cookies = _truncate_cookies(resp_headers.get("Set-Cookie", resp_headers.get("set-cookie", "")).strip())
     if cookies:
@@ -248,9 +252,10 @@ def fetch_url(url, format="markdown", timeout=DEFAULT_TIMEOUT, offset=1, limit=N
         shown = len(sliced)
         shown_end = offset + shown - 1 if shown > 0 else offset
         header = f"[{total} lines total, showing lines {offset}-{shown_end}]"
-        return header + "\n" + "".join(sliced)
+        out = header + "\n" + "".join(sliced)
+        return (status_code, out) if with_status else out
 
-    return raw_content
+    return (status_code, raw_content) if with_status else raw_content
 
 
 def web_search(query, num_results=10):

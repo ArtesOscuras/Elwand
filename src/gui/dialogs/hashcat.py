@@ -1141,20 +1141,20 @@ class HashcatDialog(tk.Toplevel):
         self._type_label_var.set(htype)
 
     def _browse_wordlist(self):
-        from src.elwand_paths import lst_dir
+        from src.elwand_paths import browse_lst_dir
         f = windowing.ask_open_file(
             self, title="Select wordlist",
-            initialdir=str(lst_dir()),
+            initialdir=str(browse_lst_dir()),
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
         if f:
             self._wl_var.set(f)
             self._evaluate_slow()
 
     def _browse_rules(self):
-        from src.elwand_paths import rules_dir
+        from src.elwand_paths import browse_rules_dir
         f = windowing.ask_open_file(
             self, title="Select rules file",
-            initialdir=str(rules_dir()),
+            initialdir=str(browse_rules_dir()),
             filetypes=[("Rule files", "*.rule"), ("All files", "*.*")])
         if f:
             self._rules_var.set(f)

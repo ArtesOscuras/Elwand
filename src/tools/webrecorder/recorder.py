@@ -514,6 +514,7 @@ class Recorder:
         parsed = urlparse(url)
         host = parsed.hostname
         path = parsed.path or "/"
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
         if not host:
             return
         if self._scope:
@@ -526,7 +527,7 @@ class Recorder:
                 machine = store.add_or_update(ip=host, method="webrecorder")
                 machine.device_type = "device unknown"
                 machine_db.save_machine_info(machine)
-            machine_db.save_directory(machine.id, path)
+            machine_db.save_directory(machine.id, path, port, parsed.scheme)
         else:
             if not domain_db.exists(host):
                 try:
@@ -547,7 +548,7 @@ class Recorder:
                                          parsed.scheme)
                 if machine:
                     machine_db.save_domain(machine.id, host, "webrecorder", parsed.scheme)
-            domain_db.save_directory(host, path)
+            domain_db.save_directory(host, path, port, parsed.scheme)
 
     @staticmethod
     def _parse_cookies(text):

@@ -107,25 +107,25 @@ class DictionarysView(BaseView):
             self._poll_id = None
 
     def _list_files(self):
-        try:
-            d = str(lst_dir())
-            files = sorted(f for f in os.listdir(d)
-                          if os.path.isfile(os.path.join(d, f)))
-            return d, files
-        except OSError:
-            return str(lst_dir()), []
+        from src.elwand_paths import list_lst, resolve_lst
+        rows = []
+        for name, origin in list_lst().items():
+            path = resolve_lst(name)
+            if path:
+                rows.append((name, origin, str(path)))
+        return rows
 
     def _poll(self):
-        d, files = self._list_files()
-        current_hash = hash(tuple(files))
+        rows = self._list_files()
+        current_hash = hash(tuple((n, o) for n, o, _ in rows))
         if current_hash == self._last_hash:
             self._poll_id = self.after(2000, self._poll)
             return
         self._last_hash = current_hash
 
         w_name = MIN_NAME
-        for f in files:
-            w_name = max(w_name, len(f))
+        for f, origin, _ in rows:
+            w_name = max(w_name, len(f) + (7 if origin == "stock" else 0))
 
         font = tkfont.Font(font=self.text.cget("font"))
         gap_px = font.measure(COL_GAP)
@@ -154,13 +154,13 @@ class DictionarysView(BaseView):
         self.text.configure(state=tk.NORMAL, tabs=tabs)
         self.text.delete("1.0", tk.END)
 
-        if not files:
+        if not rows:
             self.text.insert(tk.END, "\n", "bright")
             self.text.insert(tk.END, center_pad, "bright")
             self.text.insert(tk.END, "No dictionaries found.\n", "muted")
         else:
-            for f in files:
-                path = os.path.join(d, f)
+            from src.elwand_paths import delete_lst
+            for idx, (f, origin, path) in enumerate(rows):
                 size_bytes = os.path.getsize(path) if os.path.isfile(path) else 0
                 if size_bytes >= 1024 * 1024:
                     size_str = f"{size_bytes / (1024 * 1024):.1f}M"
@@ -179,9 +179,11 @@ class DictionarysView(BaseView):
 
                 self.text.insert(tk.END, "\t", "bright")
 
-                tag = f"dict_{f}"
+                tag = f"dict_{idx}"
                 self.text.tag_configure(tag, underline=False)
                 self.text.insert(tk.END, f, ("bright", tag))
+                if origin == "stock":
+                    self.text.insert(tk.END, "  (stock)", "muted")
                 self.text.tag_bind(tag, "<Button-1>",
                                    lambda e, p=f: (
                                        self._on_item_click
@@ -196,16 +198,16 @@ class DictionarysView(BaseView):
                 self.text.insert(tk.END, "\t", "bright")
                 self.text.insert(tk.END, size_str, "muted")
 
-                del_img = icons.delete_icon()
-                if del_img:
-                    self.text.insert(tk.END, "\t", "bright")
-                    self.text.image_create(tk.END, image=del_img)
-                    del_tag = f"deld_{f}"
-                    self.text.tag_add(del_tag, "end-2c", "end-1c")
-                    self.text.tag_bind(del_tag, "<Button-1>",
-                                       lambda e, p=path: (
-                                           os.remove(p),
-                                           "break")[-1])
+                if origin == "session":
+                    del_img = icons.delete_icon()
+                    if del_img:
+                        self.text.insert(tk.END, "\t", "bright")
+                        self.text.image_create(tk.END, image=del_img)
+                        del_tag = f"deld_{idx}"
+                        self.text.tag_add(del_tag, "end-2c", "end-1c")
+                        self.text.tag_bind(
+                            del_tag, "<Button-1>",
+                            lambda e, n=f: (delete_lst(n), "break")[-1])
 
                 self.text.insert(tk.END, "\n", "bright")
 

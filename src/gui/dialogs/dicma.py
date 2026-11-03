@@ -911,18 +911,20 @@ class DicmaDialog(tk.Toplevel):
             self._rules_out_var.set(path)
 
     def _browse_dict(self):
+        from src.elwand_paths import browse_lst_dir
         path = windowing.ask_open_file(
             self, title="Select dictionary",
-            initialdir=str(_lst_dir()),
+            initialdir=str(browse_lst_dir()),
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
         )
         if path:
             self._rules_dict_var.set(path)
 
     def _browse_pass_dict(self):
+        from src.elwand_paths import browse_lst_dir
         path = windowing.ask_open_file(
             self, title="Select dictionary",
-            initialdir=str(_lst_dir()),
+            initialdir=str(browse_lst_dir()),
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
         )
         if path:

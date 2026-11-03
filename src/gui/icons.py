@@ -51,3 +51,6 @@ def all_icons(size=50):
 def delete_icon():
     return icon("delete.png", size=scaled(20))
 
+
+def copy_icon():
+    return icon("copy.png", size=scaled(20))

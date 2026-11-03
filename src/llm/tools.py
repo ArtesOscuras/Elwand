@@ -1326,9 +1326,13 @@ def _check_machine(args, ctx=None):
     try:
         dirs = machine_db.load_directories(m.id)
         if dirs:
-            paths = [d for d, _ in dirs[:30]]
-            suffix = f" (+{len(dirs) - 30} more)" if len(dirs) > 30 else ""
-            lines.append(f"  Directories ({len(dirs)}): {', '.join(paths)}{suffix}")
+            from src.dirutil import group_directories, port_label
+            groups = group_directories(dirs)
+            lines.append(f"  Directories ({len(dirs)}) across {len(groups)} port(s):")
+            for scheme, port, paths in groups:
+                shown = ", ".join(paths[:20])
+                more = f" (+{len(paths) - 20} more)" if len(paths) > 20 else ""
+                lines.append(f"    [{port_label(scheme, port)}] {shown}{more}")
     except Exception:
         pass
 
@@ -1383,9 +1387,13 @@ def _check_domain(args, ctx=None):
     try:
         dirs = domain_db.load_directories(domain)
         if dirs:
-            paths = [d for d, _ in dirs[:30]]
-            suffix = f" (+{len(dirs) - 30} more)" if len(dirs) > 30 else ""
-            lines.append(f"  Directories ({len(dirs)}): {', '.join(paths)}{suffix}")
+            from src.dirutil import group_directories, port_label
+            groups = group_directories(dirs)
+            lines.append(f"  Directories ({len(dirs)}) across {len(groups)} port(s):")
+            for scheme, port, paths in groups:
+                shown = ", ".join(paths[:20])
+                more = f" (+{len(paths) - 20} more)" if len(paths) > 20 else ""
+                lines.append(f"    [{port_label(scheme, port)}] {shown}{more}")
     except Exception:
         pass
 
@@ -1509,29 +1517,22 @@ def _check_inventory(args, ctx=None):
         if len(tickets) > 20:
             lines.append(f"  ... and {len(tickets) - 20} more")
 
-    lst = str(lst_dir())
-    if os.path.isdir(lst):
-        lst_files = sorted(
-            f for f in os.listdir(lst) if os.path.isfile(os.path.join(lst, f))
-        )
-        if lst_files:
-            lines.append(f"\nDictionaries ({len(lst_files)}):")
-            for f in lst_files[:30]:
-                lines.append(f"  {f}")
-            if len(lst_files) > 30:
-                lines.append(f"  ... and {len(lst_files) - 30} more")
+    from src.elwand_paths import list_lst, list_rules
+    lst_merged = list_lst()
+    if lst_merged:
+        lines.append(f"\nDictionaries ({len(lst_merged)}):")
+        for f, origin in list(lst_merged.items())[:30]:
+            lines.append(f"  {f}" + ("  (stock)" if origin == "stock" else ""))
+        if len(lst_merged) > 30:
+            lines.append(f"  ... and {len(lst_merged) - 30} more")
 
-    rules_d = str(rules_dir())
-    if os.path.isdir(rules_d):
-        rule_files = sorted(
-            f for f in os.listdir(rules_d) if os.path.isfile(os.path.join(rules_d, f))
-        )
-        if rule_files:
-            lines.append(f"\nHashcat rules ({len(rule_files)}):")
-            for f in rule_files[:30]:
-                lines.append(f"  {f}")
-            if len(rule_files) > 30:
-                lines.append(f"  ... and {len(rule_files) - 30} more")
+    rules_merged = list_rules()
+    if rules_merged:
+        lines.append(f"\nHashcat rules ({len(rules_merged)}):")
+        for f, origin in list(rules_merged.items())[:30]:
+            lines.append(f"  {f}" + ("  (stock)" if origin == "stock" else ""))
+        if len(rules_merged) > 30:
+            lines.append(f"  ... and {len(rules_merged) - 30} more")
 
     pocs_d = str(pocs_dir())
     if os.path.isdir(pocs_d):
@@ -1634,10 +1635,12 @@ def _check_status(args, ctx=None):
         if evs:
             lines.append(f"Evidence sessions: {len(evs)}")
 
-    for label, path in [("Dictionaries", lst_dir()),
-                         ("Hashcat rules", rules_dir()),
-                         ("POCs", pocs_dir()),
-                         ("Reports", reports_dir())]:
+    from src.elwand_paths import list_lst, list_rules
+    for label, merged in (("Dictionaries", list_lst()),
+                          ("Hashcat rules", list_rules())):
+        if merged:
+            lines.append(f"{label}: {len(merged)}")
+    for label, path in (("POCs", pocs_dir()), ("Reports", reports_dir())):
         p = str(path)
         if os.path.isdir(p):
             files = [f for f in os.listdir(p)
@@ -1884,9 +1887,12 @@ def _check_fuzz_results(args, ctx=None):
     lines = [f"Fuzz & directory results for #{machine.id} ({machine.ip}):"]
 
     if dir_rows:
+        from src.dirutil import group_directories, port_label
         lines.append(f"\nSaved directories ({len(dir_rows)} total):")
-        for path, _ in dir_rows[start:end]:
-            lines.append(f"  {path}")
+        for scheme, port, paths in group_directories(dir_rows[start:end]):
+            label = port_label(scheme, port)
+            for path in paths:
+                lines.append(f"  [{label}] {path}")
         if end < len(dir_rows):
             lines.append(
                 f"  ... {len(dir_rows) - end} more — use offset={end + 1}")
@@ -2233,6 +2239,20 @@ def _delete_password(args, ctx=None):
     return f"Password not found."
 
 
+def _http_indicates_exists(status):
+    """Heuristic: treat the HTTP status as evidence that a path exists."""
+    if status is None:
+        return False
+    try:
+        status = int(status)
+    except (TypeError, ValueError):
+        return False
+    if 200 <= status < 400:
+        return True
+    # Auth/protected/method-not-allowed still imply the resource exists.
+    return status in (401, 403, 405)
+
+
 @register("webfetch")
 def _webfetch(args, ctx=None):
     from src.llm.web import fetch_url, fetch_raw
@@ -2276,22 +2296,23 @@ def _webfetch(args, ctx=None):
         lines.append(preview)
         lines.append(f"\n... output truncated ({len(body_lines)} lines, {byte_len} bytes). To read the rest: read_cache(\"{filename}\")")
         result = "\n".join(lines)
-        if not result.startswith("Error"):
+        if _http_indicates_exists(status):
             try:
                 parsed = urlparse(url)
                 host = parsed.hostname
                 path = parsed.path or "/"
+                port = parsed.port or (443 if parsed.scheme == "https" else 80)
                 from src.machines import store, machine_db, domain_db
                 machine = store.get(host)
                 if machine:
-                    machine_db.save_directory(machine.id, path)
+                    machine_db.save_directory(machine.id, path, port, parsed.scheme)
                 elif domain_db.exists(host):
-                    domain_db.save_directory(host, path)
+                    domain_db.save_directory(host, path, port, parsed.scheme)
             except Exception:
                 pass
         return result
 
-    result = fetch_url(
+    status, result = fetch_url(
         url,
         format=fmt,
         offset=int(args.get("offset", 1)),
@@ -2301,18 +2322,20 @@ def _webfetch(args, ctx=None):
         content_type=content_type,
         headers=headers,
         antibot=antibot,
+        with_status=True,
     )
-    if not result.startswith("Error"):
+    if _http_indicates_exists(status):
         try:
             parsed = urlparse(url)
             host = parsed.hostname
             path = parsed.path or "/"
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
             from src.machines import store, machine_db, domain_db
             machine = store.get(host)
             if machine:
-                machine_db.save_directory(machine.id, path)
+                machine_db.save_directory(machine.id, path, port, parsed.scheme)
             elif domain_db.exists(host):
-                domain_db.save_directory(host, path)
+                domain_db.save_directory(host, path, port, parsed.scheme)
         except Exception:
             pass
     return result
@@ -2495,9 +2518,11 @@ def _dicma_generate_rules(args, ctx=None):
     light = mode == "light"
     full = mode == "full"
     if dict_name:
-        dict_path = os.path.join(str(lst_dir()), dict_name)
-        if not os.path.isfile(dict_path):
+        from src.elwand_paths import resolve_lst
+        dict_path = resolve_lst(dict_name)
+        if not dict_path:
             return f"Dictionary not found: {dict_name}"
+        dict_path = str(dict_path)
         suffixes, prefixes, numbers, symbols = dicma.extract_patterns(dict_path)
         all_suf = list(dict.fromkeys(suffixes + numbers + symbols))
         all_pre = list(dict.fromkeys(prefixes + numbers + symbols))
@@ -2550,9 +2575,11 @@ def _hashcat_crack(args, ctx=None):
                 f"Add it via 'add_hash' first.")
     if not mode.isdigit():
         return f"Invalid hashcat mode: '{mode}'."
-    wl_path = os.path.join(str(lst_dir()), wordlist_name)
-    if not os.path.isfile(wl_path):
+    from src.elwand_paths import resolve_lst
+    wl_path = resolve_lst(wordlist_name)
+    if not wl_path:
         return f"Wordlist not found: {wordlist_name}"
+    wl_path = str(wl_path)
     from src.tools.hashcat import HashcatEngine
     from src.machines.credential_db import save_password as _sp
     engine = HashcatEngine(
@@ -2572,6 +2599,10 @@ def _hashcat_crack(args, ctx=None):
                 ctx.console.info("Hashcat done. No passwords found.")))),
     )
     engine.start()
+    try:
+        ctx._hashcat_engine = engine
+    except Exception:
+        pass
     return (f"Hashcat started: mode={mode} wordlist={wordlist_name} "
             f"hash='{hash_val[:30]}...'. Cracked passwords will be saved "
             f"to inventory automatically.")
@@ -2610,10 +2641,11 @@ def _fuzz_start(args, ctx=None):
         scheme = "http"
     if not method or not target or not wordlist:
         return "Missing method, target, or wordlist."
-    from src.elwand_paths import lst_dir
-    wl_path = os.path.join(str(lst_dir()), wordlist)
-    if not os.path.isfile(wl_path):
+    from src.elwand_paths import resolve_lst
+    wl_path = resolve_lst(wordlist)
+    if not wl_path:
         return f"Wordlist not found: {wordlist}"
+    wl_path = str(wl_path)
     resolved_ip = ctx._resolve_to_ip(target)
     from src.machines import store, machine_db
     machine = store.get(resolved_ip or target)
@@ -2667,10 +2699,22 @@ def _fuzz_start(args, ctx=None):
         )
 
     from src.machines import domain_db
+    import re as _re
+    is_ip_target = bool(_re.match(r"^\d+\.\d+\.\d+\.\d+$", target))
+
     def _on_found(word, display):
         if method == "directory":
+            path = f"/{word}"
             if machine:
-                machine_db.save_directory(machine.id, f"/{word}")
+                machine_db.save_directory(machine.id, path, port, scheme)
+            if not is_ip_target:
+                if not domain_db.exists(target):
+                    domain_db.init_or_update(
+                        target, machine.id if machine else 0,
+                        machine.ip if machine else "", "fuzz", scheme)
+                    if machine:
+                        machine_db.save_domain(machine.id, target, "fuzz", scheme)
+                domain_db.save_directory(target, path, port, scheme)
         elif method == "vhost":
             domain_db.save_subdomain(target, f"{word}.{target}", "vhost")
         else:
@@ -2689,6 +2733,10 @@ def _fuzz_start(args, ctx=None):
         hide_size_range=hide_size,
     )
     engine.start()
+    try:
+        ctx._fuzz_engine = engine
+    except Exception:
+        pass
     return f"Fuzzing ({method}) started against {target} with {wordlist}. Results will be saved to directories and subdomains. Use check_fuzz_results to retrieve them."
 
 
@@ -2733,14 +2781,36 @@ def _list_files_common(directory_func, empty_msg, type_label):
     return result
 
 
+def _list_files_merged(merged, resolver, empty_msg, type_label):
+    if not merged:
+        return empty_msg
+    result = f"{type_label}:\n"
+    for name, origin in merged.items():
+        path = resolver(name)
+        size = os.path.getsize(str(path)) if path else 0
+        if size >= 1024 * 1024:
+            size_str = f"{size / (1024 * 1024):.1f} MB"
+        elif size >= 1024:
+            size_str = f"{size / 1024:.0f} KB"
+        else:
+            size_str = f"{size} B"
+        suffix = "  (stock)" if origin == "stock" else ""
+        result += f"  {name} ({size_str}){suffix}\n"
+    return result
+
+
 @register("list_files")
 def _list_files(args, ctx=None):
     ft = args.get("file_type", "")
-    from src.elwand_paths import lst_dir, rules_dir, pocs_dir, cache_dir
+    from src.elwand_paths import pocs_dir, cache_dir, list_lst, list_rules
     if ft == "dictionary":
-        return _list_files_common(lst_dir, "No dictionary files found.", "Dictionary files")
+        from src.elwand_paths import resolve_lst
+        return _list_files_merged(list_lst(), resolve_lst,
+                                  "No dictionary files found.", "Dictionary files")
     if ft == "rule":
-        return _list_files_common(rules_dir, "No rule files found.", "Rule files")
+        from src.elwand_paths import resolve_rules
+        return _list_files_merged(list_rules(), resolve_rules,
+                                  "No rule files found.", "Rule files")
     if ft == "poc":
         return _list_files_common(pocs_dir, "No POC files found.", "POC files")
     if ft == "cache":
@@ -2859,13 +2929,23 @@ def _delete_file(args, ctx=None):
     if not ftype or not fname:
         return "Missing file_type or filename."
     if ftype == "rule":
-        base = str(rules_dir())
-    elif ftype == "poc":
+        from src.elwand_paths import delete_rule
+        if delete_rule(fname):
+            return f"Rule '{fname}' deleted."
+        return (f"Rule '{fname}' not found in this session "
+                "(stock rules cannot be deleted).")
+    if ftype in ("dictionary", "dict"):
+        from src.elwand_paths import delete_lst
+        if delete_lst(fname):
+            return f"Dictionary '{fname}' deleted."
+        return (f"Dictionary '{fname}' not found in this session "
+                "(stock dictionaries cannot be deleted).")
+    if ftype == "poc":
         base = str(pocs_dir())
     elif ftype == "cache":
         base = str(cache_dir())
     else:
-        base = str(lst_dir())
+        return f"Unknown file_type: {ftype}"
     base = os.path.normpath(base)
     path = os.path.normpath(os.path.join(base, fname))
     if not path.startswith(base + os.sep):

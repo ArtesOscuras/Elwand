@@ -9,12 +9,18 @@ from src.elwand_paths import databases_dir as _databases_dir
 _cache = {}
 _save_lock = threading.Lock()
 
-_DB_DIR = str(_databases_dir())
-_CACHE_FILE = os.path.join(_DB_DIR, "mdns_cache.json")
 _MAX_AGE = 24 * 3600
 _AUTOSAVE_INTERVAL = 10
 _autosave_running = False
 _autosave_thread = None
+
+
+def _db_dir():
+    return str(_databases_dir())
+
+
+def _cache_file():
+    return os.path.join(_db_dir(), "mdns_cache.json")
 
 
 def decode_properties(raw_properties):
@@ -95,14 +101,19 @@ def clear():
 
 def wipe():
     _cache.clear()
-    for filename in os.listdir(_DB_DIR):
-        filepath = os.path.join(_DB_DIR, filename)
-        if os.path.isfile(filepath):
-            os.remove(filepath)
+    db_dir = _db_dir()
+    try:
+        for filename in os.listdir(db_dir):
+            filepath = os.path.join(db_dir, filename)
+            if os.path.isfile(filepath):
+                os.remove(filepath)
+    except OSError:
+        pass
 
 
 def save():
-    os.makedirs(_DB_DIR, exist_ok=True)
+    db_dir = _db_dir()
+    os.makedirs(db_dir, exist_ok=True)
     with _save_lock:
         data = {}
         for ip, services in _cache.items():
@@ -110,17 +121,18 @@ def save():
             for svc, info in services.items():
                 data[ip][svc] = dict(info)
         try:
-            with open(_CACHE_FILE, "w") as f:
+            with open(_cache_file(), "w") as f:
                 json.dump(data, f, indent=2)
         except (PermissionError, OSError):
             pass
 
 
 def load():
-    if not os.path.isfile(_CACHE_FILE):
+    cache_file = _cache_file()
+    if not os.path.isfile(cache_file):
         return
     try:
-        with open(_CACHE_FILE) as f:
+        with open(cache_file) as f:
             data = json.load(f)
     except (json.JSONDecodeError, IOError):
         return

@@ -448,7 +448,8 @@ class BruteforceDialog(tk.Toplevel):
             self._kerb_userenum_frame.grid()
 
     def _browse_file(self, path_var):
-        initial = str(_lst_dir())
+        from src.elwand_paths import browse_lst_dir
+        initial = str(browse_lst_dir())
         f = windowing.ask_open_file(
             self, title="Select wordlist", initialdir=initial,
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
@@ -469,18 +470,22 @@ class BruteforceDialog(tk.Toplevel):
             target_var.set(ip)
 
     def _populate_lst_files(self, lb):
-        lst_dir = str(_lst_dir())
-        if os.path.isdir(lst_dir):
-            for fname in sorted(os.listdir(lst_dir)):
-                if os.path.isfile(os.path.join(lst_dir, fname)):
-                    lb.insert(tk.END, f"  {fname}")
-        lb.selection_set(0)
+        from src.elwand_paths import list_lst
+        merged = list_lst()
+        for fname, origin in merged.items():
+            suffix = "  (stock)" if origin == "stock" else ""
+            lb.insert(tk.END, f"  {fname}{suffix}")
+        if merged:
+            lb.selection_set(0)
 
     def _on_lst_select(self, lb, var):
         sel = lb.curselection()
         if sel:
             text = lb.get(sel[0]).strip()
-            var.set(f"lst/{text}")
+            from src.elwand_paths import resolve_lst
+            path = resolve_lst(text)
+            if path:
+                var.set(str(path))
 
     def _on_tab_changed(self, event=None):
         proto = self._get_active_proto()

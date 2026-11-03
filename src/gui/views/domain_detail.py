@@ -2,6 +2,7 @@ from src.gui import fonts
 import tkinter as tk
 from .base import BaseView
 from .dirtree import base_url, insert_clickable_tree
+from src.dirutil import group_directories, port_label, note_key
 from src.machines import domain_db
 
 MUTED = "#888888"
@@ -16,6 +17,8 @@ class DomainDetailView(BaseView):
     def __init__(self, parent, domain, **kwargs):
         self._domain = domain
         self._last_hash = None
+        self._expanded_dir = None
+        self._expanded_note = ""
         super().__init__(parent, **kwargs)
 
     def _build_ui(self):
@@ -91,6 +94,7 @@ class DomainDetailView(BaseView):
         subdomains = domain_db.load_subdomains(self._domain)
         directories = domain_db.load_directories(self._domain)
         web = domain_db.load_web_services(self._domain)
+        notes = domain_db.load_directory_notes(self._domain)
 
         current_hash = hash((
             self._domain,
@@ -99,6 +103,7 @@ class DomainDetailView(BaseView):
             tuple(subdomains),
             tuple(directories),
             tuple(web),
+            tuple(sorted(notes.items())),
         ))
         if current_hash == self._last_hash and self.text.index("end-1c") != "1.0":
             return
@@ -162,11 +167,32 @@ class DomainDetailView(BaseView):
 
         directories = domain_db.load_directories(self._domain)
         if directories:
-            self.text.insert(tk.END, f"\nDirectories ({len(directories)}):\n", "info")
-            insert_clickable_tree(
-                self.text, [p for p, _ in directories],
-                base_url(self._domain, [p for p, _ in web], preferred=protocol),
-                self._copy_to_clipboard)
+            web_ports = [p for p, _ in web]
+            groups = group_directories(directories)
+            for scheme, port, paths in groups:
+                self.text.insert(tk.END, f"\n{port_label(scheme, port)}:\n", "info")
+                base = (base_url(self._domain, [port], preferred=scheme or None)
+                        if port else
+                        base_url(self._domain, web_ports, preferred=scheme or None))
+                expanded = (self._expanded_dir[2]
+                            if self._expanded_dir
+                            and self._expanded_dir[:2] == (scheme, port)
+                            else None)
+                insert_clickable_tree(
+                    self.text, paths, base, self._copy_to_clipboard,
+                    note_map=notes,
+                    note_key_fn=lambda p, s=scheme, pt=port: note_key(p, pt, s),
+                    stored_paths=set(paths),
+                    expanded_path=expanded,
+                    expanded_note=self._expanded_note,
+                    on_expand=lambda p, s=scheme, pt=port:
+                        self._expand_dir(self._domain, p, s, pt),
+                    on_collapse=lambda: self._collapse_dir(self._domain),
+                    on_note=lambda p, n, s=scheme, pt=port:
+                        self._note_dir(self._domain, p, s, pt, n),
+                    on_note_change=lambda n: setattr(self, "_expanded_note", n),
+                    on_delete=lambda p, s=scheme, pt=port:
+                        self._delete_dir(self._domain, p, s, pt))
 
         web = domain_db.load_web_services(self._domain)
         if web:
@@ -200,3 +226,42 @@ class DomainDetailView(BaseView):
             self.clipboard_append(url)
         except tk.TclError:
             pass
+
+    def _force_refresh(self):
+        if self._poll_id:
+            try:
+                self.after_cancel(self._poll_id)
+            except Exception:
+                pass
+            self._poll_id = None
+        self._last_hash = None
+        self._poll()
+
+    def _expand_dir(self, domain, path, scheme, port):
+        if self._expanded_dir and self._expanded_dir[2] != path:
+            s0, p0, old_path = self._expanded_dir
+            domain_db.set_directory_note(domain, old_path, p0, s0,
+                                         self._expanded_note or "")
+        self._expanded_dir = (scheme, port, path)
+        self._expanded_note = domain_db.load_directory_notes(domain).get(
+            note_key(path, port, scheme), "")
+        self._force_refresh()
+
+    def _collapse_dir(self, domain):
+        if self._expanded_dir:
+            s, p, path = self._expanded_dir
+            domain_db.set_directory_note(domain, path, p, s,
+                                         self._expanded_note or "")
+        self._expanded_dir = None
+        self._expanded_note = ""
+        self._force_refresh()
+
+    def _note_dir(self, domain, path, scheme, port, note):
+        domain_db.set_directory_note(domain, path, port, scheme, note)
+        self._expanded_note = note
+
+    def _delete_dir(self, domain, path, scheme, port):
+        domain_db.delete_directory(domain, path, port, scheme)
+        self._expanded_dir = None
+        self._expanded_note = ""
+        self._force_refresh()

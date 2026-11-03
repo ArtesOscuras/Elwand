@@ -22,11 +22,12 @@ from src.machines import machine_db
 from src.machines import domain_db
 import src.machines
 from src.tools.scanner import PassiveMDNSScanner, ActiveScanner
-from src.tools.scanner.mdns_cache import load as load_mdns_cache, save as save_mdns_cache, start_autosave, clear as clear_mdns_cache, wipe as wipe_mdns_cache
+from src.tools.scanner.mdns_cache import load as load_mdns_cache, save as save_mdns_cache, start_autosave, stop_autosave as stop_mdns_autosave, clear as clear_mdns_cache, wipe as wipe_mdns_cache
 from src.tools.scanner.identifier import identify_device, get_gateway_ip, extract_model_for_ip, _probe_smb_info, _probe_ssh_banner, _probe_ttl, _run_whatweb, _probe_web_internal, _identify_linux_distro, _extract_domains_from_whatweb, _dbg
 from src.shells import ShellListener, shell_db
 from src import event_bus
 from src import process_registry
+from src import sessions
 from src.webscheme import scheme_for_port
 
 import datetime as _datetime
@@ -598,6 +599,7 @@ class App(tk.Tk):
         self._pane.add(self.visualizer, stretch="always")
 
         elwand_settings.load()
+        sessions.bootstrap()
         windowing.init(self)
         theme.install()
         console_font = elwand_settings.get("console_font_size", 11)
@@ -1059,6 +1061,33 @@ class App(tk.Tk):
         self.console.set_arg3_provider("add", "credential", self._autocomplete_password_noall)
         self.console.set_arg3_provider("add", "hash", self._autocomplete_format_hash)
 
+        self.console.register_command("session", self._cmd_session, "Manage work sessions")
+        self.console.set_subcommands("session",
+                                     ["list", "new", "switch", "rename", "delete", "info"])
+        for _sub in ("switch", "rename", "delete", "info"):
+            self.console.set_arg2_provider("session", _sub, self._autocomplete_sessions)
+
+    @staticmethod
+    def _file_choices_merged(kind):
+        from src.elwand_paths import list_lst, list_rules
+        merged = list_lst() if kind == "lst" else list_rules()
+        out = []
+        for name, origin in merged.items():
+            label = f"{name}  (stock)" if origin == "stock" else name
+            out.append((label, name))
+        return out
+
+    @staticmethod
+    def _file_choices_session(kind):
+        from src.elwand_paths import lst_dir, rules_dir
+        d = lst_dir() if kind == "lst" else rules_dir()
+        try:
+            return [(f.name, f.name) for f in
+                    sorted(d.iterdir(), key=lambda p: p.name.lower())
+                    if f.is_file()]
+        except OSError:
+            return []
+
     @staticmethod
     def _autocomplete_dicma_mode(prefix):
         return ["users", "related", "passwords", "rules"]
@@ -1146,63 +1175,23 @@ class App(tk.Tk):
 
     @staticmethod
     def _autocomplete_dicma_rules_dict(prefix):
-        from src.elwand_paths import lst_dir
-        results = []
-        try:
-            for fname in sorted(os.listdir(str(lst_dir()))):
-                if os.path.isfile(os.path.join(str(lst_dir()), fname)):
-                    results.append((fname, fname))
-        except OSError:
-            pass
-        return results
+        return App._file_choices_merged("lst")
 
     @staticmethod
     def _autocomplete_delete_rules(prefix):
-        from src.elwand_paths import rules_dir
-        results = ["all"]
-        try:
-            for fname in sorted(os.listdir(str(rules_dir()))):
-                if os.path.isfile(os.path.join(str(rules_dir()), fname)):
-                    results.append((fname, fname))
-        except OSError:
-            pass
-        return results
+        return ["all"] + App._file_choices_session("rules")
 
     @staticmethod
     def _autocomplete_delete_dictionary(prefix):
-        from src.elwand_paths import lst_dir
-        results = ["all"]
-        try:
-            for fname in sorted(os.listdir(str(lst_dir()))):
-                if os.path.isfile(os.path.join(str(lst_dir()), fname)):
-                    results.append((fname, fname))
-        except OSError:
-            pass
-        return results
+        return ["all"] + App._file_choices_session("lst")
 
     @staticmethod
     def _autocomplete_dictionary_noall(prefix):
-        from src.elwand_paths import lst_dir
-        results = []
-        try:
-            for fname in sorted(os.listdir(str(lst_dir()))):
-                if os.path.isfile(os.path.join(str(lst_dir()), fname)):
-                    results.append((fname, fname))
-        except OSError:
-            pass
-        return results
+        return App._file_choices_merged("lst")
 
     @staticmethod
     def _autocomplete_rules_noall(prefix):
-        from src.elwand_paths import rules_dir
-        results = []
-        try:
-            for fname in sorted(os.listdir(str(rules_dir()))):
-                if os.path.isfile(os.path.join(str(rules_dir()), fname)):
-                    results.append((fname, fname))
-        except OSError:
-            pass
-        return results
+        return App._file_choices_merged("rules")
 
     @staticmethod
     def _autocomplete_delete_pocs(prefix):
@@ -1368,27 +1357,12 @@ class App(tk.Tk):
 
     @staticmethod
     def _autocomplete_bruteforce_userlist(prefix):
-        from src.elwand_paths import lst_dir
-        results = [("users", "users"), ("people-dicma", "people-dicma")]
-        try:
-            for fname in sorted(os.listdir(str(lst_dir()))):
-                if os.path.isfile(os.path.join(str(lst_dir()), fname)):
-                    results.append((fname, fname))
-        except OSError:
-            pass
-        return results
+        return ([("users", "users"), ("people-dicma", "people-dicma")]
+                + App._file_choices_merged("lst"))
 
     @staticmethod
     def _autocomplete_bruteforce_passlist(prefix):
-        from src.elwand_paths import lst_dir
-        results = [("passwords", "passwords")]
-        try:
-            for fname in sorted(os.listdir(str(lst_dir()))):
-                if os.path.isfile(os.path.join(str(lst_dir()), fname)):
-                    results.append((fname, fname))
-        except OSError:
-            pass
-        return results
+        return [("passwords", "passwords")] + App._file_choices_merged("lst")
 
     @staticmethod
     def _autocomplete_bruteforce_arg4(prefix, proto=None):
@@ -1502,15 +1476,7 @@ class App(tk.Tk):
 
     @staticmethod
     def _autocomplete_hashcat_wordlist(prefix, arg2_value=None):
-        from src.elwand_paths import lst_dir
-        results = []
-        try:
-            for fname in sorted(os.listdir(str(lst_dir()))):
-                if os.path.isfile(os.path.join(str(lst_dir()), fname)):
-                    results.append((fname, fname))
-        except OSError:
-            pass
-        return results
+        return App._file_choices_merged("lst")
 
     @staticmethod
     def _autocomplete_port_inspector_ports(prefix, arg2_value=None):
@@ -1841,23 +1807,22 @@ class App(tk.Tk):
             return
         fname = args[0]
         if file_type == "dictionary":
-            from src.elwand_paths import lst_dir
-            base = str(lst_dir())
+            from src.elwand_paths import resolve_lst
+            path = resolve_lst(fname)
             title = f"Dictionary \u2014 {fname}"
         elif file_type == "poc":
             from src.elwand_paths import pocs_dir
-            base = str(pocs_dir())
+            path = os.path.join(str(pocs_dir()), fname)
             title = f"POC \u2014 {fname}"
         else:
-            from src.elwand_paths import rules_dir
-            base = str(rules_dir())
+            from src.elwand_paths import resolve_rules
+            path = resolve_rules(fname)
             title = f"Rule \u2014 {fname}"
-        path = os.path.join(base, fname)
-        if not os.path.isfile(path):
+        if not path or not os.path.isfile(str(path)):
             self.console.warning(f"File not found: {fname}")
             return
         from .views.file_detail import open_file_search
-        open_file_search(self, path, title, file_type=file_type)
+        open_file_search(self, str(path), title, file_type=file_type)
 
     def _resolve_target(self, target):
         if re.match(r"^\d+\.\d+\.\d+\.\d+$", target):
@@ -2182,18 +2147,20 @@ class App(tk.Tk):
         if len(args) > 2 and args[2].lower() == "people-dicma":
             users = usernames_from_people()
         elif len(args) > 2 and args[2].lower() != "users":
-            path = os.path.join(str(lst_dir()), args[2])
-            if os.path.isfile(path):
-                userlist = path
+            from src.elwand_paths import resolve_lst as _resolve_lst
+            path = _resolve_lst(args[2])
+            if path:
+                userlist = str(path)
         if not userlist and users is None:
             users = load_usernames()
 
         passlist = None
         passwords = None
         if len(args) > 3 and args[3].lower() != "passwords":
-            path = os.path.join(str(lst_dir()), args[3])
-            if os.path.isfile(path):
-                passlist = path
+            from src.elwand_paths import resolve_lst as _resolve_lst
+            path = _resolve_lst(args[3])
+            if path:
+                passlist = str(path)
         if not passlist:
             passwords = load_passwords()
 
@@ -2284,9 +2251,10 @@ class App(tk.Tk):
             if not arg or arg.lower() == kind:
                 return None, (load_usernames() if kind == "users"
                               else load_passwords())
-            path = os.path.join(str(lst_dir()), arg)
-            if os.path.isfile(path):
-                return path, None
+            from src.elwand_paths import resolve_lst as _resolve_lst
+            path = _resolve_lst(arg)
+            if path:
+                return str(path), None
             return None, []
 
         users = userlist = None
@@ -2441,10 +2409,12 @@ class App(tk.Tk):
             self.console.error(f"Invalid hashcat mode: '{mode}'.")
             return
 
-        wl_path = os.path.join(str(lst_dir()), wordlist_name)
-        if not os.path.isfile(wl_path):
-            self.console.error(f"Wordlist not found: {wl_path}")
+        from src.elwand_paths import resolve_lst
+        wl_path = resolve_lst(wordlist_name)
+        if not wl_path:
+            self.console.error(f"Wordlist not found: {wordlist_name}")
             return
+        wl_path = str(wl_path)
 
         self._hashcat_console_cracked = []
 
@@ -3142,20 +3112,20 @@ class App(tk.Tk):
         self.visualizer.activate_view(view_name)
 
     def _open_dictionary_view(self, fname):
-        from src.elwand_paths import lst_dir
+        from src.elwand_paths import resolve_lst
         from .views.file_detail import open_file_search
-        path = os.path.join(str(lst_dir()), fname)
-        if not os.path.isfile(path):
+        path = resolve_lst(fname)
+        if not path:
             return
-        open_file_search(self, path, f"Dictionary \u2014 {fname}")
+        open_file_search(self, str(path), f"Dictionary \u2014 {fname}")
 
     def _open_rule_view(self, fname):
-        from src.elwand_paths import rules_dir
+        from src.elwand_paths import resolve_rules
         from .views.file_detail import open_file_search
-        path = os.path.join(str(rules_dir()), fname)
-        if not os.path.isfile(path):
+        path = resolve_rules(fname)
+        if not path:
             return
-        open_file_search(self, path, f"Rule \u2014 {fname}")
+        open_file_search(self, str(path), f"Rule \u2014 {fname}")
 
     def _open_poc_view(self, fname):
         from src.elwand_paths import pocs_dir
@@ -3368,10 +3338,15 @@ class App(tk.Tk):
         elif sub == "fuzzer":
             if self._fuzz_dlg:
                 self._fuzz_dlg._stop()
-            if hasattr(self, '_fuzz_engine') and self._fuzz_engine:
+            if getattr(self, '_fuzz_engine', None):
                 self._fuzz_engine.stop()
                 self._fuzz_engine = None
-            self.console.info("Fuzzer stopped")
+            from src.tools.fuzz.engine import FuzzEngine
+            n = FuzzEngine.stop_all()
+            if n:
+                self.console.info(f"Fuzzer stopped ({n})")
+            else:
+                self.console.warning("No fuzzer is running")
         elif sub == "webrecorder":
             if self._recorder and self._recorder.is_running():
                 self._recorder.stop()
@@ -5604,10 +5579,12 @@ class App(tk.Tk):
         if args and args[0].lower() == "stop":
             if self._fuzz_dlg:
                 self._fuzz_dlg._stop()
-            if hasattr(self, '_fuzz_engine') and self._fuzz_engine:
+            if getattr(self, '_fuzz_engine', None):
                 self._fuzz_engine.stop()
                 self._fuzz_engine = None
-            self.console.info("Fuzzer stopped")
+            from src.tools.fuzz.engine import FuzzEngine
+            n = FuzzEngine.stop_all()
+            self.console.info(f"Fuzzer stopped ({n})" if n else "No fuzzer is running")
             return
         if not args:
             self._fuzz_dlg = FuzzDialog(self)
@@ -5637,11 +5614,12 @@ class App(tk.Tk):
             if not wordlist:
                 self.console.body("Usage: use fuzzer dir <target> <wordlist> [port]")
                 return
-            from src.elwand_paths import lst_dir
-            wl_path = os.path.join(str(lst_dir()), wordlist)
-            if not os.path.isfile(wl_path):
+            from src.elwand_paths import resolve_lst
+            wl_path = resolve_lst(wordlist)
+            if not wl_path:
                 self.console.error(f"Wordlist not found: {wordlist}")
                 return
+            wl_path = str(wl_path)
             ip = self._resolve_to_ip(target)
             display_target = ip or target
             url_template = f"http://{display_target}:{port}/FUZZ"
@@ -5669,11 +5647,12 @@ class App(tk.Tk):
                 self.console.body("Usage: use fuzzer vhost <target> <wordlist>")
                 return
             wordlist = args[2]
-            from src.elwand_paths import lst_dir
-            wl_path = os.path.join(str(lst_dir()), wordlist)
-            if not os.path.isfile(wl_path):
+            from src.elwand_paths import resolve_lst
+            wl_path = resolve_lst(wordlist)
+            if not wl_path:
                 self.console.error(f"Wordlist not found: {wordlist}")
                 return
+            wl_path = str(wl_path)
             ip = self._resolve_to_ip(target)
             def _emit_vhost(text, color=None):
                 stripped = text.rstrip("\n")
@@ -5699,11 +5678,12 @@ class App(tk.Tk):
                 self.console.body("Usage: use fuzzer dns <target> <wordlist>")
                 return
             wordlist = args[2]
-            from src.elwand_paths import lst_dir
-            wl_path = os.path.join(str(lst_dir()), wordlist)
-            if not os.path.isfile(wl_path):
+            from src.elwand_paths import resolve_lst
+            wl_path = resolve_lst(wordlist)
+            if not wl_path:
                 self.console.error(f"Wordlist not found: {wordlist}")
                 return
+            wl_path = str(wl_path)
             def _emit_dns(text, color=None):
                 stripped = text.rstrip("\n")
                 c = {"success": "success", "error": "error", "info": "info"}.get(color)
@@ -6220,7 +6200,7 @@ class App(tk.Tk):
         if not args:
             self.console.body("Usage: delete dictionary <filename|all>")
             return
-        from src.elwand_paths import lst_dir
+        from src.elwand_paths import lst_dir, delete_lst
         import os as _os
         d = str(lst_dir())
         target = args[0]
@@ -6231,20 +6211,20 @@ class App(tk.Tk):
                 if _os.path.isfile(fp):
                     _os.remove(fp)
                     count += 1
-            self.console.success(f"{count} dictionary files deleted")
+            self.console.success(f"{count} session dictionary files deleted")
             return
-        path = _os.path.join(d, target)
-        if _os.path.isfile(path):
-            _os.remove(path)
+        if delete_lst(target):
             self.console.success(f"Dictionary '{target}' deleted")
         else:
-            self.console.warning(f"Dictionary not found: {target}")
+            self.console.warning(
+                f"Dictionary not found in this session: {target} "
+                "(stock dictionaries cannot be deleted)")
 
     def _cmd_delete_rule(self, args):
         if not args:
             self.console.body("Usage: delete rule <filename|all>")
             return
-        from src.elwand_paths import rules_dir
+        from src.elwand_paths import rules_dir, delete_rule
         import os as _os
         d = str(rules_dir())
         target = args[0]
@@ -6255,14 +6235,14 @@ class App(tk.Tk):
                 if _os.path.isfile(fp):
                     _os.remove(fp)
                     count += 1
-            self.console.success(f"{count} rule files deleted")
+            self.console.success(f"{count} session rule files deleted")
             return
-        path = _os.path.join(d, target)
-        if _os.path.isfile(path):
-            _os.remove(path)
+        if delete_rule(target):
             self.console.success(f"Rule '{target}' deleted")
         else:
-            self.console.warning(f"Rule not found: {target}")
+            self.console.warning(
+                f"Rule not found in this session: {target} "
+                "(stock rules cannot be deleted)")
 
     def _cmd_delete_poc(self, args):
         if not args:
@@ -6451,6 +6431,261 @@ class App(tk.Tk):
         wifi_monitor.clear()
 
         self.console.success("All data cleared (machines, domains, inventory, people, shells, evidence, POCs, cache, WiFi networks/probes). Dictionaries, rules and reports preserved.")
+
+    # ─── Work sessions ─────────────────────────────────────────────
+
+    @staticmethod
+    def _autocomplete_sessions(prefix):
+        rows = []
+        for s in sessions.list_sessions():
+            sid = s.get("id", "")
+            mark = "*" if s.get("active") else " "
+            rows.append((f"{mark} {sid}  {s.get('name', '')}", sid))
+        return rows
+
+    @staticmethod
+    def _resolve_session_id(token):
+        rows = sessions.list_sessions()
+        ids = [s.get("id", "") for s in rows]
+        if token in ids:
+            return token
+        matches = [i for i in ids if i.startswith(token)]
+        if len(matches) == 1:
+            return matches[0]
+        by_name = [s.get("id") for s in rows
+                   if (s.get("name", "").lower() == token.lower())]
+        if len(by_name) == 1:
+            return by_name[0]
+        return None
+
+    def _cmd_session(self, args):
+        sub = (args[0].lower() if args else "list")
+        rest = args[1:]
+        if sub in ("list", "ls"):
+            rows = sessions.list_sessions()
+            if not rows:
+                self.console.body("No sessions.")
+                return
+            self.console.title("Sessions")
+            for s in rows:
+                mark = "*" if s.get("active") else " "
+                self.console.body(
+                    f" {mark} {s.get('id', ''):<36} {s.get('name', '')}")
+            self.console.body(f"Active: {sessions.get_active_id()}")
+        elif sub in ("new", "create"):
+            name = " ".join(rest).strip() or None
+            sid = sessions.create(name=name, activate=False)
+            if self._switch_to_session(sid):
+                self.console.success(f"Created and switched to session {sid}")
+            else:
+                try:
+                    sessions.delete(sid)
+                except Exception:
+                    pass
+        elif sub == "switch":
+            if not rest:
+                self.console.body("Usage: session switch <id|name>")
+                return
+            sid = self._resolve_session_id(rest[0])
+            if not sid:
+                self.console.error(f"Session not found: {rest[0]}")
+                return
+            if self._switch_to_session(sid):
+                self.console.success(f"Switched to session {sid}")
+        elif sub == "rename":
+            if len(rest) < 2:
+                self.console.body("Usage: session rename <id|name> <new name>")
+                return
+            sid = self._resolve_session_id(rest[0])
+            if not sid:
+                self.console.error(f"Session not found: {rest[0]}")
+                return
+            new_name = sessions.rename(sid, " ".join(rest[1:]))
+            self.console.success(f"Renamed {sid} -> {new_name}")
+        elif sub == "delete":
+            if not rest:
+                self.console.body("Usage: session delete <id|name> [yes]")
+                return
+            sid = self._resolve_session_id(rest[0])
+            if not sid:
+                self.console.error(f"Session not found: {rest[0]}")
+                return
+            if sid == sessions.get_active_id():
+                self.console.error("Cannot delete the active session; switch first.")
+                return
+            if len(rest) < 2 or rest[-1].lower() != "yes":
+                self.console.warning(
+                    f"Delete session {sid}? Re-run: session delete {sid} yes")
+                return
+            try:
+                sessions.delete(sid)
+            except Exception as e:
+                self.console.error(str(e))
+                return
+            self.console.success(f"Deleted session {sid}")
+        elif sub == "info":
+            sid = self._resolve_session_id(rest[0]) if rest else sessions.get_active_id()
+            if not sid:
+                self.console.error("No active session.")
+                return
+            meta = sessions.read_meta(sid)
+            self.console.title(f"Session {sid}")
+            for key in ("name", "created", "updated", "target", "notes"):
+                if meta.get(key):
+                    self.console.body(f"  {key}: {meta[key]}")
+            self.console.body(f"  path: {sessions.session_dir(sid)}")
+            if sid == sessions.get_active_id():
+                self.console.body("  active: yes")
+        else:
+            self.console.body(
+                "Usage: session <list|new|switch|rename|delete|info> ...")
+
+    def _session_busy(self):
+        reasons = []
+        try:
+            active = process_registry.list_active()
+            if active:
+                reasons.append("running: " + ", ".join(
+                    p.get("name", "?") for p in active))
+        except Exception:
+            pass
+        if getattr(self, "_llm_running", False):
+            reasons.append("agent/consultor")
+        if self._passive_scanner or self._active_scanner or self._shell_listener:
+            reasons.append("listener/scanner")
+        try:
+            from src.shells import shell_db
+            if shell_db.get_all():
+                reasons.append("shells")
+        except Exception:
+            pass
+        try:
+            from src.tools.scanner import wifi_monitor
+            if wifi_monitor.is_running():
+                reasons.append("wifi monitor")
+        except Exception:
+            pass
+        return reasons
+
+    def _switch_to_session(self, sid):
+        if sid == sessions.get_active_id():
+            self.console.info("Already in that session.")
+            return True
+        reasons = self._session_busy()
+        if reasons:
+            self.console.error(
+                "Cannot switch session while busy: " + "; ".join(reasons))
+            return False
+
+        # Persist the current session before leaving it.
+        try:
+            store.save()
+        except Exception:
+            pass
+        try:
+            save_mdns_cache()
+        except Exception:
+            pass
+        try:
+            self._save_session()
+        except Exception:
+            pass
+
+        # Reset in-memory state while the OLD session is still active, so any
+        # straggling autosave writes to the old directory.
+        stop_machines_autosave()
+        try:
+            stop_mdns_autosave()
+        except Exception:
+            pass
+        store.clear()
+        clear_mdns_cache()
+        try:
+            from src.tools.scanner import wifi_monitor
+            wifi_monitor.clear()
+        except Exception:
+            pass
+
+        try:
+            sessions.set_active(sid)
+        except Exception as e:
+            self.console.error(f"Session switch failed: {e}")
+            start_machines_autosave(store)
+            self.console.reset_display()
+            self._restore_session_mode()
+            return False
+
+        self._llm_messages = []
+        self._total_api_tokens = 0
+        self._context_injected = False
+        self._llm_request_id = None
+        self._llm_session_id = None
+        self._llm_project_id = None
+        self.console.reset_display()
+
+        try:
+            store.load()
+            from src.machines import credential_db
+            credential_db.repair_handshake_hashes()
+        except Exception:
+            pass
+        try:
+            load_mdns_cache()
+        except Exception:
+            pass
+        start_machines_autosave(store)
+        try:
+            start_autosave()
+        except Exception:
+            pass
+
+        self._restore_session_mode()
+        self._refresh_views_after_session()
+        return True
+
+    def _restore_session_mode(self):
+        if self._agent_mode:
+            self._leave_agent_mode()
+        if self._consultor_mode:
+            self._leave_consultor_mode()
+        mode = self._load_session()
+        if mode in ("agent", "consultor"):
+            self._silent_mode_cycle = True
+            try:
+                if mode == "agent":
+                    self._enter_agent_mode()
+                else:
+                    self._enter_consultor_mode()
+            finally:
+                self._silent_mode_cycle = False
+        else:
+            try:
+                self._update_mode_prompt()
+            except Exception:
+                pass
+
+    def _refresh_views_after_session(self):
+        for view in getattr(self.visualizer, "views", {}).values():
+            if hasattr(view, "_last_hash"):
+                view._last_hash = None
+            if hasattr(view, "_rendered"):
+                view._rendered = False
+        active = self.visualizer.get_active_view()
+        if active is not None:
+            if hasattr(active, "_poll"):
+                try:
+                    active._poll()
+                except Exception:
+                    pass
+            elif hasattr(active, "_refresh"):
+                try:
+                    active._refresh()
+                except Exception:
+                    pass
+            try:
+                self.visualizer._refresh_labels(active)
+            except Exception:
+                pass
 
     def _toggle_focus(self, event=None):
         focused = self.focus_get()

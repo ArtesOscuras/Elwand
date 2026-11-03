@@ -11,8 +11,7 @@ _DB_DIR = None
 
 def _init_db_dir():
     global _DB_DIR
-    if _DB_DIR is None:
-        _DB_DIR = str(_databases_dir())
+    _DB_DIR = str(_databases_dir())
 
 
 def _get_path(machine_id):
@@ -124,25 +123,50 @@ def save_tcp_port(machine_id, port):
     return False
 
 
-def save_directory(machine_id, path):
+def _migrate_directories(conn):
+    try:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(directories)").fetchall()]
+    except sqlite3.OperationalError:
+        return
+    if not cols:
+        return
+    try:
+        if "port" not in cols:
+            conn.execute("ALTER TABLE directories ADD COLUMN port INTEGER")
+        if "scheme" not in cols:
+            conn.execute("ALTER TABLE directories ADD COLUMN scheme TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+
+def save_directory(machine_id, path, port=None, scheme=""):
     _init_db_dir()
     path_file = _get_path(machine_id)
     now = datetime.now().isoformat()
+    port = int(port) if port else None
+    scheme = (scheme or "").lower() or None
     try:
         with sqlite3.connect(path_file) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS directories (
                     path TEXT,
-                    discovered_at TEXT
+                    discovered_at TEXT,
+                    port INTEGER,
+                    scheme TEXT
                 )
             """)
+            _migrate_directories(conn)
             existing = conn.execute(
-                "SELECT 1 FROM directories WHERE path = ?", (path,)
+                "SELECT 1 FROM directories WHERE path = ? "
+                "AND COALESCE(port, -1) = COALESCE(?, -1) "
+                "AND COALESCE(scheme, '') = COALESCE(?, '')",
+                (path, port, scheme),
             ).fetchone()
             if not existing:
                 conn.execute(
-                    "INSERT INTO directories VALUES (?, ?)",
-                    (path, now),
+                    "INSERT INTO directories (path, discovered_at, port, scheme) "
+                    "VALUES (?, ?, ?, ?)",
+                    (path, now, port, scheme),
                 )
     except (PermissionError, OSError, sqlite3.OperationalError):
         pass
@@ -158,16 +182,113 @@ def load_directories(machine_id):
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS directories (
                     path TEXT,
-                    discovered_at TEXT
+                    discovered_at TEXT,
+                    port INTEGER,
+                    scheme TEXT
                 )
             """)
+            _migrate_directories(conn)
             rows = conn.execute(
-                "SELECT path, discovered_at FROM directories ORDER BY discovered_at"
+                "SELECT path, discovered_at, port, scheme "
+                "FROM directories ORDER BY discovered_at"
             ).fetchall()
-            return [(r[0], r[1]) for r in rows]
+            return [(r[0], r[1], r[2], r[3]) for r in rows]
     except (sqlite3.DatabaseError, sqlite3.OperationalError):
         return []
 
+
+
+def _note_port(port):
+    return int(port) if port else -1
+
+
+def _migrate_directory_notes(conn):
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS directory_notes (
+                path TEXT,
+                port INTEGER,
+                scheme TEXT,
+                note TEXT,
+                updated_at TEXT,
+                UNIQUE(path, port, scheme)
+            )
+        """)
+    except sqlite3.OperationalError:
+        pass
+
+
+def set_directory_note(machine_id, path, port, scheme, note):
+    _init_db_dir()
+    path_file = _get_path(machine_id)
+    note = (note or "").strip()
+    p = _note_port(port)
+    sc = (scheme or "").lower()
+    now = datetime.now().isoformat()
+    try:
+        with sqlite3.connect(path_file) as conn:
+            _migrate_directory_notes(conn)
+            if note:
+                conn.execute(
+                    "INSERT INTO directory_notes (path, port, scheme, note, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?) "
+                    "ON CONFLICT(path, port, scheme) DO UPDATE SET "
+                    "note = excluded.note, updated_at = excluded.updated_at",
+                    (path, p, sc, note, now),
+                )
+            else:
+                conn.execute(
+                    "DELETE FROM directory_notes WHERE path = ? AND port = ? AND scheme = ?",
+                    (path, p, sc),
+                )
+    except (PermissionError, OSError, sqlite3.OperationalError):
+        pass
+
+
+def load_directory_notes(machine_id):
+    _init_db_dir()
+    path_file = _get_path(machine_id)
+    if not os.path.isfile(path_file):
+        return {}
+    try:
+        with sqlite3.connect(path_file) as conn:
+            _migrate_directory_notes(conn)
+            rows = conn.execute(
+                "SELECT path, port, scheme, note FROM directory_notes"
+            ).fetchall()
+            return {(r[0], r[1], r[2]): r[3] for r in rows}
+    except (sqlite3.DatabaseError, sqlite3.OperationalError):
+        return {}
+
+
+def delete_directory(machine_id, path, port=None, scheme=""):
+    _init_db_dir()
+    path_file = _get_path(machine_id)
+    p = _note_port(port)
+    sc = (scheme or "").lower()
+    try:
+        with sqlite3.connect(path_file) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS directories (
+                    path TEXT, discovered_at TEXT, port INTEGER, scheme TEXT
+                )
+            """)
+            _migrate_directories(conn)
+            cur = conn.execute(
+                "DELETE FROM directories WHERE path = ? "
+                "AND COALESCE(port, -1) = COALESCE(?, -1) "
+                "AND COALESCE(scheme, '') = COALESCE(?, '')",
+                (path, port, scheme or None),
+            )
+            deleted = cur.rowcount > 0
+            _migrate_directory_notes(conn)
+            conn.execute(
+                "DELETE FROM directory_notes WHERE path = ? AND port = ? AND scheme = ?",
+                (path, p, sc),
+            )
+            return deleted
+    except (PermissionError, OSError, sqlite3.OperationalError):
+        return False
 
 def load_tcp_ports(machine_id):
     _init_db_dir()

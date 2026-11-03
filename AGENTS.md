@@ -382,10 +382,27 @@ On **macOS/Windows** the helpers use the **native** chooser. On **Linux**, Tk's 
 
 All filesystem paths are defined in a single module. Never use `os.path.dirname(__file__)` to locate resources.
 
-* **Package data** (bundled with pipx): `fonts_dir()`, `icons_dir()`, `hashcat_db()`, `logs_dir()`
-* **Runtime data** (user's home): `databases_dir()`, `credentials_dir()`, `evidence_dir()`, `chrome_profile_dir()`, `antibot_profile_dir()`, `lst_dir()`, `rules_dir()`, `pocs_dir()`, `reports_dir()`, `cache_dir()`, `settings_file()`, `session_file()`, `runtime_logs_dir()`
+* **Package data** (bundled with pipx): `fonts_dir()`, `icons_dir()`, `hashcat_db()`, `logs_dir()`, `stock_lst_dir()`, `stock_rules_dir()`.
+* **Global** (shared by every work session): `settings_file()`, `models_catalog_file()`, `chrome_profile_dir()`, `antibot_profile_dir()`, `rt2800_*`, `global_lst_dir()`/`global_rules_dir()` (downloaded/shared dictionaries), `global_home()`.
+* **Per-session** (inside the active session dir): `databases_dir()`, `credentials_dir()`, `evidence_dir()`, `handshakes_dir()`, `cache_dir()`, `pocs_dir()`, `reports_dir()`, `runtime_logs_dir()`, `session_file()`, and the writable `lst_dir()`/`rules_dir()`.
+* Dictionaries/rules resolve with `resolve_lst(name)` / `resolve_rules(name)` (session → shared → bundled stock), list with `list_lst()` / `list_rules()` (name → `"stock"`/`"session"`), and delete with `delete_lst()` / `delete_rule()` (session files only; bundled/stock files are never removed). `browse_lst_dir()`/`browse_rules_dir()` pick a sensible initial directory for file choosers.
 * Runtime directories are created lazily with `os.makedirs(exist_ok=True)`.
-* Override runtime root via `Elwand_HOME` environment variable.
+* Override the runtime root via the `ELWAND_HOME` environment variable.
+
+**Caching rule:** DB modules must not cache the resolved path across a session switch. `machine_db`/`domain_db`/`credential_db`/`people_db`/`store`/`results_db` recompute their path on every `_init_*()` call, and `mdns_cache` derives its file with `_cache_file()` per call. Do not reintroduce `if _DB_DIR is None:` guards.
+
+---
+
+## Work Sessions (`src/sessions.py`)
+
+Elwand stores each engagement in an isolated **work session** directory. This keeps machines/domains/inventory/evidence/LLM conversation separate and makes save/restore/delete a directory operation.
+
+* Layout: `<global home>/sessions/<id>/` with `databases/`, `credentials/`, `evidence/`, `handshakes/`, `cache/`, `pocs/`, `reports/`, `logs/`, `lst/`, `rules/`, `session.json` (LLM) and `meta.json` (name/created/updated/target/notes).
+* `src/sessions.py` (stdlib only) provides `bootstrap()`, `create(name)`, `list_sessions()`, `read_meta()`, `rename()`, `delete()`, `set_active()`, `get_active_id()`, `session_dir()`. The active id is persisted in `<global home>/active_session`.
+* `bootstrap()` (called early in `App.__init__`, before `load_mdns_cache()`/`store.load()`) ensures a session exists, applies it via `elwand_paths.set_session_dir()`, and best-effort migrates the old flat layout into a `default` session (moving only user-created dictionaries/rules; seeded stock copies are left behind).
+* Console: `session list | new <name> | switch <id|name> | rename <id|name> <name> | delete <id|name> yes | info [id]`. Switching is rejected while work is running (`process_registry.list_active()`, agent/consultor, scanners/listeners, shells, WiFi monitor).
+* Switch flow: save the current session (`store.save()`, `save_mdns_cache()`, `_save_session()`) → stop autosave → clear in-memory state (store/mdns/wifi) while still on the old paths → `sessions.set_active()` → reload store/mdns/LLM + mode/console → refresh views.
+* Export/import (zip) is intentionally not implemented yet, but the per-directory layout is designed to allow it.
 
 ---
 
@@ -422,7 +439,9 @@ Each domain records the **protocol** it serves over (`http`/`https`). Scheme hel
 * `render_tree(paths)` — nested tree, **sorted case-insensitively per level**, box-drawing connectors; **implied parents are created** (a stored `/admin/login` yields an `admin` node). Root line is `/`.
 * `base_url(host, ports, preferred=None)` — `scheme://host[:port]`, preferring a domain's stored `protocol`; otherwise HTTPS inferred from `_HTTPS_PORTS`/web-service ports; standard ports (80/443) omitted, non-standard kept.
 
-**Click to copy:** clicking any node (root, implied parents, leaves) copies `base_url + node_path` to the clipboard (`_copy_to_clipboard`), with hover underline and a brief green flash. Bindings use generated `dircopy_<n>` tags.
+**Per-port storage:** the `directories` table carries `port INTEGER` and `scheme TEXT` (idempotent migration `_migrate_directories` in both `machine_db` and `domain_db`; legacy rows stay `NULL`). `save_directory(id_or_domain, path, port=None, scheme="")` dedups by `(path, port, scheme)`, and `load_directories` returns `(path, discovered_at, port, scheme)` tuples. `src/dirutil.py` (`group_directories`, `port_label`) groups rows by `(scheme, port)`; the views render **one tree per port** (so a machine/domain with several HTTP/HTTPS services gets separate trees) and the copied URL uses that group's port/scheme. `webfetch`, the webrecorder, the fuzzer GUI and the agent `fuzz_start` pass the real port/scheme; `fuzz_start` also saves to the **domain** (registering it if needed) in addition to the resolved machine.
+
+**Inline actions, notes & delete:** clicking a node expands a compact **inline** row right below it (pushing the tree down; embedded via `Text.window_create`) with mini `copy` / `delete` buttons and a `note:` entry; clicking the same node again collapses it. The row is tracked per view as `_expanded_dir = (scheme, port, path)` plus `_expanded_note` (kept across re-renders), and an expanding an implied parent is allowed (delete is disabled there). Notes are stored per `(path, port, scheme)` in a `directory_notes` table (both DBs: `set_directory_note` / `load_directory_notes`; empty removes it) and rendered inline after the node name in `MUTED`. `delete_directory()` removes the discovered `directories` row (and its note). The buttons are icon `tk.Label`s using `icons.copy_icon()` / `icons.delete_icon()` (both 20px scaled, optional text fallback), so the copy icon (`src/icons/copy.png`) matches the delete cross (soft white disc + bright glyph). The old `close_menu()`/Toplevel popup was removed. Node tag clicks return `"break"` and a widget-level press/motion guard (installed once per `Text`) prevents Tk's class binding from starting an accidental text selection when a node is clicked/dragged (normal text selection on non-node text still works).
 
 ### Fuzzer URL protocol (`src/gui/dialogs/fuzz.py`)
 
@@ -442,7 +461,7 @@ User preferences (console font size, view zoom level) are persisted to `~/.local
 
 ## Session Persistence (`src/llm/session.py`)
 
-The LLM conversation context (and the rendered console output) is persisted to a **single file** `~/.local/share/elwand/session.json` (path via `session_file()` in `src/elwand_paths.py`), so it survives a restart.
+The LLM conversation context (and the rendered console output) is persisted to a **single file** inside the **active work session**: `<session dir>/session.json` (path via `session_file()` in `src/elwand_paths.py`), so each workspace keeps its own conversation across restarts and session switches.
 
 * `save(messages, mode=None, context_injected=False, total_api_tokens=0, console_segments=None, session_id=None, project_id=None)` — writes atomically (temp file + `os.replace`) under a `threading.Lock`.
 * `load()` — reads and returns the data dict, or `None` if missing/corrupt.
@@ -777,6 +796,7 @@ The **Process** view (`ProcessView`, nav name `process`) lists the tools Elwand 
   * `HashcatEngine`, `FuzzEngine`, `BruteForceEngine`, `Recorder` — wrap `_run` in `start()`.
 
   This covers console-, dialog- and agent-started engines automatically.
+* `FuzzEngine` also keeps a class-level set of running instances (`_active`) with `stop_all()` / `active_count()`. The `stop fuzzer` command (and `use fuzzer stop`) calls `FuzzEngine.stop_all()`, so agent-started fuzzers are stopped even though the App only holds one `_fuzz_engine` handle (`_fuzz_start` also assigns it for consistency).
 * Inline threads in `App` use `App._tracked_thread(name, detail, icon, target, *args)`, which registers, runs `target(*args)` in a daemon thread, and finishes it in a `finally`. Used for: TCP scan, UDP scan, WhatWeb, Port inspector, Banner grab, Host identify, Ping, Nslookup, DICMA and the System command.
 
 **The view** polls `process_registry.list_active()` every **1 s** (faster than Services, to catch short tasks), rendering columns icon · name · detail · `RUNNING` (green) + elapsed (`Ns` / `Nm Ss` / `Nh Mm`). Empty state: "No processes running.". Like other views it uses named fonts (`view_font`) and `icons.scaled(ICON_BASE)`. All entries currently use `service.png` (the `icon` field is reserved for future per-tool icons).
@@ -979,7 +999,7 @@ Tools are defined as a list of OpenAI function-calling schemas in the `TOOLS` va
 
 | Tool | Description |
 |---|---|
-| `webfetch` | Fetch a URL as markdown or raw (`url`, optional `format`, `method`, `body`, `content_type`, `headers`, `antibot`). Uses `curl_cffi` with Chrome impersonation to defeat TLS fingerprinting. Default GET; use POST only when submitting data with explicit content_type. Use headers for custom HTTP headers (Cookie, Authorization, etc.). Ignores self-signed TLS certificates. Markdown auto-strips navigation, footers, and cookie banners. Raw format returns HTTP status, all headers, and first 60 lines of untouched body (full body saved to cache). Auto-saves URL path to `directories` table if the host matches a known machine or domain. With `antibot=true`, it detects anti-bot challenges (Akamai, Cloudflare) and solves them in a real browser via CDP, falling back to a full browser render when cookie replay is rejected (cookie bound to TLS fingerprint). |
+| `webfetch` | Fetch a URL as markdown or raw (`url`, optional `format`, `method`, `body`, `content_type`, `headers`, `antibot`). Uses `curl_cffi` with Chrome impersonation to defeat TLS fingerprinting. Default GET; use POST only when submitting data with explicit content_type. Use headers for custom HTTP headers (Cookie, Authorization, etc.). Ignores self-signed TLS certificates. Markdown auto-strips navigation, footers, and cookie banners. Raw format returns HTTP status, all headers, and first 60 lines of untouched body (full body saved to cache). Auto-saves the URL path (with its port/scheme) to the `directories` table only when the host matches a known machine/domain **and** the HTTP status indicates the path exists (2xx/3xx, 401/403/405) — invented/404/5xx paths are not stored. With `antibot=true`, it detects anti-bot challenges (Akamai, Cloudflare) and solves them in a real browser via CDP, falling back to a full browser render when cookie replay is rejected (cookie bound to TLS fingerprint). |
 | `websearch` | Search the web via Exa MCP (primary) or DuckDuckGo Lite (fallback) and return results with title, URL, and snippet (`query`, optional `num_results`) |
 | `list_repo` | List files and directories in a public GitHub repository using the GitHub REST API (`owner`, `repo`, optional `path`). Returns file names, sizes, and raw download URLs. No authentication needed. |
 
@@ -998,7 +1018,7 @@ Tools are defined as a list of OpenAI function-calling schemas in the `TOOLS` va
 |---|---|
 | `hashcat_crack` | Crack a hash with hashcat (`hash_value` must be in inventory, `wordlist`) |
 | `bruteforce_start` | Start a brute force attack (`protocol`, `target`, optional `port`) |
-| `fuzz_start` | Start directory/vhost/DNS fuzzing (`method`, `target`, `wordlist`, optional `port`, `scheme`, `skip_codes`, `hide_size`, `workers`). Performs wildcard detection before scanning — aborts if catch-all found. Runs asynchronously — results are saved to the `directories` and `subdomains` tables. Use `check_fuzz_results` to retrieve them. |
+| `fuzz_start` | Start directory/vhost/DNS fuzzing (`method`, `target`, `wordlist`, optional `port`, `scheme`, `skip_codes`, `hide_size`, `workers`). Performs wildcard detection before scanning — aborts if catch-all found. Runs asynchronously — directory hits are saved (with port/scheme) to the resolved machine **and**, for domain targets, also to the domain (registered if needed); vhost/DNS hits go to `subdomains`. Use `check_fuzz_results` to retrieve them. |
 
 **Infrastructure tools** (10) — manage services, files, evidence, and shell sessions:
 
@@ -1107,7 +1127,7 @@ Reports are markdown documents (`.md`) that record findings. They are stored in 
 - `web_search()` uses Exa MCP (`mcp.exa.ai`) as primary, with DuckDuckGo Lite as fallback on failure.
 - Exa MCP is called via JSON-RPC 2.0 over HTTP (see `src/llm/mcp.py`), with Server-Sent Events (SSE) response parsing. No API key required — Exa's MCP endpoint has an unauthenticated free tier (same approach as opencode).
 - Both handlers are synchronous (blocking HTTP calls) — they run inside the agent's daemon thread.
-- `webfetch` automatically saves the URL path to the `directories` table when the host matches a known machine or domain in the inventory.
+- `webfetch` saves the URL path to the `directories` table only when the host matches a known machine/domain and `_http_indicates_exists(status)` is true (2xx/3xx, 401/403/405). 404/410 and 4xx/5xx with no existence signal are ignored, so invented directories are not stored.
 
 ### Anti-Bot Browser Solver (`src/llm/browser_solver.py`)
 

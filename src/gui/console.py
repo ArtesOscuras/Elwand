@@ -649,13 +649,17 @@ class Console(tk.Frame):
             for item, desc in items:
                 self.body(f"  {item:<12} {desc}")
 
-    def _cmd_clear(self, args):
+    def reset_display(self):
+        """Clear the output area and stored segments (no clear callback)."""
         self.output_area.config(state=tk.NORMAL)
         self.output_area.delete("1.0", tk.END)
         self._segments = []
         self._live_active = False
         self.reset_markdown_state()
         self.output_area.config(state=tk.DISABLED)
+
+    def _cmd_clear(self, args):
+        self.reset_display()
         if self._clear_cb:
             try:
                 self._clear_cb()

@@ -51,10 +51,10 @@ class _WordlistSection:
         browse_btn.pack(side=tk.LEFT)
 
     def _browse(self):
-        from src.elwand_paths import lst_dir
+        from src.elwand_paths import browse_lst_dir
         f = windowing.ask_open_file(
             self._parent, title="Select wordlist",
-            initialdir=str(lst_dir()),
+            initialdir=str(browse_lst_dir()),
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
         if f:
             self._path.set(f)
@@ -652,6 +652,7 @@ class FuzzDialog(tk.Toplevel):
             parsed = urlparse(full_url)
             host = parsed.hostname
             path = parsed.path or "/"
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
             if not host:
                 self._write_output(f"  [!] Cannot parse URL: {full_url}\n", "error")
                 continue
@@ -662,7 +663,7 @@ class FuzzDialog(tk.Toplevel):
                     machine = store.add_or_update(ip=host, method="manual")
                     machine.device_type = "device unknown"
                     machine_db.save_machine_info(machine)
-                machine_db.save_directory(machine.id, path)
+                machine_db.save_directory(machine.id, path, port, parsed.scheme)
                 self._write_output(f"  [+] {path} → machine #{machine.id} ({host})\n", "success")
             else:
                 if not domain_db.exists(host):
@@ -679,7 +680,7 @@ class FuzzDialog(tk.Toplevel):
                             machine_db.save_machine_info(machine)
                         domain_db.init_or_update(host, machine.id, machine.ip, "fuzz", parsed.scheme)
                         machine_db.save_domain(machine.id, host, "fuzz", parsed.scheme)
-                domain_db.save_directory(host, path)
+                domain_db.save_directory(host, path, port, parsed.scheme)
                 self._write_output(f"  [+] {path} → domain {host}\n", "success")
         self._write_output("[*] Done.\n", "info")
 

@@ -22,8 +22,8 @@ _TAR_NAMES = {
 
 
 def _path(name):
-    from src.elwand_paths import lst_dir
-    return lst_dir() / f"{name}.txt"
+    from src.elwand_paths import global_lst_dir
+    return global_lst_dir() / f"{name}.txt"
 
 
 def is_installed(name):

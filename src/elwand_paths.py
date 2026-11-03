@@ -10,14 +10,23 @@ _LEGACY_DATA_HOME_NAME = "hsf"
 _migrated = False
 _rt2800_synced = False
 
+# Active work-session directory (set by src.sessions.bootstrap()/set_active()).
+# When unset (e.g. standalone scripts) it falls back to the global home so the
+# app still works, though data then lives outside sessions/<id>/.
+_SESSION_DIR = None
+
+
 def fonts_dir() -> Path:
     return _PKG / "fonts"
+
 
 def icons_dir() -> Path:
     return _PKG / "icons"
 
+
 def hashcat_db() -> Path:
     return _PKG / "data" / "hashcat.dbs"
+
 
 def _compute_base_home() -> Path:
     sudo_user = os.environ.get("SUDO_USER")
@@ -55,6 +64,32 @@ def _get_data_home() -> Path:
     return new_home
 
 
+def global_home() -> Path:
+    """Root shared by every workspace session (settings, providers, assets)."""
+    p = _get_data_home()
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+# --- active work session ----------------------------------------------------
+
+def set_session_dir(path):
+    global _SESSION_DIR
+    _SESSION_DIR = Path(path) if path else None
+
+
+def active_session_dir() -> Path:
+    if _SESSION_DIR is not None:
+        return _SESSION_DIR
+    return _get_data_home()
+
+
+def _session_path(sub) -> Path:
+    p = active_session_dir() / sub
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
 def chown_to_real_user(path):
     if os.geteuid() != 0:
         return
@@ -67,82 +102,186 @@ def chown_to_real_user(path):
     except (OSError, PermissionError):
         pass
 
+
+# --- session-scoped operational data ---------------------------------------
+
 def databases_dir() -> Path:
-    p = _get_data_home() / "databases"
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+    return _session_path("databases")
 
 def credentials_dir() -> Path:
-    p = _get_data_home() / "credentials"
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+    return _session_path("credentials")
 
 def evidence_dir() -> Path:
-    p = _get_data_home() / "evidence"
+    return _session_path("evidence")
+
+def handshakes_dir() -> Path:
+    return _session_path("handshakes")
+
+def pocs_dir() -> Path:
+    return _session_path("pocs")
+
+def reports_dir() -> Path:
+    return _session_path("reports")
+
+def cache_dir() -> Path:
+    return _session_path("cache")
+
+def runtime_logs_dir() -> Path:
+    return _session_path("logs")
+
+def session_file() -> Path:
+    p = active_session_dir()
     p.mkdir(parents=True, exist_ok=True)
-    return p
+    return p / "session.json"
+
+
+# --- global (shared across sessions) ---------------------------------------
 
 def chrome_profile_dir() -> Path:
-    p = _get_data_home() / "chrome_profile"
+    p = global_home() / "chrome_profile"
     p.mkdir(parents=True, exist_ok=True)
     return p
 
 def antibot_profile_dir() -> Path:
-    p = _get_data_home() / "antibot_profile"
+    p = global_home() / "antibot_profile"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+def settings_file() -> Path:
+    return global_home() / "settings.json"
+
+def models_catalog_file() -> Path:
+    return global_home() / "models_catalog.json"
+
+
+# --- dictionaries / rules: stock (bundled) vs session (user-created) --------
+
+def stock_lst_dir() -> Path:
+    return _PKG / "lst"
+
+def stock_rules_dir() -> Path:
+    return _PKG / "rules"
+
+def global_lst_dir() -> Path:
+    p = global_home() / "lst"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+def global_rules_dir() -> Path:
+    p = global_home() / "rules"
     p.mkdir(parents=True, exist_ok=True)
     return p
 
 def lst_dir() -> Path:
-    p = _get_data_home() / "lst"
-    p.mkdir(parents=True, exist_ok=True)
-    if not any(p.iterdir()):
-        src = _PKG / "lst"
-        if src.is_dir():
-            for f in src.iterdir():
-                if f.is_file():
-                    _dst = p / f.name
-                    if not _dst.exists():
-                        _dst.write_bytes(f.read_bytes())
-    return p
+    """Writable per-session dictionary directory (user/DICMA output)."""
+    return _session_path("lst")
 
 def rules_dir() -> Path:
-    p = _get_data_home() / "rules"
-    p.mkdir(parents=True, exist_ok=True)
-    if not any(p.iterdir()):
-        src = _PKG / "rules"
-        if src.is_dir():
-            for f in src.iterdir():
+    """Writable per-session rules directory (user/DICMA output)."""
+    return _session_path("rules")
+
+
+def _resolve_in(name, session_dir, shared_dirs, stock_dir):
+    if not name:
+        return None
+    p = Path(name)
+    if p.is_absolute() and p.is_file():
+        return p
+    fname = os.path.basename(name)
+    if os.sep in name or (os.altsep and os.altsep in name):
+        return None
+    for d in (session_dir, *shared_dirs, stock_dir):
+        candidate = d / fname
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def resolve_lst(name):
+    """Return the file for a dictionary name: session, shared, then stock."""
+    return _resolve_in(name, lst_dir(), (global_lst_dir(),), stock_lst_dir())
+
+
+def resolve_rules(name):
+    """Return the file for a rules name: session, shared, then stock."""
+    return _resolve_in(name, rules_dir(), (global_rules_dir(),), stock_rules_dir())
+
+
+def _merge(stock_dir, shared_dirs, sess_dir):
+    items = {}
+    for d in (stock_dir, *shared_dirs):
+        try:
+            for f in d.iterdir():
                 if f.is_file():
-                    _dst = p / f.name
-                    if not _dst.exists():
-                        _dst.write_bytes(f.read_bytes())
-    return p
+                    items[f.name] = "stock"
+        except OSError:
+            pass
+    try:
+        for f in sess_dir.iterdir():
+            if f.is_file():
+                items[f.name] = "session"
+    except OSError:
+        pass
+    return dict(sorted(items.items(), key=lambda kv: kv[0].lower()))
 
-def pocs_dir() -> Path:
-    p = _get_data_home() / "pocs"
-    p.mkdir(parents=True, exist_ok=True)
-    return p
 
-def reports_dir() -> Path:
-    p = _get_data_home() / "reports"
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+def list_lst():
+    """Map name -> 'stock' | 'session' (session overrides shared/stock)."""
+    return _merge(stock_lst_dir(), (global_lst_dir(),), lst_dir())
 
-def cache_dir() -> Path:
-    p = _get_data_home() / "cache"
-    p.mkdir(parents=True, exist_ok=True)
-    return p
 
-def handshakes_dir() -> Path:
-    p = _get_data_home() / "handshakes"
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+def list_rules():
+    return _merge(stock_rules_dir(), (global_rules_dir(),), rules_dir())
+
+
+def browse_lst_dir() -> Path:
+    """Directory to start a file chooser in: session, shared, else stock."""
+    for d in (lst_dir(), global_lst_dir()):
+        try:
+            if any(f.is_file() for f in d.iterdir()):
+                return d
+        except OSError:
+            pass
+    return stock_lst_dir()
+
+
+def browse_rules_dir() -> Path:
+    for d in (rules_dir(), global_rules_dir()):
+        try:
+            if any(f.is_file() for f in d.iterdir()):
+                return d
+        except OSError:
+            pass
+    return stock_rules_dir()
+
+
+def delete_lst(name):
+    """Delete a session dictionary; stock files are never removed."""
+    p = lst_dir() / os.path.basename(name)
+    try:
+        if p.is_file():
+            p.unlink()
+            return True
+    except OSError:
+        pass
+    return False
+
+
+def delete_rule(name):
+    p = rules_dir() / os.path.basename(name)
+    try:
+        if p.is_file():
+            p.unlink()
+            return True
+    except OSError:
+        pass
+    return False
 
 
 def rt2800_dir() -> Path:
     """Runtime directory for the bundled RT2800 USB userspace driver."""
     global _rt2800_synced
-    p = _get_data_home() / "rt2800"
+    p = global_home() / "rt2800"
     p.mkdir(parents=True, exist_ok=True)
     if not _rt2800_synced:
         _rt2800_synced = True
@@ -177,20 +316,6 @@ def rt2800_firmware_dir() -> Path:
         return Path(override)
     return rt2800_dir()
 
-def models_catalog_file() -> Path:
-    return databases_dir() / "models_catalog.json"
-
-def settings_file() -> Path:
-    p = _get_data_home() / "settings.json"
-    return p
-
-def session_file() -> Path:
-    return _get_data_home() / "session.json"
 
 def logs_dir() -> Path:
     return _PKG / "logs"
-
-def runtime_logs_dir() -> Path:
-    p = _get_data_home() / "logs"
-    p.mkdir(parents=True, exist_ok=True)
-    return p

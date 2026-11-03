@@ -9,8 +9,7 @@ _LOCK = threading.Lock()
 
 def _ensure_db():
     global _DB_PATH
-    if _DB_PATH is None:
-        _DB_PATH = os.path.join(str(_databases_dir()), "fuzz_results.dbs")
+    _DB_PATH = os.path.join(str(_databases_dir()), "fuzz_results.dbs")
     return _DB_PATH
 
 

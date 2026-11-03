@@ -2,6 +2,7 @@ from src.gui import fonts, windowing, theme
 import tkinter as tk
 from .base import BaseView
 from .dirtree import base_url, insert_clickable_tree
+from src.dirutil import group_directories, port_label, note_key
 from src.machines import store
 from src.machines import machine_db
 
@@ -17,6 +18,8 @@ class MachineDetailView(BaseView):
 
     def __init__(self, parent, machine, **kwargs):
         self._machine = machine
+        self._expanded_dir = None
+        self._expanded_note = ""
         super().__init__(parent, **kwargs)
 
     def _build_ui(self):
@@ -98,11 +101,13 @@ class MachineDetailView(BaseView):
         domains = machine_db.load_domains(self._machine.id)
         banners = machine_db.load_banners(self._machine.id)
         directories = machine_db.load_directories(self._machine.id)
+        notes = machine_db.load_directory_notes(self._machine.id)
         current_hash = hash((
             self._machine.device_type, self._machine.model, self._machine.os,
             self._machine.domain, self._machine.hostname, self._machine.mac,
             tuple(ports), tuple(udp_ports), tuple((p, o) for p, o in web),
             tuple(domains), tuple(banners), tuple(directories),
+            tuple(sorted(notes.items())),
         ))
         if current_hash == self._last_hash and self.text.index("end-1c") != "1.0":
             return
@@ -204,14 +209,33 @@ class MachineDetailView(BaseView):
 
         directories = machine_db.load_directories(m.id)
         if directories:
-            self.text.insert(tk.END, f"\nDirectories ({len(directories)}):\n", "info")
             host = m.ip or m.hostname or ""
-            protocols = {p for _, _, p in domains if p}
-            preferred = protocols.pop() if len(protocols) == 1 else None
-            insert_clickable_tree(
-                self.text, [p for p, _ in directories],
-                base_url(host, [p for p, _ in web], preferred=preferred),
-                self._copy_to_clipboard)
+            web_ports = [p for p, _ in web]
+            groups = group_directories(directories)
+            for scheme, port, paths in groups:
+                self.text.insert(tk.END, f"\n{port_label(scheme, port)}:\n", "info")
+                base = (base_url(host, [port], preferred=scheme or None)
+                        if port else
+                        base_url(host, web_ports, preferred=scheme or None))
+                expanded = (self._expanded_dir[2]
+                            if self._expanded_dir
+                            and self._expanded_dir[:2] == (scheme, port)
+                            else None)
+                insert_clickable_tree(
+                    self.text, paths, base, self._copy_to_clipboard,
+                    note_map=notes,
+                    note_key_fn=lambda p, s=scheme, pt=port: note_key(p, pt, s),
+                    stored_paths=set(paths),
+                    expanded_path=expanded,
+                    expanded_note=self._expanded_note,
+                    on_expand=lambda p, s=scheme, pt=port, mid=m.id:
+                        self._expand_dir(mid, p, s, pt),
+                    on_collapse=lambda mid=m.id: self._collapse_dir(mid),
+                    on_note=lambda p, n, s=scheme, pt=port, mid=m.id:
+                        self._note_dir(mid, p, s, pt, n),
+                    on_note_change=lambda n: setattr(self, "_expanded_note", n),
+                    on_delete=lambda p, s=scheme, pt=port, mid=m.id:
+                        self._delete_dir(mid, p, s, pt))
 
         last_line = self.text.index("end-1c")
         total = int(last_line.split(".")[0]) if last_line else 1
@@ -225,6 +249,45 @@ class MachineDetailView(BaseView):
             self.clipboard_append(url)
         except tk.TclError:
             pass
+
+    def _force_refresh(self):
+        if self._poll_id:
+            try:
+                self.after_cancel(self._poll_id)
+            except Exception:
+                pass
+            self._poll_id = None
+        self._last_hash = None
+        self._poll()
+
+    def _expand_dir(self, machine_id, path, scheme, port):
+        if self._expanded_dir and self._expanded_dir[2] != path:
+            s0, p0, old_path = self._expanded_dir
+            machine_db.set_directory_note(machine_id, old_path, p0, s0,
+                                          self._expanded_note or "")
+        self._expanded_dir = (scheme, port, path)
+        self._expanded_note = machine_db.load_directory_notes(machine_id).get(
+            note_key(path, port, scheme), "")
+        self._force_refresh()
+
+    def _collapse_dir(self, machine_id):
+        if self._expanded_dir:
+            s, p, path = self._expanded_dir
+            machine_db.set_directory_note(machine_id, path, p, s,
+                                          self._expanded_note or "")
+        self._expanded_dir = None
+        self._expanded_note = ""
+        self._force_refresh()
+
+    def _note_dir(self, machine_id, path, scheme, port, note):
+        machine_db.set_directory_note(machine_id, path, port, scheme, note)
+        self._expanded_note = note
+
+    def _delete_dir(self, machine_id, path, scheme, port):
+        machine_db.delete_directory(machine_id, path, port, scheme)
+        self._expanded_dir = None
+        self._expanded_note = ""
+        self._force_refresh()
 
     def _show_banner(self, port):
         banners = machine_db.load_banners(self._machine.id)
