@@ -624,6 +624,8 @@ class App(tk.Tk):
         self._llm_running = False
         self._agent_stop_event = None
         self._llm_messages = []
+        self._poc_reads = {}
+        self._report_reads = {}
         self._llm_request_id = None
         self._llm_session_id = None
         self._llm_project_id = None
@@ -4857,6 +4859,8 @@ class App(tk.Tk):
 
     def _clear_session(self):
         from src.llm import session
+        self._poc_reads.clear()
+        self._report_reads.clear()
         try:
             session.clear()
         except Exception as e:
@@ -6577,11 +6581,13 @@ class App(tk.Tk):
                 if _os.path.isfile(fp):
                     _os.remove(fp)
                     count += 1
+            self._poc_reads.clear()
             self.console.success(f"{count} POC files deleted")
             return
         path = _os.path.join(d, target)
         if _os.path.isfile(path):
             _os.remove(path)
+            self._poc_reads.pop(_os.path.realpath(path), None)
             self.console.success(f"POC '{target}' deleted")
         else:
             self.console.warning(f"POC not found: {target}")
@@ -6601,11 +6607,13 @@ class App(tk.Tk):
                 if _os.path.isfile(fp):
                     _os.remove(fp)
                     count += 1
+            self._report_reads.clear()
             self.console.success(f"{count} report files deleted")
             return
         path = _os.path.join(d, target)
         if _os.path.isfile(path):
             _os.remove(path)
+            self._report_reads.pop(_os.path.realpath(path), None)
             self.console.success(f"Report '{target}' deleted")
         else:
             self.console.warning(f"Report not found: {target}")
@@ -6745,6 +6753,7 @@ class App(tk.Tk):
                     if os.path.isfile(fp):
                         os.remove(fp)
 
+        self._poc_reads.clear()
         from src.tools.scanner import wifi_monitor
         wifi_monitor.clear()
 
@@ -6953,6 +6962,8 @@ class App(tk.Tk):
             return False
 
         self._llm_messages = []
+        self._poc_reads.clear()
+        self._report_reads.clear()
         self._total_api_tokens = 0
         self._context_injected = False
         self._llm_request_id = None

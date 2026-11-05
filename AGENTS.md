@@ -926,7 +926,7 @@ The provider editor lives in `src/gui/dialogs/settings.py` as the module-level `
 
 ### Agent Tool-Calling (`src/llm/client.py` → `chat_with_tools()`)
 
-The agent mode gives the LLM the ability to call **62 tool schemas** (60 functional tools plus the 2 decorative placeholders `bash` and `read`, see below) that read and modify application state and trigger network operations. It is activated by cycling into agent mode with **Tab** (see "Console integration").
+The agent mode gives the LLM the ability to call **65 tool schemas** (63 functional tools plus the 2 decorative placeholders `bash` and `read`, see below) that read and modify application state and trigger network operations. It is activated by cycling into agent mode with **Tab** (see "Console integration").
 
 **Tool-calling loop** (fully streaming):
 
@@ -958,7 +958,7 @@ Tools are defined as a list of OpenAI function-calling schemas in the `TOOLS` va
 
 **Decorative placeholder tools (first two entries):** `bash` and `read` are **purely decorative** — they exist only so the declared tool list sent to the API mimics the opencode client (which lists `bash`/`read` first). They are **not functional and are not meant to be implemented in the future**; do not turn them into real tools. Their `description` states they are non-functional, their registered handlers (`_bash` / `_read`) always return a "not functional" message, and the tools section of the system prompt warns the model never to call them. They are declared in `TOOLS` for **both** agent and consultor requests (all schemas are always sent), but they are intentionally **not** in `CONSULTOR_TOOLS`.
 
-**60 functional tools** in eight categories:
+**63 functional tools** in eight categories:
 
 **Data tools** (24) — query and manipulate inventory, no `tool_context` needed:
 
@@ -1051,21 +1051,24 @@ Tools are defined as a list of OpenAI function-calling schemas in the `TOOLS` va
 | `shell_interrupt` | Interrupt a running shell command (sends Ctrl+C) |
 | `connect` | Connect to a remote machine via SSH, SFTP, FTP, or WinRM using stored credentials (protocol arg) |
 
-**POC tools** (4) — create, read, edit, and execute proof-of-concept scripts in the `pocs/` directory, no `tool_context` needed:
+**POC tools** (5) — create, read, edit, rename, and execute proof-of-concept scripts in the `pocs/` directory, no `tool_context` needed:
 
 | Tool | Description |
 |---|---|
-| `poc_write` | Create or overwrite a `.py` file in the `pocs/` directory (`filename`, `content`). Rejects filenames without `.py` extension. Path-traversal protected via `_resolve_poc_path()`. |
-| `poc_read` | Read a POC file from the `pocs/` directory (`filename`, optional `offset`/`limit`). Returns content with line count header. Maximum 50,000 chars per read. |
-| `poc_edit` | Edit a POC file by exact string replacement (`filename`, `old_string`, `new_string`, optional `replace_all`, optional `new_filename` to rename the file). If `old_string` is not found, returns an error with instructions. If multiple matches found without `replace_all=true`, returns the count and asks for more context. Path-traversal protected. |
+| `poc_write` | Create or overwrite a `.py` file in `pocs/` (`filename`, `content`, content may be empty). Existing files MUST be read with `poc_read` first. Rejects non-`.py` names; path-traversal protected. Returns `Wrote file successfully.` plus Python syntax diagnostics. |
+| `poc_read` | Read a POC (`filename`, optional `offset`/`limit`, default 2000 lines). Lines are prefixed `N: `; lines >2000 chars are truncated; the byte budget stops the read and the footer tells the model to continue with `poc_read(offset=...)`. Marks the file as read. |
+| `poc_edit` | Edit a POC by exact replacement (`filename`, `old_string`, `new_string`, optional `replace_all`). Existing files MUST be read with `poc_read` first. `old_string=''` creates the file if missing or overwrites it if present. Normalizes CRLF and preserves the file's line ending. Returns `Edit applied successfully.` plus syntax diagnostics. Use `poc_rename` to rename. |
+| `poc_rename` | Rename a POC (`filename`, `new_filename`); both must end in `.py` and the target must not exist. |
 | `poc_exec` | Execute a POC Python script (`filename`) and return its output. Output truncated to last 5000 chars if too large. Respects the "Agent can execute POCs" safety setting. |
 
-**Report tools** (2) — create and read markdown reports in the `reports/` directory, no `tool_context` needed:
+Read tracking: `poc_read` records the resolved POC path and its `mtime_ns` in the App's `_poc_reads` (cleared on `reset`/session switch/delete); `poc_write`/`poc_edit` require a matching read for existing files (a changed mtime asks for a re-read) and mark the file after writing; `poc_rename` carries the mark to the new path when the source was read. A module-level dict is the fallback when `tool_context` is `None`.
+
+**Report tools** (4) — create, read, edit, and rename markdown reports in the `reports/` directory, no `tool_context` needed:
 
 | Tool | Description |
 |---|---|
-| `report_write` | Create or overwrite a `.md` report in the `reports/` directory (`filename`, `content`). Rejects filenames without `.md` extension. Path-traversal protected via `_resolve_report_path()`. Rules in the system prompt: only generate a report when requested by the user; markdown usage recommended. |
-| `report_read` | Read a report with `offset`/`limit` (default 150 lines) or `regex` search (`context_before`/`context_after`, same semantics as `read_cache`). Output capped at 5,000 chars. Read-only, so included in `CONSULTOR_TOOLS`. |
+| `report_write` | Create or overwrite a `.md` report (`filename`, `content`, content may be empty). Existing files MUST be read with `report_read` first. Rejects non-`.md` names; path-traversal protected. Returns `Wrote file successfully.` |
+| `report_read` | Read a report (`filename`, optional `offset`/`limit`, default 2000 lines) with numbered lines `N: `, per-line truncation and a 50k/2000-line budget + footer using `report_read(offset=...)`. Supports `regex` search with context (matches marked `[match]`). Marks the file as read; read-only, so included in `CONSULTOR_TOOLS`. |
 
 **POC system overview:**
 
@@ -1109,7 +1112,7 @@ POCs (Proof of Concept) are Python scripts generated by the LLM agent to demonst
 
 ### Reports System
 
-Reports are markdown documents (`.md`) that record findings. They are stored in the `reports/` directory under `~/.local/share/elwand/reports/` (created lazily, no package seeding). They can be created/edited manually through the GUI, or generated by the agent via the `report_write`/`report_read` tools.
+Reports are markdown documents (`.md`) that record findings. They are stored in the `reports/` directory under `~/.local/share/elwand/reports/` (created lazily, no package seeding). They can be created/edited manually through the GUI, or generated by the agent via the `report_write`/`report_read`/`report_edit`/`report_rename` tools.
 
 **Directory and path resolution:**
 - `src/elwand_paths.py` — `reports_dir()` returns `Path` to `~/.local/share/elwand/reports/`, created lazily.
@@ -1125,13 +1128,15 @@ Reports are markdown documents (`.md`) that record findings. They are stored in 
 **Console commands:**
 - `view report` — shows the `ReportsView` listing
 - `view report <filename>` — opens the report in `ReportView`
-- `delete report <filename|all>` — deletes report files
-- `delete all` preserves the `reports/` directory (reports are user findings, not transient operational data).
+- `delete report <filename|all>` — deletes report files and clears their read marks
+- `delete all` preserves the `reports/` directory (reports are user findings, not transient operational data), so the report read marks are kept too.
 
 **Agent tools:**
-- `report_write` — create/overwrite a `.md` report in `reports/` (`filename`, `content`). Path-traversal protected via `_resolve_report_path()`. Rules in the system prompt: only generate a report when requested by the user; markdown usage recommended.
-- `report_read` — read a report with `offset`/`limit` (default 150 lines) or `regex` search (`context_before`/`context_after`, same semantics as `read_cache`). Output capped at 5,000 chars. It is read-only, so it is included in `CONSULTOR_TOOLS` (like `poc_read`).
-- Reports are listed in `check_inventory` and `check_status` alongside POCs.
+- `report_write` — create/overwrite a `.md` report (`filename`, `content`, content may be empty). Existing files MUST be read with `report_read` first. Path-traversal protected; returns `Wrote file successfully.` Rules in the system prompt: only generate a report when requested by the user; markdown usage recommended.
+- `report_read` — read a report (`offset`/`limit` default 2000 lines) with numbered lines, per-line truncation, 50k/2000-line budget and footer using `report_read(offset=...)`; regex search with context (matches marked `[match]`); marks the file as read. Read-only, so included in `CONSULTOR_TOOLS`.
+- `report_edit` — exact replacement (`filename`, `old_string`, `new_string`, `replace_all`); existing reports MUST be read first; `old_string=''` creates or overwrites; CRLF normalized and the file's ending preserved; returns `Edit applied successfully.`
+- `report_rename` — rename a report (`filename`, `new_filename`); both `.md`; target must not exist.
+Read tracking: `report_read` records the resolved path and its `mtime_ns` in `App._report_reads` (cleared on `reset`, session switch and `delete report`; kept by `delete all` because reports are preserved). `report_write`/`report_edit` require a matching read for existing files (a changed mtime asks for a re-read) and mark the file after writing; `report_rename` transfers the mark when the source was read. Manual `ReportDialog` edits change the mtime, so the agent must re-read before writing/editing. Reports are listed in `check_inventory` and `check_status` alongside POCs.
 
 **Implementation details for POC tools** (`src/llm/tools.py`):
 
@@ -1222,6 +1227,8 @@ The summarizer receives the current cache file listing (with associated URLs whe
 | Tool | Byte Limit | Line Limit | Rationale |
 |------|:---:|:---:|---|
 | poc_exec | 1,000 | default (2,000) | POC output is often repetitive; full file available in `pocs/` |
+| poc_read | 64,000 | 2,200 | The handler caps reads at 50,000 bytes/2,000 lines and tells the model to continue with `poc_read(offset=...)`; the per-tool limit keeps that path out of the generic cache. |
+| report_read | 64,000 | 2,200 | Same as `poc_read`; the handler caps at 50,000 bytes/2,000 lines and points to `report_read(offset=...)`. |
 | port_inspector | 2,000 | default | Service probes return verbose protocol banners |
 | websearch | 8,000 | default | ~20 results at ~300 bytes each; larger searches cache automatically |
 | check_machine | 3,000 | default | Machine info with banners; full data via `check_machine` again |
@@ -1398,7 +1405,7 @@ This mechanism is **shared** between agent and consultor modes via the shared `s
 | Entry | Tab mode cycle | Tab mode cycle |
 | Purpose | `"agent"` | `"consultor"` |
 | System prompt | Shared `system` prompt + `[MODE: AGENT]` message | Shared `system` prompt + `[MODE: CONSULTOR]` message (lists read-only tools) |
-| Tool calling | **Yes** — `chat_with_tools()` (all 62 tool schemas) | **Yes** — `chat_with_tools(allowed_tools=CONSULTOR_TOOLS)` (23 read-only tools; the rest, including the 2 decorative placeholders, are sent but denied) |
+| Tool calling | **Yes** — `chat_with_tools()` (all 65 tool schemas) | **Yes** — `chat_with_tools(allowed_tools=CONSULTOR_TOOLS)` (23 read-only tools; the rest, including the 2 decorative placeholders, are sent but denied) |
 | Prompt color | Blue (`#5ba3ec`) | Yellow (`#e6b422`) |
 | Context injection | Yes | Yes |
 | Shared history | Yes (`self._llm_messages`) | Yes (`self._llm_messages`) |
