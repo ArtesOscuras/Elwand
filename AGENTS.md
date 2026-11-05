@@ -1414,6 +1414,21 @@ This mechanism is **shared** between agent and consultor modes via the shared `s
 | Commands | `exit`, `stop`, `reset`, `compact`, `clear`, `menu`, `debug` | `exit`, `stop`, `reset`, `compact`, `clear`, `menu`, `debug` |
 | Tab mode cycle | Cycles without interrupting agent | Cycles without interrupting consultor |
 
+### Console Tool Logging
+
+Every model tool call (agent and consultor) is logged by `App._make_tool_logger()` as **one line**:
+
+```
+[*]   [tool] <tool> <args> → <display summary> (~N tokens)
+```
+
+- `_tool_display()` produces the summary: a few tools get a dedicated one (`webfetch`, `websearch`, `read_cache`, `poc_*`, `report_*`, `port_inspector`); `check_*`/`list_repo` use their first line; the default collapses the whole result with `" ".join(str(result).split())`, truncated to 117 chars. **Never emit multi-line tool summaries.**
+- `~N tokens` is the existing estimate `len(result) // 4` (the result is already bounded by `_bound_tool_output`).
+- `Console.tool(name, args, result, display, tokens)` writes the line at column 0 (no leading indent) and tags only the **tool name** (not the `*`). The name underlines on hover and is clickable on the disabled `Text`; clicking toggles **inline details immediately below the line, in the same console** (no separate window): `Parameters:` with the full JSON args and `Output:` with the result (capped at 50k chars, `... (truncated)` marker). Clicking the name again removes the details.
+- Details are inserted dynamically at the line end; the position is recomputed from the tool-name tag each time, so expanding an earlier line does not shift later tool lines' anchors.
+- The line is stored in `Console._segments` as `(line, {"__tool__": details})` (`details = {name, args, result, display, tokens, expanded}` — JSON-serializable). `restore_segments()` re-inserts it with `_insert_tool_line(..., record=False)`, and re-expands it when `expanded` is true, so the click state survives restarts and `session.json` persistence.
+- Tool lines persisted before this format (plain string colors) have no `__tool__` metadata and are not clickable; on restore, legacy `[*]   [tool] …` segments are collapsed to the same one-line form. Only new calls carry details.
+
 **Rules for agent development:**
 
 - All tool handlers must be in `src/llm/tools.py`. Do not scatter tool logic across the codebase.

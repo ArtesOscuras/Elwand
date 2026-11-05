@@ -5077,34 +5077,36 @@ class App(tk.Tk):
         return _emit, _flush
 
     def _make_tool_logger(self, stop):
+        def _one(value):
+            return " ".join(str(value or "").split())
+
         def _tool_display(name, result):
-            if name in ("check_machine", "check_status", "check_inventory", "check_domain", "list_repo"):
-                return result.split("\n")[0] + "..."
+            if name in ("check_machine", "check_status", "check_inventory",
+                        "check_domain", "list_repo"):
+                return _one(result.split("\n", 1)[0]) + "..."
             if name == "webfetch":
                 return f"fetched {len(result)} chars"
             if name == "websearch":
                 return f"searched ({len(result)} chars)"
             if name == "read_cache":
                 return f"read {len(result.split(chr(10)))} lines"
-            if name in ("poc_exec", "poc_read", "poc_write", "poc_edit"):
+            if name in ("poc_exec", "poc_read", "poc_write", "poc_edit",
+                        "poc_rename"):
                 return f"poc {len(result)} chars"
-            if name in ("report_read", "report_write"):
+            if name in ("report_read", "report_write", "report_edit",
+                        "report_rename"):
                 return f"report {len(result)} chars"
             if name == "port_inspector":
                 return "inventoried"
-            if len(result) > 120:
-                return result[:117] + "..."
-            return result
+            text = _one(result)
+            return text[:117] + "..." if len(text) > 117 else text
 
         def _on_tool(name, args, result):
             if stop is not None and stop.is_set():
                 return
             display = _tool_display(name, result)
-            try:
-                self.console.after(0, lambda d=display: self.console.info(
-                    f"  [tool] {name} {str(args)[:60]} → {d} (~{len(result)//4} tokens)"))
-            except RuntimeError:
-                pass
+            tokens = len(result) // 4
+            self._safe_after(self.console.tool, name, args, result, display, tokens)
 
         return _on_tool
 

@@ -1,5 +1,7 @@
 from src.gui import fonts
 from src.gui.markdown import MarkdownRenderer
+import json
+import textwrap
 import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import scrolledtext
@@ -122,6 +124,8 @@ class Console(tk.Frame):
         self._arg7_index = -1
 
         self._segments = []
+        self._tool_seq = 0
+        self._tool_entries = {}
         self._live_active = False
 
         self.grid_propagate(False)
@@ -485,30 +489,175 @@ class Console(tk.Frame):
     def get_segments(self):
         return list(self._segments)
 
+    @staticmethod
+    def _normalize_legacy_tool_line(text):
+        if not isinstance(text, str) or not text.startswith("[*]   [tool] "):
+            return None
+        body = " ".join(text.split())
+        return f"[*]   [tool] {body[len('[*] [tool] '):]}\n"
+
     def restore_segments(self, segments):
         self.output_area.config(state=tk.NORMAL)
         self.output_area.delete("1.0", tk.END)
         self._live_active = False
+        self._tool_entries = {}
         self.reset_markdown_state()
+        restored = []
         for text, color in segments:
-            if color == "__md__":
+            if isinstance(color, dict) and "__tool__" in color:
+                self._insert_tool_line(text, color["__tool__"], record=False)
+            elif color == "__md__":
                 if self._markdown_enabled():
                     self._insert_markdown(text)
                 else:
                     self.output_area.insert(tk.END, text, "md_plain")
             elif color:
+                legacy = self._normalize_legacy_tool_line(text)
+                if legacy is not None:
+                    text = legacy
                 tag = f"color_{id(color)}"
                 self.output_area.tag_configure(tag, foreground=color)
                 self.output_area.insert(tk.END, text, tag)
             else:
                 self.output_area.insert(tk.END, text)
+            restored.append((text, color))
         self.flush_markdown()
-        self._segments = list(segments)
+        self._segments = restored
         self.output_area.see(tk.END)
         self.output_area.config(state=tk.DISABLED)
 
     def role_mark(self, text, color):
         self._write_segments([("\u25a3 ", color), (text, "__md__")])
+
+    def tool(self, name, args, result, display=None, tokens=None):
+        """Log one model tool call as a single clickable line."""
+        if not self.winfo_exists():
+            return
+        try:
+            arg_summary = json.dumps(args, ensure_ascii=False)
+        except Exception:
+            arg_summary = str(args)
+        arg_summary = " ".join(arg_summary.split())[:60]
+        disp = " ".join(str(display or "").split())
+        if len(disp) > 117:
+            disp = disp[:117] + "..."
+        if tokens is None:
+            tokens = len(result or "") // 4
+        if not isinstance(result, str):
+            result = str(result)
+        stored = result
+        if len(stored) > 50_000:
+            stored = stored[:50_000] + "\n... (truncated)"
+        line = (f"[*]   [tool] {name} {arg_summary} \u2192 {disp} "
+                f"(~{tokens} tokens)\n")
+        details = {
+            "name": name,
+            "args": args,
+            "result": stored,
+            "display": disp,
+            "tokens": tokens,
+            "expanded": False,
+        }
+        self._insert_tool_line(line, details, record=True)
+
+    def _insert_tool_line(self, line, details, record):
+        self.output_area.config(state=tk.NORMAL)
+        is_at_bottom = self.output_area.yview()[1] >= 1.0
+        color_tag = f"color_{id(INFO_COLOR)}"
+        self.output_area.tag_configure(color_tag, foreground=INFO_COLOR)
+        try:
+            content = self.output_area.get("1.0", "end-1c")
+            if content and not content.endswith("\n"):
+                self.output_area.insert(tk.END, "\n")
+        except tk.TclError:
+            pass
+        start = self.output_area.index("end-1c")
+        self.output_area.insert(tk.END, line, color_tag)
+
+        name = details.get("name", "")
+        self._tool_seq += 1
+        tag = f"toolcall_{self._tool_seq}"
+        prefix = len("[*]   [tool] ")
+        lo = f"{start}+{prefix}c"
+        hi = f"{start}+{prefix + len(name)}c"
+        self.output_area.tag_add(tag, lo, hi)
+        self.output_area.tag_bind(
+            tag, "<Button-1>",
+            lambda e, t=tag: self._toggle_tool_details(t))
+        self.output_area.tag_bind(
+            tag, "<Enter>",
+            lambda e, t=tag: self.output_area.tag_configure(t, underline=True))
+        self.output_area.tag_bind(
+            tag, "<Leave>",
+            lambda e, t=tag: self.output_area.tag_configure(t, underline=False))
+        self._tool_entries[tag] = {
+            "details": details,
+            "detail_tag": f"tooldetails_{self._tool_seq}",
+            "expanded": False,
+        }
+
+        if is_at_bottom:
+            self.output_area.see(tk.END)
+        self.output_area.config(state=tk.DISABLED)
+        if record:
+            self._segments.append((line, {"__tool__": details}))
+        if details.get("expanded"):
+            self._expand_tool_details(tag)
+
+    def _toggle_tool_details(self, tag):
+        entry = self._tool_entries.get(tag)
+        if not entry:
+            return
+        if entry["expanded"]:
+            self._remove_tool_details(tag)
+        else:
+            self._expand_tool_details(tag)
+
+    @staticmethod
+    def _format_tool_details(details):
+        try:
+            params = json.dumps(details.get("args", {}), indent=2,
+                                ensure_ascii=False, default=str)
+        except Exception:
+            params = str(details.get("args", {}))
+        output = details.get("result") or ""
+        if len(output) > 50_000:
+            output = output[:50_000] + "\n... (truncated)"
+        params = textwrap.indent(params, "    ")
+        output = output.rstrip("\n")
+        output = textwrap.indent(output, "    ") if output else "    (no output)"
+        return f"    Parameters:\n{params}\n    Output:\n{output}\n"
+
+    def _expand_tool_details(self, tag):
+        entry = self._tool_entries.get(tag)
+        if not entry or entry["expanded"]:
+            return
+        detail_tag = entry["detail_tag"]
+        self.output_area.config(state=tk.NORMAL)
+        self.output_area.tag_configure(detail_tag, foreground=FG_DIM)
+        line_end = self.output_area.index(f"{tag}.first lineend")
+        at = self.output_area.index(f"{line_end}+1c")
+        self.output_area.insert(at, self._format_tool_details(entry["details"]),
+                                detail_tag)
+        entry["expanded"] = True
+        entry["details"]["expanded"] = True
+        self.output_area.see(self.output_area.index(f"{detail_tag}.last"))
+        self.output_area.config(state=tk.DISABLED)
+
+    def _remove_tool_details(self, tag):
+        entry = self._tool_entries.get(tag)
+        if not entry or not entry["expanded"]:
+            return
+        detail_tag = entry["detail_tag"]
+        self.output_area.config(state=tk.NORMAL)
+        try:
+            self.output_area.delete(f"{detail_tag}.first",
+                                    f"{detail_tag}.last")
+        except tk.TclError:
+            pass
+        entry["expanded"] = False
+        entry["details"]["expanded"] = False
+        self.output_area.config(state=tk.DISABLED)
 
     def warning(self, text):
         self.writeln(f"[!] {text}", WARN_COLOR)
@@ -665,6 +814,7 @@ class Console(tk.Frame):
         self.output_area.config(state=tk.NORMAL)
         self.output_area.delete("1.0", tk.END)
         self._segments = []
+        self._tool_entries = {}
         self._live_active = False
         self.reset_markdown_state()
         self.output_area.config(state=tk.DISABLED)
