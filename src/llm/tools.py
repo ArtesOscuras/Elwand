@@ -2124,6 +2124,13 @@ def _do_tcp_scan(ip, ctx):
     from src.gui.app import _do_tcp_scan_common, _TCP_SCAN_PORTS
     from src.machines import store, machine_db
     import threading
+    target = ip
+    resolver = getattr(ctx, "_resolve_scan_target", None)
+    if resolver:
+        ip = resolver(ip)
+        if not ip:
+            return f"Could not resolve scan target: {target}"
+    label = f"{target} ({ip})" if str(target) != str(ip) else ip
     open_ports = _do_tcp_scan_common(ip)
     machine = store.get(ip)
     if machine and open_ports:
@@ -2132,15 +2139,22 @@ def _do_tcp_scan(ip, ctx):
     ctx._tcpscan_running = True
     threading.Thread(target=ctx._run_tcpscan, args=(ip, "connect", True), daemon=True).start()
     if not open_ports:
-        return f"No common TCP ports open on {ip} (scanned {len(_TCP_SCAN_PORTS)} ports). Full scan running in background."
+        return f"No common TCP ports open on {label} (scanned {len(_TCP_SCAN_PORTS)} ports). Full scan running in background."
     ports_str = ', '.join(str(p) for p in open_ports)
-    return f"TCP ports open on {ip}: {ports_str}\nFull scan of remaining 65535 ports running in background."
+    return f"TCP ports open on {label}: {ports_str}\nFull scan of remaining 65535 ports running in background."
 
 
 def _do_udp_scan(ip, ctx):
     from src.gui.app import _do_udp_scan_common, _UDP_SCAN_PORTS
     from src.machines import store, machine_db
     import threading
+    target = ip
+    resolver = getattr(ctx, "_resolve_scan_target", None)
+    if resolver:
+        ip = resolver(ip)
+        if not ip:
+            return f"Could not resolve scan target: {target}"
+    label = f"{target} ({ip})" if str(target) != str(ip) else ip
     open_ports = _do_udp_scan_common(ip)
     machine = store.get(ip)
     if machine and open_ports:
@@ -2149,9 +2163,9 @@ def _do_udp_scan(ip, ctx):
     ctx._udpscan_running = True
     threading.Thread(target=ctx._run_udpscan, args=(ip, True), daemon=True).start()
     if not open_ports:
-        return f"No common UDP ports open on {ip} (scanned {len(_UDP_SCAN_PORTS)} ports). Full scan running in background."
+        return f"No common UDP ports open on {label} (scanned {len(_UDP_SCAN_PORTS)} ports). Full scan running in background."
     ports_str = ', '.join(str(p) for p in open_ports)
-    return f"UDP ports open on {ip}: {ports_str}\nFull scan of remaining 65535 ports running in background."
+    return f"UDP ports open on {label}: {ports_str}\nFull scan of remaining 65535 ports running in background."
 
 
 @register("ping")

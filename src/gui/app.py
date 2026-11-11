@@ -1892,34 +1892,66 @@ class App(tk.Tk):
                 return target, None
         return None, None
 
+    def _resolve_scan_target(self, target):
+        """Resolve a scan target to an IPv4 and ensure its machine exists.
+
+        Thread-safe (no Tk calls): used by the scan workers and agent tools.
+        Accepts an IPv4, a machine id, or a hostname/domain. A known domain
+        prefers its linked machine over DNS; otherwise DNS is used and the
+        machine is created/linked.
+        """
+        target = str(target or "").strip()
+        if not target:
+            return None
+        ipv4 = r"^\d+\.\d+\.\d+\.\d+$"
+        if re.match(ipv4, target):
+            ip = target
+        elif re.match(r"^\d+$", target):
+            machine = None
+            mid = int(target)
+            for m in store.get_all():
+                if m.id == mid:
+                    machine = m
+                    break
+            if not machine:
+                return None
+            ip = machine.ip
+        else:
+            ip = ""
+            if domain_db.exists(target):
+                for row in domain_db.load_domain_machines(target):
+                    mip = row.get("machine_ip") if isinstance(row, dict) else ""
+                    if mip and re.match(ipv4, str(mip)):
+                        ip = str(mip)
+                        break
+            if not ip:
+                try:
+                    info = socket.getaddrinfo(
+                        target, None, socket.AF_INET, socket.SOCK_STREAM)
+                    if info:
+                        ip = info[0][4][0]
+                except Exception:
+                    return None
+            if not ip:
+                return None
+        machine = store.get(ip)
+        if not machine:
+            machine = store.add_or_update(ip=ip, method="scan")
+            machine.device_type = "device unknown"
+            machine_db.save_machine_info(machine)
+        if not re.match(ipv4, target) and not re.match(r"^\d+$", target):
+            try:
+                domain_db.init_or_update(target, machine.id, machine.ip, "scan")
+            except Exception:
+                pass
+        return ip
+
     def _resolve_to_ip(self, target):
-        ip, machine = self._resolve_target(target)
-        if ip and re.match(r"^\d+\.\d+\.\d+\.\d+$", ip):
-            return ip
-        # A known domain: prefer the machine it is associated with rather than
-        # DNS, which can resolve the public domain to a different address.
-        if domain_db.exists(target):
-            for row in domain_db.load_domain_machines(target):
-                mip = row.get("machine_ip") if isinstance(row, dict) else ""
-                if mip and re.match(r"^\d+\.\d+\.\d+\.\d+$", str(mip)):
-                    return str(mip)
-        try:
-            info = socket.getaddrinfo(target, None, socket.AF_INET, socket.SOCK_STREAM)
-            if info:
-                ip = info[0][4][0]
-                dom = target
-                machine = store.get(ip)
-                if not machine:
-                    machine = store.add_or_update(ip=ip, method="manual")
-                    machine.device_type = "device unknown"
-                    machine_db.save_machine_info(machine)
-                if not domain_db.exists(dom):
-                    domain_db.init_or_update(dom, machine.id, machine.ip, "use")
-                self.console.info(f"{dom} -> {ip}")
-                return ip
-        except Exception:
-            pass
-        return None
+        ip = self._resolve_scan_target(target)
+        if (ip and not re.match(r"^\d+\.\d+\.\d+\.\d+$", str(target))
+                and not re.match(r"^\d+$", str(target))):
+            self.console.info(f"{target} -> {ip}")
+        return ip
 
     def _cmd_use(self, args):
         if not args:
@@ -3741,7 +3773,17 @@ class App(tk.Tk):
     def _run_tcpscan(self, ip, method, skip_phase1=False):
         if not self._tcpscan_running:
             return
+        ip = self._resolve_scan_target(ip)
+        if not ip:
+            self.console.after(0, lambda: self.console.error(
+                "Could not resolve the TCP scan target to an IPv4 address"))
+            self._tcpscan_running = False
+            return
         machine = store.get(ip)
+        if machine is None:
+            machine = store.add_or_update(ip=ip, method="scan")
+            machine.device_type = "device unknown"
+            machine_db.save_machine_info(machine)
         all_ports = list(machine_db.load_tcp_ports(machine.id)) if skip_phase1 and machine else []
         try:
             def _save_ports():
@@ -3835,6 +3877,12 @@ class App(tk.Tk):
             else:
                 self.console.warning(f"No machine with ID #{machine_id}")
                 return
+        if not re.match(r"^\d+\.\d+\.\d+\.\d+$", ip):
+            resolved = self._resolve_to_ip(ip)
+            if not resolved:
+                self.console.error(f"Could not resolve {ip} to an IPv4 address")
+                return
+            ip = resolved
         if self._tcpscan_running:
             self.console.warning("A TCP scan is already running.")
             return
@@ -3947,7 +3995,17 @@ class App(tk.Tk):
     def _run_udpscan(self, ip, skip_phase1=False):
         if not self._udpscan_running:
             return
+        ip = self._resolve_scan_target(ip)
+        if not ip:
+            self.console.after(0, lambda: self.console.error(
+                "Could not resolve the UDP scan target to an IPv4 address"))
+            self._udpscan_running = False
+            return
         machine = store.get(ip)
+        if machine is None:
+            machine = store.add_or_update(ip=ip, method="scan")
+            machine.device_type = "device unknown"
+            machine_db.save_machine_info(machine)
         all_ports = list(machine_db.load_udp_ports(machine.id)) if skip_phase1 and machine else []
         try:
             def _save_ports():
@@ -4030,6 +4088,12 @@ class App(tk.Tk):
             else:
                 self.console.warning(f"No machine with ID #{machine_id}")
                 return
+        if not re.match(r"^\d+\.\d+\.\d+\.\d+$", ip):
+            resolved = self._resolve_to_ip(ip)
+            if not resolved:
+                self.console.error(f"Could not resolve {ip} to an IPv4 address")
+                return
+            ip = resolved
         if self._udpscan_running:
             self.console.warning("A UDP scan is already running.")
             return
