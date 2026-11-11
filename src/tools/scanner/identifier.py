@@ -739,11 +739,17 @@ def identify_device(ip, gateway_ip=None, hostname="", details=None):
 
     if details is not None:
         details["ttl"] = context.ttl()
-        details["tcp_ports"] = context.open_identification_ports()
 
     if _is_firewall_honeypot(ip, context):
+        # The known ports were probed against a host that accepts arbitrary
+        # TCP connections, so they are not reliable: do not persist them.
+        if details is not None:
+            details["tcp_ports"] = []
         _dbg(f"  FINAL: device unknown (firewall/honeypot detected)")
         return "device unknown"
+
+    if details is not None:
+        details["tcp_ports"] = context.open_identification_ports()
 
     for identifier in _pre_ttl_identifiers:
         result = identifier.identify(ip, context, gateway_ip=gateway_ip, hostname=hostname)

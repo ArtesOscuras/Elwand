@@ -90,12 +90,18 @@ def save_tcp_ports(machine_id, ports):
                     discovered_at TEXT
                 )
             """)
-            conn.execute("DELETE FROM tcp_ports")
+            # Ports are additive: once a port is proven open it stays (same
+            # behavior as the nmap monitor). A scan must not wipe ports
+            # discovered by identification or a previous scan.
+            existing = {row[0] for row in conn.execute("SELECT port FROM tcp_ports")}
             for p in ports:
+                if p in existing:
+                    continue
                 conn.execute(
                     "INSERT INTO tcp_ports VALUES (?, ?, ?)",
                     (p, "", now),
                 )
+                existing.add(p)
     except (PermissionError, OSError, sqlite3.OperationalError):
         pass
 

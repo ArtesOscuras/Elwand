@@ -623,6 +623,7 @@ class App(tk.Tk):
         self._selected_interface = None
         self._identifying_ips = set()
         self._system_process = None
+        self._system_processes = set()
         self._recorder = None
         self._bruteforce_dlg = None
         self._bruteforce_engine = None
@@ -980,7 +981,7 @@ class App(tk.Tk):
         self.console.set_subcommands("connect", ["ftp", "sftp", "ssh", "winrm"])
         self.console.register_command("start", self._cmd_start, "Start listeners")
         self.console.set_subcommands("start", ["shells-listener", "mdns-listener"])
-        self.console.register_command("stop", self._cmd_stop, "Stop listeners")
+        self.console.register_command("stop", self._cmd_stop, "Stop running tools/services")
         self.console.set_subcommands("stop", self._stop_targets)
         self.console.register_command("delete", self._cmd_delete, "Delete stored data")
         self.console.set_subcommands("delete", ["all", "dbs", "credential", "evidence", "hash", "handshake", "machine", "domain", "session", "user", "password", "shell", "people", "dictionary", "rule", "poc", "report", "inventory", "cache", "wifi", "provider"])
@@ -3390,11 +3391,16 @@ class App(tk.Tk):
             targets.append("port-inspector")
         if getattr(self, "_hashcat_engine", None):
             targets.append("hashcat")
+        if (getattr(self, "_system_processes", None)
+                or getattr(self, "_system_process", None)):
+            targets.append("sys_cmd")
         return targets
 
     def _cmd_stop(self, args):
         if not args:
-            self.console.body("Usage: stop <shells-listener|mdns-listener|scanner>")
+            self.console.body(
+                "Usage: stop <shells-listener|mdns-listener|scanner|bruteforce|"
+                "fuzzer|webrecorder|tcpscan|udpscan|port-inspector|hashcat|sys_cmd>")
             return
         sub = args[0].lower()
         if sub == "shells-listener":
@@ -3473,6 +3479,8 @@ class App(tk.Tk):
                 self.console.info("Hashcat stopped")
             else:
                 self.console.warning("No hashcat engine is running")
+        elif sub == "sys_cmd":
+            self._stop_system()
         else:
             self.console.error(f"Unknown stop target: {sub}")
 
@@ -5360,14 +5368,19 @@ class App(tk.Tk):
                         monitor_nmap = machine
                         _dbg(f"[system] nmap monitoring for machine #{machine.id} ({arg})")
                     break
+        proc = None
         try:
             shell = os.environ.get("SHELL", "/bin/sh")
+            popen_kwargs = {}
+            if os.name == "posix":
+                popen_kwargs["start_new_session"] = True
             proc = subprocess.Popen(
                 [shell, "-i", "-c", cmd],
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                text=True, bufsize=1,
+                text=True, bufsize=1, **popen_kwargs,
             )
             self._system_process = proc
+            self._system_processes.add(proc)
             for line in proc.stdout:
                 if not self.console.winfo_exists():
                     break
@@ -5390,18 +5403,95 @@ class App(tk.Tk):
                                     f"  nmap: added port {p} to machine #{mid}"
                                 ))
             proc.wait()
-            if self._system_process is proc:
-                self._system_process = None
             if proc.returncode != 0 and self.console.winfo_exists():
                 self.console.after(0, lambda: self.console.warning(f"exit code: {proc.returncode}"))
         except Exception as e:
             if self.console.winfo_exists():
                 self.console.after(0, lambda: self.console.error(f"System command failed: {e}"))
+        finally:
+            if proc is not None:
+                self._system_processes.discard(proc)
+                if self._system_process is proc:
+                    self._system_process = None
 
-    def _stop_system(self):
-        if self._system_process:
-            self._system_process.kill()
-            self.console.info("Process stopped")
+    def _stop_system(self, quiet=False):
+        """Stop every running system command (the whole process tree).
+
+        The command runs through an interactive shell (`-i`), which may put
+        the actual command in a different process group (job control) or fork
+        a child. Killing only the shell/group would leave it running, so the
+        descendant tree is collected and signalled explicitly.
+        """
+        procs = list(getattr(self, "_system_processes", ()))
+        if not procs:
+            legacy = getattr(self, "_system_process", None)
+            if legacy is not None:
+                procs = [legacy]
+        procs = [p for p in procs if p is not None and p.poll() is None]
+        if not procs:
+            if not quiet:
+                self.console.warning("No system command is running")
+            return
+
+        import signal
+        import time as _time
+
+        def _tree_pids(root):
+            if os.name != "posix":
+                return [root]
+            try:
+                out = subprocess.check_output(
+                    ["ps", "-A", "-o", "pid=,ppid="],
+                    text=True, stderr=subprocess.DEVNULL, timeout=2)
+            except Exception:
+                return [root]
+            children = {}
+            for line in out.splitlines():
+                parts = line.split()
+                if len(parts) < 2:
+                    continue
+                try:
+                    child, parent = int(parts[0]), int(parts[1])
+                except ValueError:
+                    continue
+                children.setdefault(parent, []).append(child)
+            pids = []
+            stack = [root]
+            while stack:
+                current = stack.pop()
+                pids.append(current)
+                stack.extend(children.get(current, ()))
+            return pids
+
+        def _kill_later(pids):
+            _time.sleep(1.0)
+            for pid in pids:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except Exception:
+                    pass
+
+        for proc in procs:
+            if os.name == "posix":
+                pids = _tree_pids(proc.pid)
+                for pid in pids:
+                    try:
+                        os.kill(pid, signal.SIGTERM)
+                    except Exception:
+                        pass
+                threading.Thread(
+                    target=_kill_later, args=(pids,), daemon=True).start()
+            else:
+                try:
+                    proc.terminate()
+                except Exception:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+
+        if not quiet:
+            self.console.info("System command stopped")
 
     def _cmd_ping(self, args):
         if not args:
@@ -7145,6 +7235,10 @@ class App(tk.Tk):
             self._active_scanner.stop()
         if self._shell_listener:
             self._shell_listener.stop()
+        try:
+            self._stop_system(quiet=True)
+        except Exception:
+            pass
         self._udpscan_running = False
         self._tcpscan_running = False
         if self._tcpscan_process:
