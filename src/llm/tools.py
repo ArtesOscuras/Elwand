@@ -1346,6 +1346,9 @@ def _check_machine(args, ctx=None):
         lines.append(f"  IPv6: {m.ipv6}")
     if getattr(m, "mac", ""):
         lines.append(f"  MAC: {m.mac}")
+    ttl = getattr(m, "ttl", 0)
+    if ttl:
+        lines.append(f"  TTL: {ttl}")
     if getattr(m, "device_type", ""):
         lines.append(f"  Device type: {m.device_type}")
     if getattr(m, "model", ""):

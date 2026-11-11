@@ -434,8 +434,9 @@ def _do_scan_ip(ip):
     src.machines.interface_name = ""
     src.machines.interface_ip = ""
     gateway = get_gateway_ip()
-    result = identify_device(ip, gateway_ip=gateway, hostname="")
-    ttl = _probe_ttl(ip)
+    details = {}
+    result = identify_device(ip, gateway_ip=gateway, hostname="", details=details)
+    ttl = details.get("ttl")
     mds = get_services(ip)
     has_evidence = result != "device unknown" or ttl is not None or bool(mds)
     if not has_evidence:
@@ -447,6 +448,13 @@ def _do_scan_ip(ip):
     else:
         machine = store.add_or_update(ip=ip, method="manual")
     machine.device_type = result
+    if ttl is not None:
+        machine.ttl = ttl
+    for port in details.get("tcp_ports", []):
+        try:
+            machine_db.save_tcp_port(machine.id, port)
+        except Exception:
+            pass
     model = extract_model_for_ip(machine.ip, resolve=True)
     if model:
         machine.model = model
@@ -477,7 +485,7 @@ def _do_scan_ip(ip):
         "hostname": getattr(machine, "hostname", ""),
         "domain": getattr(machine, "domain", ""),
         "model": getattr(machine, "model", ""),
-        "ttl": ttl,
+        "ttl": getattr(machine, "ttl", 0),
     }
 
 
@@ -4309,7 +4317,8 @@ class App(tk.Tk):
             "machine": machine,
             "is_new": existing is None,
         })
-        if existing is None or existing.device_type in ("", "device unknown", "iOS device"):
+        if existing is None or existing.device_type in (
+                "", "device unknown", "iOS device", "Android probable"):
             self._identifying_ips.add(ip)
             threading.Thread(target=self._identify, args=(machine,), daemon=True).start()
 
@@ -4318,8 +4327,20 @@ class App(tk.Tk):
         old_type = machine.device_type
         try:
             gateway = get_gateway_ip()
-            result = identify_device(machine.ip, gateway_ip=gateway, hostname=machine.hostname)
-            _dbg(f"[identify-done]  {machine.ip}  result={result!r}")
+            details = {}
+            result = identify_device(
+                machine.ip, gateway_ip=gateway,
+                hostname=machine.hostname, details=details)
+            ttl = details.get("ttl")
+            if ttl is not None:
+                machine.ttl = ttl
+            for port in details.get("tcp_ports", []):
+                try:
+                    machine_db.save_tcp_port(machine.id, port)
+                except Exception:
+                    pass
+            _dbg(f"[identify-done]  {machine.ip}  result={result!r} "
+                 f"ttl={ttl} ports={details.get('tcp_ports')}")
             if result:
                 machine.device_type = result
                 model = extract_model_for_ip(machine.ip, resolve=True)

@@ -45,16 +45,19 @@ def save_machine_info(machine):
                     domain TEXT,
                     methods TEXT,
                     first_seen TEXT,
-                    last_seen TEXT
+                    last_seen TEXT,
+                    ttl INTEGER
                 )
             """)
             cur = conn.execute("PRAGMA table_info(machine_info)")
             cols = [r[1] for r in cur.fetchall()]
             if "ipv6" not in cols:
                 conn.execute("ALTER TABLE machine_info ADD COLUMN ipv6 TEXT")
+            if "ttl" not in cols:
+                conn.execute("ALTER TABLE machine_info ADD COLUMN ttl INTEGER")
             conn.execute("DELETE FROM machine_info")
             conn.execute(
-                "INSERT INTO machine_info VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO machine_info VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     machine.ip,
                     machine.ipv6,
@@ -67,6 +70,7 @@ def save_machine_info(machine):
                     json.dumps(sorted(machine.methods)),
                     machine.first_seen.isoformat(),
                     machine.last_seen.isoformat(),
+                    getattr(machine, "ttl", 0),
                 ),
             )
     except (PermissionError, OSError, sqlite3.OperationalError):

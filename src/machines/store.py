@@ -49,6 +49,7 @@ class Machine:
         self.model = ""
         self.os = ""
         self.domain = ""
+        self.ttl = 0
         self.methods = {method} if method else set()
         self.first_seen = datetime.now()
         self.last_seen = datetime.now()
@@ -73,6 +74,7 @@ class Machine:
             "model": self.model,
             "os": self.os,
             "domain": self.domain,
+            "ttl": self.ttl,
             "methods": sorted(self.methods),
             "first_seen": self.first_seen.strftime("%H:%M:%S"),
             "last_seen": self.last_seen.strftime("%H:%M:%S"),
@@ -179,19 +181,22 @@ class MachineStore:
                         domain TEXT,
                         methods TEXT,
                         first_seen TEXT,
-                        last_seen TEXT
+                        last_seen TEXT,
+                        ttl INTEGER
                     )
                 """)
                 cur = conn.execute("PRAGMA table_info(machines)")
                 cols = [r[1] for r in cur.fetchall()]
                 if "ipv6" not in cols:
                     conn.execute("ALTER TABLE machines ADD COLUMN ipv6 TEXT")
+                if "ttl" not in cols:
+                    conn.execute("ALTER TABLE machines ADD COLUMN ttl INTEGER")
                 conn.execute("DELETE FROM machines")
                 for m in self._machines.values():
                     conn.execute(
                         """INSERT OR REPLACE INTO machines
-                           (id, ip, ipv6, hostname, mac, device_type, model, os, domain, methods, first_seen, last_seen)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                           (id, ip, ipv6, hostname, mac, device_type, model, os, domain, methods, first_seen, last_seen, ttl)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                         (
                             m.id,
                             m.ip,
@@ -205,6 +210,7 @@ class MachineStore:
                             json.dumps(sorted(m.methods)),
                             m.first_seen.isoformat(),
                             m.last_seen.isoformat(),
+                            getattr(m, "ttl", 0),
                         ),
                     )
                 _dbg(f"[store.save] done")
@@ -224,8 +230,10 @@ class MachineStore:
                     _dbg("[store.load] no id column, skipping")
                     self._next_id = 1
                     return
+                if "ttl" not in columns:
+                    conn.execute("ALTER TABLE machines ADD COLUMN ttl INTEGER")
                 rows = conn.execute(
-                    "SELECT id, ip, ipv6, hostname, mac, device_type, model, os, domain, methods, first_seen, last_seen FROM machines"
+                    "SELECT id, ip, ipv6, hostname, mac, device_type, model, os, domain, methods, first_seen, last_seen, ttl FROM machines"
                 ).fetchall()
         except (sqlite3.DatabaseError, sqlite3.OperationalError):
             _dbg("[store.load] db error")
@@ -233,7 +241,8 @@ class MachineStore:
 
         max_id = 0
         for row in rows:
-            mid, ip, ipv6, hostname, mac, device_type, model, os_val, domain_val, methods_json, first_seen, last_seen = row
+            (mid, ip, ipv6, hostname, mac, device_type, model, os_val,
+             domain_val, methods_json, first_seen, last_seen, ttl) = row
             m = Machine(ip, hostname=hostname, mac=mac)
             try:
                 m.id = int(mid)
@@ -246,6 +255,10 @@ class MachineStore:
             m.model = model or ""
             m.os = os_val or ""
             m.domain = domain_val or ""
+            try:
+                m.ttl = int(ttl) if ttl is not None else 0
+            except (ValueError, TypeError):
+                m.ttl = 0
             try:
                 m.methods = set(json.loads(methods_json))
             except (json.JSONDecodeError, TypeError):

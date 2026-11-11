@@ -131,6 +131,7 @@ class MachineDetailView(BaseView):
             ("IPv6", m.ipv6),
             ("Hostname", m.hostname),
             ("MAC", m.mac),
+            ("TTL", getattr(m, "ttl", 0) or ""),
             ("Type", m.device_type),
             ("Model", m.model),
             ("OS", m.os),

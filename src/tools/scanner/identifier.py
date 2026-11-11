@@ -45,6 +45,17 @@ PORT_SSH = 22
 PORT_MDNS = 5353
 PORT_RTSP = 554
 PORT_ONVIF_DISCOVERY = 3702
+PORT_CAST = 8009
+PORT_ANDROID_TV = 9000
+PORT_ANDROID_TV_SOCKS = 1080
+
+# TCP ports probed during identification. Only these are persisted after an
+# identification; the random ports used by the honeypot check are excluded.
+IDENTIFICATION_TCP_PORTS = (
+    PORT_SSH, PORT_445, PORT_RTSP, PORT_631,
+    PORT_ANDROID_TV_SOCKS, PORT_CAST, PORT_ANDROID_TV, PORT_9100,
+)
+
 TTL_ROUTER_MIN = 250
 TTL_ROUTER_MAX = 256
 TTL_WIN_MIN = 120
@@ -423,6 +434,13 @@ class ProbeContext:
         from src.tools.scanner.mdns_cache import get_services
         return get_services(self.ip)
 
+    def open_identification_ports(self):
+        """Open TCP ports probed for identification (known list only)."""
+        return [
+            port for port in IDENTIFICATION_TCP_PORTS
+            if self.port(port).get("open")
+        ]
+
     def warmup(self):
         services = (
             SERVICE_RDLINK, SERVICE_APPLE_MOBDEV2, SERVICE_COMPANION_LINK,
@@ -430,7 +448,7 @@ class ProbeContext:
             SERVICE_ONVIF, SERVICE_RTSP, SERVICE_AIRPLAY, SERVICE_RAOP,
             SERVICE_SPOTIFY,
         )
-        ports = (PORT_445, PORT_9100, PORT_631, PORT_RTSP, PORT_SSH)
+        ports = IDENTIFICATION_TCP_PORTS
         udp_ports = (PORT_ONVIF_DISCOVERY,)
 
         def _do_ttl():
@@ -553,9 +571,24 @@ class AndroidIdentifier(BaseIdentifier):
             context.mdns_service(SERVICE_GOOGLECAST)
             or context.mdns_service(SERVICE_SPOTIFY)
         )
+        has_android = has_android_hostname or has_services
+
+        if has_android:
+            cast = context.port(PORT_CAST)["open"]
+            tv_port = context.port(PORT_ANDROID_TV)["open"]
+            socks = context.port(PORT_ANDROID_TV_SOCKS)["open"]
+            # 8009 is Google Cast/CASTV2 (Chromecast and Android TV). The
+            # extra 9000/1080 ports are common on Android TV boxes; 8009
+            # alone can be a plain Chromecast, so require one of them for
+            # the stronger label.
+            if cast and (tv_port or socks):
+                return "Android TV"
+            if tv_port or socks:
+                return "Android TV probable"
+
         if has_android_hostname and has_services:
             return "Android device"
-        if has_android_hostname or has_services:
+        if has_android:
             return "Android probable"
         return None
 
@@ -691,12 +724,22 @@ def _is_firewall_honeypot(ip, context):
     return False
 
 
-def identify_device(ip, gateway_ip=None, hostname=""):
+def identify_device(ip, gateway_ip=None, hostname="", details=None):
+    """Identify a device.
+
+    If ``details`` is a dict it is filled with the probe results observed
+    during identification (``ttl`` and the open identification ``tcp_ports``),
+    so callers can persist them.
+    """
     _dbg(f"")
     _dbg(f"=== IDENTIFY {ip}  hostname={hostname}  gateway={gateway_ip} ===")
 
     context = ProbeContext(ip)
     context.warmup()
+
+    if details is not None:
+        details["ttl"] = context.ttl()
+        details["tcp_ports"] = context.open_identification_ports()
 
     if _is_firewall_honeypot(ip, context):
         _dbg(f"  FINAL: device unknown (firewall/honeypot detected)")
