@@ -236,7 +236,8 @@ class MachineDetailView(BaseView):
                         self._note_dir(mid, p, s, pt, n),
                     on_note_change=lambda n: setattr(self, "_expanded_note", n),
                     on_delete=lambda p, s=scheme, pt=port, mid=m.id:
-                        self._delete_dir(mid, p, s, pt))
+                        self._delete_dir(mid, p, s, pt),
+                    tag_prefix=f"{scheme or 'any'}_{port or 0}_")
 
         last_line = self.text.index("end-1c")
         total = int(last_line.split(".")[0]) if last_line else 1

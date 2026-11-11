@@ -192,7 +192,8 @@ class DomainDetailView(BaseView):
                         self._note_dir(self._domain, p, s, pt, n),
                     on_note_change=lambda n: setattr(self, "_expanded_note", n),
                     on_delete=lambda p, s=scheme, pt=port:
-                        self._delete_dir(self._domain, p, s, pt))
+                        self._delete_dir(self._domain, p, s, pt),
+                    tag_prefix=f"{scheme or 'any'}_{port or 0}_")
 
         web = domain_db.load_web_services(self._domain)
         if web:

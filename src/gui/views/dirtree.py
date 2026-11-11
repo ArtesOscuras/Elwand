@@ -100,7 +100,8 @@ def insert_clickable_tree(text, paths, base, on_copy,
                           stored_paths=None, on_delete=None, on_note=None,
                           expanded_path=None, expanded_note="",
                           on_expand=None, on_collapse=None, on_note_change=None,
-                          muted_tag="muted", bright_tag="bright"):
+                          muted_tag="muted", bright_tag="bright",
+                          tag_prefix=""):
     """Insert a directory tree with an inline action row on the open node.
 
     Clicking a node expands a compact row right below it (pushing the rest of
@@ -113,12 +114,13 @@ def insert_clickable_tree(text, paths, base, on_copy,
     from src.gui import theme, fonts, icons
 
     old = getattr(text, "_dir_action_frame", None)
-    if old is not None:
+    if old is not None and getattr(text, "_dir_action_tag", None) == tag_prefix:
         try:
             old.destroy()
         except tk.TclError:
             pass
         text._dir_action_frame = None
+        text._dir_action_tag = None
 
     note_map = note_map or {}
     stored_paths = stored_paths or set()
@@ -229,6 +231,7 @@ def insert_clickable_tree(text, paths, base, on_copy,
         text.window_create(tk.END, window=frame)
         text.insert(tk.END, "\n")
         text._dir_action_frame = frame
+        text._dir_action_tag = tag_prefix
 
     def _click(path):
         if expanded_path is not None and path == expanded_path:
@@ -238,7 +241,7 @@ def insert_clickable_tree(text, paths, base, on_copy,
             on_expand(path)
 
     def _line(idx, prefix, name, path):
-        tag = f"dirnode_{idx}"
+        tag = f"dirnode_{tag_prefix}{idx}"
         text.tag_configure(tag, underline=False)
         text.insert(tk.END, "  " + prefix, muted_tag)
         text.insert(tk.END, name, (bright_tag, tag))
